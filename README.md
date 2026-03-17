@@ -1,61 +1,95 @@
-# NEXUM v11 — Autonomous AI Agent Platform
+# NEXUM v13 — One Bot, Infinite AI
 
-Полноценная AI-экосистема в Telegram.
+**Decentralized AI Agent Platform for Telegram**
+
+Single bot → Multiple AI providers → User personalization → PC Agent integration
+
+## Status
+
+- ✅ Core infrastructure (AI router, DB, commands)
+- ⏳ AI integration (Groq, DeepSeek, Claude, Gemini)
+- ⏳ PC Agent pairing
+- ⏳ Mini Apps (Finance, Tasks, Notes)
 
 ## Архитектура
 
 ```
-User → Telegram → NEXUM Bot → NEXUM Core → Task Planner → Tools → Executor → NEXUM Agent
+User → Telegram Bot → AI Router (Groq/DeepSeek/Claude/Gemini)
+                    → User Database (план, подписка, ключи)
+                    → PC Agent (парнинг по коду)
+                    → Mini Apps (Finance, Tasks, Notes)
 ```
 
 ## Компоненты
 
-- **NEXUM Bot** — Telegram бот (TypeScript + grammy)
-- **NEXUM Agent** — локальный PC-агент (Python)
-- **Mini Apps** — встроенные web-приложения (Finance, Notes, Tasks, Habits, Sites, Tools)
-- **Mission Control** — локальный admin-дашборд (NextJS, отдельный проект)
+- **NEXUM Bot** — Telegram бот (TypeScript + grammy) ✅
+- **AI Router** — выбор модели по стоимости/скорости ✅
+- **User DB** — SQLite с подписками и API ключами ✅
+- **PC Agent** — парнинг + контроль ПК (в разработке)
+- **Mini Apps** — платные приложения (планируется)
 
-## Быстрый старт (Railway)
+## Quick Start
 
-1. Создай новый проект на Railway
-2. Подключи этот репозиторий
-3. Добавь переменные из `.env.example`
-4. Deploy
-
-## Локальный запуск
+### Local Development
 
 ```bash
 npm install
 cp .env.example .env
-# Заполни .env
+# Add your BOT_TOKEN (get from @BotFather on Telegram)
 npm run dev
 ```
 
-## PC Agent
+### Deployment (Railway)
+
+1. Create Railway project
+2. Connect GitHub repo
+3. Add `BOT_TOKEN` env variable
+4. Deploy
+
+Each user gets:
+- Personal AI provider selection
+- Custom API key support
+- Usage statistics
+- PC Agent pairing
+
+## Парнинг PC Agent
 
 ```bash
-pip install websockets pyautogui pillow psutil requests pyperclip plyer
 python nexum_agent.py
-# Или с Railway URL:
-python nexum_agent.py wss://your-bot.up.railway.app/ws
 ```
 
-После запуска агент покажет **код привязки** — отправь его боту командой `/link КОД`.  
-После привязки uid вшивается в `~/.nexum_agent.json` — при следующем запуске привязка автоматическая.
+В Telegram: `/link` → получишь код → вставь его агенту.
 
-## AI Провайдеры (приоритет)
+Готово — PC Agent подключен к боту.
 
-1. Cerebras — `CB1..CB10` (fastest, Llama 3.3 70B)
-2. Groq — `GR1..GR10` (fast, Llama 3.3 70B + Whisper STT)
-3. Gemini — `G1..G10` (vision)
-4. Grok — `GK1..GK10`
-5. OpenRouter — `OR1..OR10`
-6. DeepSeek — `DS1..DS10`
-7. SambaNova — `SN1..SN10`
-8. Together — `TO1..TO10`
-9. Claude — `CL1..CL10`
+## AI Провайдеры
 
-Пользователи могут добавить свои ключи: `/setkey groq sk-...`
+По умолчанию бот использует **Groq** (бесплатный tier).
+
+Поддерживаемые:
+- **Groq** — Llama 3.3 70B (бесплатно)
+- **DeepSeek** — дешево ($0.07/1M tokens)
+- **Claude Haiku** — быстро ($0.08/1M tokens)
+- **Gemini** — с видением (free tier)
+
+Пользователи могут добавить свои ключи:
+```
+/setkey groq sk-...
+/setkey deepseek sk-...
+/setkey claude sk-...
+```
+
+## Команды
+
+| Команда | Описание |
+|---------|---------|
+| `/start` | Начало |
+| `/help` | Все команды |
+| `/plan` | Твой текущий план |
+| `/upgrade` | Upgrade to Pro ($5/месяц) |
+| `/link` | Привязать PC Agent |
+| `/setkey [провайдер] [ключ]` | Добавить API ключ |
+| `/status` | Статистика + текущий AI провайдер |
 
 ## Команды бота
 
@@ -102,14 +136,26 @@ python nexum_agent.py wss://your-bot.up.railway.app/ws
 | `/hotkey [combo]` | Горячие клавиши |
 | `/network` | Сетевая информация |
 
-## Admin команды
+## Features
 
-| Команда | Описание |
-|---------|---------|
-| `/admin` | Панель администратора |
-| `/users` | Список пользователей |
-| `/broadcast [текст]` | Рассылка всем |
+- **Multi-AI Support:** Groq, DeepSeek, Claude, Gemini
+- **User Database:** Per-user settings, API keys, subscriptions
+- **PC Agent Pairing:** Link your local machine for file/screenshot operations
+- **Conversation History:** Persistent memory per user
+- **Freemium Model:** Free tier + premium subscriptions
+- **Mini Apps:** Expandable ecosystem (Finance, Tasks, Notes, etc.)
 
-## Языки
+## Tech Stack
 
-Поддерживается автоопределение языка: ru, en, uz, de, fr, es, ar, zh, ja, ko, tr, hi, uk, kk, pl, it, pt, nl, fa и др.
+- **Bot:** TypeScript + grammy
+- **Database:** SQLite3
+- **Deployment:** Railway/Docker
+- **PC Agent:** Python (separate)
+
+## Contributing
+
+Open for contributions. Feature requests & bug reports welcome.
+
+## License
+
+MIT
