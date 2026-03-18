@@ -186,14 +186,60 @@ export const setupCommands = (bot: Bot) => {
     );
   });
 
-  // Notes app
+  // Tasks app commands
+  bot.command("tasks", async (ctx: Context) => {
+    const { formatTasksList } = await import("../apps/tasks-app");
+    const userId = ctx.from?.id || 0;
+    const list = formatTasksList(userId);
+    await ctx.reply(list, { parse_mode: "Markdown" });
+  });
+
+  bot.command("task_add", async (ctx: Context) => {
+    const { createTask } = await import("../apps/tasks-app");
+    const args = ctx.message?.text.split(" ");
+    args?.shift(); // Remove /task_add
+    
+    if (!args || args.length === 0) {
+      await ctx.reply("📝 *Добавить задачу*\n\n`/task_add Название задачи [приоритет: high/medium/low]`", { parse_mode: "Markdown" });
+      return;
+    }
+    
+    const title = args.join(" ");
+    const priority = args.includes("high") ? "high" : args.includes("low") ? "low" : "medium";
+    const cleanTitle = title.replace(/ (high|medium|low)/, "").trim();
+    
+    const task = createTask(userId, cleanTitle, "", priority);
+    await ctx.reply(`✅ *Задача добавлена:*\n\n*${task.title}*\nПриоритет: ${priority}`, { parse_mode: "Markdown" });
+  });
+
+  // Notes app commands
   bot.command("notes", async (ctx: Context) => {
-    await ctx.reply(
-      `📝 *Notes*\n\n` +
-      `Coming soon!\n\n` +
-      `Use your dashboard for now.`,
-      { parse_mode: "Markdown" }
-    );
+    const { formatNotesList } = await import("../apps/notes-app");
+    const userId = ctx.from?.id || 0;
+    const list = formatNotesList(userId);
+    await ctx.reply(list, { parse_mode: "Markdown" });
+  });
+
+  bot.command("note_add", async (ctx: Context) => {
+    const { createNote } = await import("../apps/notes-app");
+    const args = ctx.message?.text.split(" ");
+    args?.shift(); // Remove /note_add
+    
+    if (!args || args.length === 0) {
+      await ctx.reply("📝 *Добавить заметку*\n\n`/note_add Заголовок | Текст`", { parse_mode: "Markdown" });
+      return;
+    }
+    
+    const text = args.join(" ");
+    const [title, content] = text.split("|").map(s => s.trim());
+    
+    if (!title || !content) {
+      await ctx.reply("📝 *Формат:* `/note_add Заголовок | Текст`", { parse_mode: "Markdown" });
+      return;
+    }
+    
+    const note = createNote(userId, title, content);
+    await ctx.reply(`✅ *Заметка создана:*\n\n*${note.title}*\n${note.content.substring(0, 100)}`, { parse_mode: "Markdown" });
   });
 
   // Handle text messages
