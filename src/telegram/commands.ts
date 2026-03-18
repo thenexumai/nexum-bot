@@ -4,6 +4,8 @@ import { Bot, Context } from "grammy";
 import { createUser, getUser, updatePlan } from "../db/user-db";
 import { generatePairingCode, verifyPairingCode, getPairedAgents } from "../agent/pairing";
 import { selectProvider } from "../core/ai-router";
+import { getUserSoul, addToContext, clearContext, buildSystemPrompt } from "../soul";
+import handleMessage from "./handler";
 
 export const setupCommands = (bot: Bot) => {
   // Start command
@@ -242,66 +244,14 @@ export const setupCommands = (bot: Bot) => {
     await ctx.reply(`✅ *Заметка создана:*\n\n*${note.title}*\n${note.content.substring(0, 100)}`, { parse_mode: "Markdown" });
   });
 
-  // Handle text messages
+  // Handle text messages - Use personalized handler
   bot.on("message:text", async (ctx: Context) => {
-    const msg = ctx.message.text;
-    const userId = ctx.from?.id || 0;
-    
-    // Check if it's a command
-    if (msg.startsWith("/")) return;
-    
-    // Show typing indicator
-    await ctx.replyWithChatAction("typing");
-    
-    // Get user's conversation history
-    const user = getUser(userId) as any;
-    const plan = user?.plan || "free";
-    
-    // Check rate limit for free users
-    if (plan === "free") {
-      // TODO: Implement proper rate limiting
-      const requestsToday = 3; // Placeholder
-      if (requestsToday >= 5) {
-        await ctx.reply(
-          `⏳ *Daily limit reached*\n\n` +
-          `You've used 5/5 free requests today.\n` +
-          `Upgrade to Pro for unlimited access!\n\n` +
-          `Use /upgrade to unlock.`,
-          { parse_mode: "Markdown" }
-        );
-        return;
-      }
-    }
-    
-    try {
-      // Import AI providers dynamically
-      const { callAI } = await import("../core/ai-providers");
-      
-      // Get user's API keys
-      const apiKeys: Record<string, string> = {};
-      // TODO: Get from user database
-      
-      // Call AI
-      const response = await callAI(apiKeys, [
-        { role: "user", content: msg }
-      ], "You are NEXUM, a helpful AI assistant. Be concise and helpful.");
-      
-      if (response) {
-        await ctx.reply(response.text, { parse_mode: "Markdown" });
-      } else {
-        await ctx.reply(
-          `⚠️ *AI temporarily unavailable*\n\n` +
-          `Please try again later or check your API keys with /setkey`,
-          { parse_mode: "Markdown" }
-        );
-      }
-    } catch (error) {
-      console.error("AI error:", error);
-      await ctx.reply(
-        `❌ *Error processing request*\n\n` +
-        `Please try again later.`,
-        { parse_mode: "Markdown" }
-      );
-    }
+    await handleMessage(ctx, bot);
+  });
+  
+  // Clear chat history command
+  bot.command("clear", async (ctx: Context) => {
+    clearContext(ctx.from?.id || 0);
+    await ctx.reply("История очищена.");
   });
 };
