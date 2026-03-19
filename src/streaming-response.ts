@@ -8,29 +8,10 @@ interface StreamOptions {
   userMessage?: string; // For context analysis
 }
 
-// Intelligent emoji selection based on context
+// Emoji reactions disabled - no reactions on messages
 const selectReactionForContext = (userMessage: string): string | null => {
-  const msg = userMessage.toLowerCase();
-  
-  // Emotion/question context
-  if (msg.includes("?")) return "🤔"; // Thinking for questions
-  if (msg.includes("!!!")) return "😂"; // Excited
-  if (msg.includes("помощ") || msg.includes("помог")) return "🙌"; // Help
-  if (msg.includes("спасиб") || msg.includes("спс")) return "❤️"; // Thanks
-  if (msg.includes("код") || msg.includes("script")) return "⚙️"; // Code
-  if (msg.includes("идея") || msg.includes("idea")) return "💡"; // Idea
-  if (msg.includes("ок") || msg.includes("yes")) return "✅"; // Agreement
-  if (msg.includes("нет") || msg.includes("no")) return "👎"; // Disagreement
-  if (msg.includes("🎉") || msg.includes("праздн")) return "🎉"; // Celebration
-  if (msg.includes("грус") || msg.includes("sad")) return "😞"; // Sad
-  
-  // 30% chance to react otherwise (sparse reactions)
-  if (Math.random() < 0.3) {
-    const generalEmojis = ["👀", "🎯", "🚀", "💪", "🔥"];
-    return generalEmojis[Math.floor(Math.random() * generalEmojis.length)];
-  }
-  
-  return null; // No reaction
+  // Return null to disable all reactions
+  return null;
 };
 
 export const streamResponse = async (
@@ -41,22 +22,7 @@ export const streamResponse = async (
   const { typing = true, chunks = true, userMessage } = options;
   
   try {
-    // Smart emoji reaction based on user message context
-    const userMsg = userMessage || ctx.message?.text || "";
-    const emoji = selectReactionForContext(userMsg);
-    
-    // Send emoji reaction only if context matches
-    if (emoji && ctx.msg?.message_id) {
-      try {
-        await ctx.api.raw("setMessageReaction", {
-          chat_id: ctx.chat?.id,
-          message_id: ctx.msg.message_id,
-          reaction: [{ type: "emoji", emoji }],
-        });
-      } catch {
-        // Silently fail if reactions not supported
-      }
-    }
+    // No emoji reactions - disabled
     
     // Show typing indicator
     if (typing) {
