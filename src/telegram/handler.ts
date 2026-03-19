@@ -129,7 +129,7 @@ export async function handleVoiceMessage(ctx: Context, bot: Bot): Promise<void> 
       try {
         await ctx.replyWithChatAction('record_voice');
         const ttsResult = await textToSpeech(response, uid);
-        await ctx.replyWithVoice({ source: ttsResult.buffer }, { reply_parameters: { message_id: ctx.message!.message_id } });
+        await ctx.replyWithVoice(new Blob([ttsResult.buffer], { type: 'audio/mpeg' }) as any, { reply_parameters: { message_id: ctx.message!.message_id } });
         return;
       } catch { /* fall through to text */ }
     }
