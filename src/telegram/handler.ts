@@ -11,24 +11,19 @@ import { transcribeVoice } from '../tools/stt';
 import { textToSpeech, getUserVoicePref } from '../tools/tts';
 import { createDraftStream } from './draft-stream';
 
-// ── Точный OpenClaw стриминг ───────────────────────────────────────────────────
-// 1. Показываем typing
-// 2. Создаём draft stream (throttle 1000ms как в OpenClaw)
-// 3. AI стримит токены → draft.update(accumulated) 
-// 4. Каждые ~1 секунду editMessageText с накопленным текстом
-// 5. stop() — финальный flush
-
+// streamReply — для коротких ответов (голос, фото, команды)
 export async function streamReply(ctx: Context, text: string): Promise<void> {
   if (!text?.trim()) return;
-  await ctx.replyWithChatAction('typing');
-  try {
-    await ctx.reply(text, { parse_mode: 'Markdown' });
-  } catch {
-    await ctx.reply(text);
-  }
+  try { await ctx.reply(text, { parse_mode: 'Markdown' }); }
+  catch { await ctx.reply(text); }
 }
 
-// Настоящий стриминг — используется когда провайдер поддерживает SSE
+// ── Точный OpenClaw стриминг ───────────────────────────────────────────────────
+// 1. typing indicator сразу
+// 2. SSE токены → draft.update(accumulated) 
+// 3. throttle 1000ms → editMessageText
+// 4. minInitialChars=60 → равномерный старт
+
 export async function streamingReply(
   ctx: Context,
   uid: number,
@@ -36,18 +31,19 @@ export async function streamingReply(
 ): Promise<void> {
   const chatId = ctx.chat!.id;
 
-  await ctx.replyWithChatAction('typing');
+  // Показываем typing сразу
+  await ctx.replyWithChatAction('typing').catch(() => {});
 
   const draft = createDraftStream({
     api: ctx.api,
     chatId,
-    throttleMs: 1000, // Точно как OpenClaw
-    renderText: (text) => {
-      // Пробуем Markdown, при ошибке вернётся plain text
-      return { text, parseMode: 'Markdown' };
-    },
     warn: (msg) => console.warn('[draft]', msg),
   });
+
+  // Держим typing активным пока идёт генерация (как OpenClaw typing keepalive)
+  const typingInterval = setInterval(() => {
+    ctx.replyWithChatAction('typing').catch(() => {});
+  }, 4000);
 
   try {
     const system = buildSystemPrompt(uid);
@@ -61,31 +57,26 @@ export async function streamingReply(
       draft.update(accumulated);
     });
 
-    // Финальный flush — как OpenClaw stop()
+    clearInterval(typingInterval);
     await draft.stop();
 
-    // Если draft не создал сообщение (очень короткий ответ) — отправляем сами
+    // Если draft не отправил ничего (очень короткий ответ до minInitialChars)
     if (draft.messageId() == null) {
-      try {
-        await ctx.reply(fullResponse, { parse_mode: 'Markdown' });
-      } catch {
-        await ctx.reply(fullResponse);
-      }
+      try { await ctx.reply(fullResponse, { parse_mode: 'Markdown' }); }
+      catch { await ctx.reply(fullResponse); }
     }
 
-    // Сохраняем в историю
     saveMessage(uid, 'user', userMessage);
     saveMessage(uid, 'assistant', fullResponse);
-
-    // Автоизвлечение фактов
     autoExtract(uid, userMessage);
 
   } catch (err: any) {
+    clearInterval(typingInterval);
     await draft.stop();
     if (draft.messageId() == null) {
-      await ctx.reply('Ошибка. Попробуй ещё раз.');
+      await ctx.reply('Ошибка. Попробуй ещё раз.').catch(() => {});
     }
-    console.error('[handler] streaming error:', err.message);
+    console.error('[handler] error:', err.message);
   }
 }
 

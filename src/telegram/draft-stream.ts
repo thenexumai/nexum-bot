@@ -1,10 +1,11 @@
-// NEXUM Draft Stream — точная реализация OpenClaw для Telegram
-// Throttle 1000ms, накапливает токены, editMessageText как в OpenClaw
+// NEXUM Draft Stream — точная реализация OpenClaw
+// throttle 1000ms, minInitialChars для равномерного старта
 
 import { Api } from 'grammy';
 
 const TELEGRAM_MAX_CHARS = 4096;
-const DEFAULT_THROTTLE_MS = 1000;
+const THROTTLE_MS = 1000;         // Как в OpenClaw DEFAULT_THROTTLE_MS
+const MIN_INITIAL_CHARS = 60;     // Ждём накопления до первой отправки — равномерный старт
 
 export type DraftStream = {
   update: (text: string) => void;
@@ -16,61 +17,50 @@ export type DraftStream = {
 export function createDraftStream(params: {
   api: Api;
   chatId: number;
-  throttleMs?: number;
-  renderText?: (text: string) => { text: string; parseMode?: 'HTML' | 'Markdown' };
   warn?: (msg: string) => void;
 }): DraftStream {
-  const throttleMs = params.throttleMs ?? DEFAULT_THROTTLE_MS;
-  let messageId: number | undefined;
+  let msgId: number | undefined;
   let lastSentAt = 0;
-  let pendingText = '';
   let lastSentText = '';
+  let pendingText = '';
   let inFlight: Promise<boolean> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
+  let firstSent = false;
 
   const sendOrEdit = async (text: string): Promise<boolean> => {
-    const trimmed = text.trimEnd();
-    if (!trimmed || trimmed === lastSentText) return true;
-    if (trimmed.length > TELEGRAM_MAX_CHARS) {
-      params.warn?.(`stream stopped: text too long (${trimmed.length})`);
-      stopped = true;
-      return false;
-    }
+    const t = text.trimEnd();
+    if (!t || t === lastSentText) return true;
+    if (t.length > TELEGRAM_MAX_CHARS) { stopped = true; return false; }
 
-    const rendered = params.renderText?.(trimmed) ?? { text: trimmed };
-    const finalText = rendered.text.trimEnd();
-    const parseMode = rendered.parseMode;
+    // Дебаунс первого сообщения — ждём MIN_INITIAL_CHARS чтобы старт был плавным
+    if (!firstSent && t.length < MIN_INITIAL_CHARS && !stopped) return false;
 
     try {
-      if (messageId != null) {
-        // Edit existing message
-        if (parseMode) {
-          await params.api.editMessageText(params.chatId, messageId, finalText, { parse_mode: parseMode });
-        } else {
-          await params.api.editMessageText(params.chatId, messageId, finalText);
+      if (msgId != null) {
+        // Редактируем существующее сообщение
+        try {
+          await params.api.editMessageText(params.chatId, msgId, t, { parse_mode: 'Markdown' });
+        } catch {
+          // Markdown ошибка — отправляем plain text
+          await params.api.editMessageText(params.chatId, msgId, t);
         }
       } else {
-        // Send first message
-        const sent = parseMode
-          ? await params.api.sendMessage(params.chatId, finalText, { parse_mode: parseMode })
-          : await params.api.sendMessage(params.chatId, finalText);
-        messageId = sent.message_id;
+        // Первое сообщение
+        let sent: any;
+        try {
+          sent = await params.api.sendMessage(params.chatId, t, { parse_mode: 'Markdown' });
+        } catch {
+          sent = await params.api.sendMessage(params.chatId, t);
+        }
+        msgId = sent.message_id;
+        firstSent = true;
       }
-      lastSentText = trimmed;
+      lastSentText = t;
       lastSentAt = Date.now();
       return true;
-    } catch (err: any) {
-      // Markdown parse error — retry as plain text
-      if (parseMode && messageId != null) {
-        try {
-          await params.api.editMessageText(params.chatId, messageId, finalText);
-          lastSentText = trimmed;
-          lastSentAt = Date.now();
-          return true;
-        } catch { /* ignore */ }
-      }
-      params.warn?.(`stream error: ${err?.message}`);
+    } catch (e: any) {
+      params.warn?.(`draft error: ${e?.message}`);
       return false;
     }
   };
@@ -82,19 +72,18 @@ export function createDraftStream(params: {
       const text = pendingText;
       if (!text.trim()) { pendingText = ''; return; }
       pendingText = '';
-      const current = sendOrEdit(text).finally(() => {
-        if (inFlight === current) inFlight = undefined;
-      }) as Promise<boolean>;
-      inFlight = current;
-      const sent = await current;
-      if (sent === false) { pendingText = text; return; }
+      const cur = sendOrEdit(text).finally(() => { if (inFlight===cur) inFlight=undefined; }) as Promise<boolean>;
+      inFlight = cur;
+      const ok = await cur;
+      if (!ok) { pendingText = text; return; }
       if (!pendingText) return;
     }
   };
 
   const schedule = () => {
     if (timer) return;
-    const delay = Math.max(0, throttleMs - (Date.now() - lastSentAt));
+    // Равномерный throttle — точно THROTTLE_MS между правками
+    const delay = Math.max(0, THROTTLE_MS - (Date.now() - lastSentAt));
     timer = setTimeout(() => { void flush(); }, delay);
   };
 
@@ -102,68 +91,21 @@ export function createDraftStream(params: {
     if (stopped) return;
     pendingText = text;
     if (inFlight) { schedule(); return; }
-    if (!timer && Date.now() - lastSentAt >= throttleMs) { void flush(); return; }
+    if (!timer && Date.now() - lastSentAt >= THROTTLE_MS) { void flush(); return; }
     schedule();
   };
 
   const stop = async (): Promise<void> => {
     stopped = true;
     if (timer) { clearTimeout(timer); timer = undefined; }
-    // Final flush — send whatever is pending
-    if (pendingText.trim() && !inFlight) {
-      await sendOrEdit(pendingText);
-      pendingText = '';
-    } else if (inFlight) {
-      await inFlight;
+    if (inFlight) { await inFlight; inFlight = undefined; }
+    // Финальный flush — отправляем всё что осталось
+    if (pendingText.trim()) {
+      stopped = false;
+      await flush();
+      stopped = true;
     }
   };
 
-  return {
-    update,
-    flush,
-    stop,
-    messageId: () => messageId,
-  };
-}
-
-// ── Streaming AI response to Telegram (OpenClaw pattern) ─────────────────────
-// AI стримит токены → накапливаем → editMessageText раз в секунду
-
-export async function streamAIResponse(params: {
-  api: Api;
-  chatId: number;
-  getCompletion: (onToken: (token: string) => void) => Promise<string>;
-  renderText?: (text: string) => { text: string; parseMode?: 'HTML' | 'Markdown' };
-}): Promise<string> {
-  const draft = createDraftStream({
-    api: params.api,
-    chatId: params.chatId,
-    throttleMs: 1000,
-    renderText: params.renderText,
-    warn: (msg) => console.warn('[stream]', msg),
-  });
-
-  let accumulated = '';
-
-  // Start with typing action
-  await params.api.sendChatAction(params.chatId, 'typing');
-
-  const fullText = await params.getCompletion((token: string) => {
-    accumulated += token;
-    draft.update(accumulated);
-  });
-
-  // Final flush — ensure full text is displayed
-  await draft.stop();
-
-  // If streaming didn't work (non-streaming provider), send the full text now
-  if (draft.messageId() == null) {
-    try {
-      await params.api.sendMessage(params.chatId, fullText, { parse_mode: 'Markdown' });
-    } catch {
-      await params.api.sendMessage(params.chatId, fullText);
-    }
-  }
-
-  return fullText;
+  return { update, flush, stop, messageId: () => msgId };
 }

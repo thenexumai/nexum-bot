@@ -207,41 +207,35 @@ export function buildSystemPrompt(uid: number): string {
   const memories = getMemories(uid).filter(m=>!['voice_mode','voice_lang','voice_idx'].includes(m.key));
   const isAdmin = config.adminIds.includes(uid);
   const timeStr = new Date().toLocaleString('ru-RU',{ timeZone:'Asia/Tashkent', dateStyle:'short', timeStyle:'short' });
-  const toolList = TOOLS.map(t=>`- **${t.name}**: ${t.description} | Параметры: ${t.params}`).join('\n');
+  const toolList = TOOLS.map(t=>`- ${t.name}: ${t.description} | ${t.params}`).join('\n');
 
-  let prompt = `Ты NEXUM — личный AI-ассистент. Умный, прямой, полезный.
+  let prompt = `Ты NEXUM — личный AI-ассистент.
 
-## Стиль ответов
+Стиль:
 - Отвечай на языке пользователя
-- Структурируй текст: абзацы, списки по делу
-- Без воды и лишних слов
-- Код в блоках \`\`\`
-- Не начинай с "Конечно!", "Отлично!" и т.п.
+- Пиши как умный человек: короткие чёткие фразы, абзацы по смыслу
+- Не используй жирный текст без причины — только для важных слов
+- Не начинай с "Конечно", "Отлично", "Я могу"
+- Код в блоках, списки когда реально список
+- Один вопрос в конце если нужен, не несколько
 
-## Время
-${timeStr} (Ташкент UTC+5)`;
+Время: ${timeStr} (UTC+5)`;
 
-  if (isAdmin) prompt += `\n\n## Роль\nADMIN — полный доступ к системе.`;
-  if (memories.length>0) prompt += `\n\n## Знаю о пользователе\n${memories.map(m=>`- ${m.key}: ${m.value}`).join('\n')}`;
+  if (isAdmin) prompt += `\n\nАдмин: полный доступ к системе.`;
+  if (memories.length>0) prompt += `\n\nЗнаю о тебе:\n${memories.map(m=>`${m.key}: ${m.value}`).join('\n')}`;
 
-  prompt += `\n\n## Инструменты
-Вызывай инструменты через XML:
-\`<tool name="название" параметр1="значение" />\`
+  prompt += `\n\nИнструменты — вызывай XML синтаксисом:
+<tool name="название" параметр="значение" />
 
 ${toolList}
 
-## Правила
-- Вызывай инструменты СРАЗУ, не жди подтверждения
-- Упомянул деньги/расход → finance_add
-- Упомянул задачу → task_create  
-- Хочет запомнить → note_save или memory_save
-- Вопрос о текущих событиях → web_search
-- Можно несколько инструментов за раз
-
-Пример:
-Пользователь: "потратил 50000 на продукты"
-<tool name="finance_add" type="expense" amount="50000" category="food" note="Продукты" />
-Записал расход 50 000 в категорию "Еда".`;
+Правила:
+- Деньги/расход/доход → сразу finance_add, не спрашивай
+- Задача/дело → сразу task_create
+- Запомнить → note_save или memory_save
+- Актуальный вопрос → web_search
+- Сначала напиши ответ, потом в конце вызови инструмент (если нужен)
+- Не упоминай названия инструментов пользователю`;
 
   return prompt;
 }

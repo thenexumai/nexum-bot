@@ -17,15 +17,19 @@ export function setupCommands(bot: Bot): void {
   // ── /start ────────────────────────────────────────────────────────────────
   bot.command('start', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
-    const name = ctx.from?.first_name || 'there';
+    const name = ctx.from?.first_name || '';
     ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
 
-    const webApp = config.webappUrl ? `\n\nMini Apps: ${config.webappUrl}` : '';
-    const adminNote = isAdmin(uid) ? '\n\nYou have admin access.' : '';
+    const greeting = name ? `${name}.` : '';
+    const adminNote = isAdmin(uid) ? '\n\nУ тебя есть права администратора.' : '';
+
+    const kb = config.webappUrl
+      ? new InlineKeyboard().webApp('Открыть приложения', config.webappUrl)
+      : undefined;
 
     await ctx.reply(
-      `*NEXUM*\n\nPersonal AI assistant.${adminNote}\n\nType anything to chat, or use /help to see commands.${webApp}`,
-      { parse_mode: 'Markdown' }
+      `${greeting ? greeting + '\n\n' : ''}Я NEXUM — твой личный AI-ассистент.\n\nПросто напиши мне что нужно сделать.\n\nМогу искать в интернете, записывать расходы, создавать задачи, ставить напоминания и многое другое.${adminNote}`,
+      kb ? { reply_markup: kb } : undefined
     );
   });
 
