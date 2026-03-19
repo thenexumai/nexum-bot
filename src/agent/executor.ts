@@ -252,32 +252,55 @@ export async function execute(uid: number, input: string, hasImage = false): Pro
   ];
 
   let finalResponse = '';
+  let toolsWereUsed = false;
+
   for (let iter=0; iter<8; iter++) {
     let response: string;
     try { response = await chat(uid, messages, systemPrompt, hasImage); }
     catch (e:any) { return `Ошибка AI: ${e.message}`; }
 
     const toolCalls = parseToolCalls(response);
-    if (toolCalls.length===0) { finalResponse=response; break; }
 
+    if (toolCalls.length===0) {
+      // Нет инструментов — финальный ответ
+      finalResponse = response;
+      break;
+    }
+
+    // Есть инструменты — выполняем
+    toolsWereUsed = true;
     const toolResults: string[] = [];
     for (const call of toolCalls) {
       const tool = TOOLS.find(t=>t.name===call.tool);
-      if (!tool) { toolResults.push(`[${call.tool}]: Инструмент не найден`); continue; }
+      if (!tool) { toolResults.push(`[${call.tool}]: не найден`); continue; }
       try {
         console.log(`[tool] ${call.tool}`, call.args);
         const result = await tool.handler(uid, call.args);
         toolResults.push(`[${call.tool}]: ${result}`);
-      } catch (e:any) { toolResults.push(`[${call.tool}]: Ошибка — ${e.message}`); }
+      } catch (e:any) { toolResults.push(`[${call.tool}]: ошибка — ${e.message}`); }
     }
 
-    const cleanResponse = stripToolCalls(response);
-    if (cleanResponse) finalResponse = cleanResponse;
-    messages.push({ role:'assistant', content:response });
-    messages.push({ role:'user', content:`Результаты:\n${toolResults.join('\n')}` });
+    // Текст ответа без XML тегов
+    const textBeforeTool = stripToolCalls(response);
+
+    // Добавляем в историю диалога
+    messages.push({ role:'assistant', content: response });
+    messages.push({ role:'user', content: `Результаты инструментов:\n${toolResults.join('\n')}\n\nПродолжи ответ пользователю на основе этих результатов. Не упоминай названия инструментов.` });
+
+    // Если у AI был текст до тега — сохраняем как черновик
+    if (textBeforeTool) finalResponse = textBeforeTool;
   }
 
-  const result = stripToolCalls(finalResponse) || finalResponse;
+  // Если инструменты были использованы и у нас нет чистого финального ответа
+  // — генерируем финальный ответ
+  if (toolsWereUsed && (!finalResponse || finalResponse === stripToolCalls(finalResponse) && finalResponse.length < 10)) {
+    try {
+      finalResponse = await chat(uid, messages, systemPrompt);
+    } catch { /* use what we have */ }
+  }
+
+  // ВСЕГДА чистим XML теги из финального ответа
+  const result = stripToolCalls(finalResponse).trim() || finalResponse.trim();
   saveMessage(uid, 'user', input);
   saveMessage(uid, 'assistant', result);
   return result;
