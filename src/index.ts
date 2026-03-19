@@ -48,7 +48,7 @@ bot.on('message:document', async (ctx) => {
   const { streamReply } = await import('./telegram/handler');
   await ctx.replyWithChatAction('typing');
   const response = await execute(uid, `User sent a document: "${doc.file_name}" (${doc.mime_type}, ${Math.round((doc.file_size||0)/1024)}KB). ${caption ? 'Caption: ' + caption : 'What would you like to do with this file?'}`);
-  await streamReply(ctx, response, ctx.message.message_id);
+  await streamReply(ctx, response);
 });
 
 // Error handler — no crashes
