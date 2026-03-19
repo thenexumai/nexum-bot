@@ -2,7 +2,7 @@
 // Handles all incoming messages with personalized AI responses
 
 import { Bot, Context } from "grammy";
-import { getUserSoul, addToContext, clearContext, buildSystemPrompt, addToMemory } from "../soul";
+import { getUserSoul, addToContext, clearContext, buildSystemPrompt, addToMemory, isAdmin } from "../soul";
 import { streamResponse } from "../streaming-response";
 
 export const handleMessage = async (ctx: Context, bot: Bot) => {
@@ -14,16 +14,16 @@ export const handleMessage = async (ctx: Context, bot: Bot) => {
   // Get user's personalized soul
   const soul = getUserSoul(userId);
   
-  // Show typing indicator (real-time feel)
+  // Show typing indicator
   await ctx.replyWithChatAction("typing");
   
   // Add to context
   addToContext(userId, "user", msg);
   
   // Detect user info from messages
-  const nameMatch = msg.match(/меня зовут (\w+)|я (\w+)|моё имя (\w+)/i);
+  const nameMatch = msg.match(/меня зовут (\w+)|я (\w+)|моё имя (\w+)|зовут (\w+)/i);
   if (nameMatch) {
-    const name = nameMatch[1] || nameMatch[2] || nameMatch[3];
+    const name = nameMatch[1] || nameMatch[2] || nameMatch[3] || nameMatch[4];
     soul.memory.name = name;
   }
   
@@ -45,37 +45,49 @@ export const handleMessage = async (ctx: Context, bot: Bot) => {
     // Import AI
     const { callAI } = await import("../core/ai-providers");
     
-    // Build personalized system prompt
-    const systemPrompt = buildSystemPrompt(userId);
+    // Build personalized system prompt with explicit instructions for longer responses
+    let systemPrompt = buildSystemPrompt(userId);
+    systemPrompt += `
+
+IMPORTANT INSTRUCTIONS:
+- Always respond with at least 2-3 complete sentences
+- Be friendly and conversational
+- Show that you understand the user's message
+- Ask follow-up questions when appropriate
+- Don't just acknowledge - elaborate slightly`;
     
-    // Build messages with context
+    // Get context messages
+    const contextMessages = soul.sessionContext.slice(-10).map(m => ({ role: m.role, content: m.content }));
+    
+    // Build final messages
     const messages = [
       { role: "system", content: systemPrompt },
-      ...soul.sessionContext.slice(-15).map(m => ({ role: m.role, content: m.content })),
+      ...contextMessages,
     ];
     
-    // Call AI
-    const apiKeys: Record<string, string> = {};
-    const response = await callAI(apiKeys, messages);
+    // Call AI with no user keys (use system keys)
+    const userKeys: Record<string, string> = {};
+    const response = await callAI(userKeys, messages);
     
-    if (response) {
+    if (response && response.text) {
       // Add to context
       addToContext(userId, "assistant", response.text);
       
-      // Stream response with emoji prefix and smooth typing effect
+      console.log(`[AI] ${response.provider} -> ${response.text.substring(0, 50)}...`);
+      
+      // Stream response
       await streamResponse(ctx, response.text, { userMessage: msg });
     } else {
-      await ctx.reply("Что-то не получается. Попробуй ещё раз.");
+      await ctx.reply("Извини, временно не могу ответить. Попробуй чуть позже!");
     }
   } catch (error) {
     console.error("AI error:", error);
-    await ctx.reply("Ошибка. Попробуй позже.");
+    await ctx.reply("Произошла ошибка. Попробуй ещё раз!");
   }
 };
 
 // Streaming effect for longer responses
 export const sendStreamingMessage = async (ctx: Context, text: string) => {
-  // For long messages, split into chunks
   if (text.length > 500) {
     const chunks = text.match(/.{1,400}[.!?]?\s?/g) || [text];
     
