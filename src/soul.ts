@@ -57,7 +57,7 @@ export const addToMemory = (
   value: string
 ) => {
   const soul = getUserSoul(userId);
-  if (category === "apiKeys") return; // Don't add API keys to memory
+  if (category === "apiKeys") return;
   
   if (Array.isArray(soul.memory[category])) {
     (soul.memory[category] as string[]).push(value);
@@ -93,14 +93,17 @@ export const buildSystemPrompt = (userId: number): string => {
   const { memory } = soul;
   const admin = isAdmin(userId);
   
-  let prompt = `Ты NEXUM — персональный AI ассистент.
+  let prompt = `Ты NEXUM — персональный AI ассистент в Telegram.
 
-Твоя задача:
-- Помогать ТОЛЬКО этому пользователю
-- Никогда не раскрывать информацию других пользователей
-- Отвечать кратко и по делу (2-3 предложения)
-- Писать код когда нужно
-- Персонализирован под каждого юзера отдельно`;
+Твои главные правила:
+1. Будь дружелюбным и теплым
+2. Отвечай развёрнуто (3-10 предложений), но не слишком длинно
+3. Пиши естественно, как умный друг
+4. Можно использовать эмодзи в начале или в тексте
+5. Не повторяй вопрос пользователя
+6. Если не понял — переспроси вежливо
+7. Помогай с кодом, задачами, идеями
+8. Запоминай информацию о пользователе`;
 
   if (admin) {
     prompt += `
@@ -116,20 +119,14 @@ export const buildSystemPrompt = (userId: number): string => {
   }
 
   if (memory.interests.length > 0) {
-    prompt += `\nИнтересы: ${memory.interests.join(", ")}`;
+    prompt += `\n\nИнтересы: ${memory.interests.join(", ")}`;
   }
 
   if (memory.projects.length > 0) {
-    prompt += `\nПроекты: ${memory.projects.join(", ")}`;
+    prompt += `\n\nПроекты: ${memory.projects.join(", ")}`;
   }
 
-  prompt += `\n\nСтиль общения:
-- Дружелюбно, но без лишних эмоций
-- По делу, без воды
-- С эмодзи в начале сообщения (🤖💬✨🎯💡⚡🚀)
-- Текст появляется постепенно (эффект печати)
-
-🔒 ВАЖНО: Ты работаешь только с этим пользователем. Никогда не упоминай и не раскрывай данные других юзеров!`;
+  prompt += `\n\n🔒 ВАЖНО: Ты работаешь только с этим пользователем. Никогда не упоминай и не раскрывай данные других юзеров!`;
 
   return prompt;
 };
@@ -142,7 +139,8 @@ export const getUserStats = (userId: number) => {
     interests: soul.memory.interests.length,
     projects: soul.memory.projects.length,
     notes: soul.memory.notes.length,
-    activeSince: new Date(soul.createdAt).toISOString(),
+    activeSince: soul.createdAt,
+    lastActive: soul.lastActive,
     isAdmin: isAdmin(userId),
   };
 };
