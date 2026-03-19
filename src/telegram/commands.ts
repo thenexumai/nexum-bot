@@ -95,20 +95,36 @@ export const setupCommands = (bot: Bot) => {
     );
   });
 
-  // Link/Pairing command
+  // Link/Pairing command - Send agent file directly
   bot.command("link", async (ctx: Context) => {
     const userId = ctx.from?.id || 0;
     const code = generatePairingCode(userId);
     
-    await ctx.reply(
-      `🔗 *PC Agent Pairing*\n\n` +
-      `Your pairing code: *${code}*\n\n` +
-      `1. Download PC Agent from GitHub\n` +
-      `2. Run: \`python nexum_agent.py\`\n` +
-      `3. Enter code when prompted\n\n` +
-      `Code expires in 10 minutes.`,
-      { parse_mode: "Markdown" }
-    );
+    try {
+      const fs = await import("fs");
+      const agentPath = "./pc-agent-template.py";
+      
+      if (fs.existsSync(agentPath)) {
+        await ctx.replyWithDocument(
+          { source: fs.createReadStream(agentPath), filename: `nexum_agent_${code}.py` },
+          { 
+            caption: `🔗 *NEXUM PC Agent*\n\nПаринг код: *${code}*\n\nУстановка:\n\`pip install websocket-client\`\n\nЗапуск:\n\`python nexum_agent_${code}.py ${code}\``,
+            parse_mode: "Markdown"
+          }
+        );
+      } else {
+        await ctx.reply(
+          `🔗 *PC Agent Pairing*\n\nCode: *${code}*\n\n\`python nexum_agent.py ${code}\``,
+          { parse_mode: "Markdown" }
+        );
+      }
+    } catch (error) {
+      console.error("File send error:", error);
+      await ctx.reply(
+        `🔗 *PC Agent Pairing*\n\nCode: *${code}*\n\n\`python nexum_agent.py ${code}\``,
+        { parse_mode: "Markdown" }
+      );
+    }
   });
 
   // Devices command
