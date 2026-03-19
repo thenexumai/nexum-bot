@@ -1,4 +1,5 @@
-// Real-time streaming response with emoji prefix
+// NEXUM Streaming Response System
+// Smooth text delivery with emoji prefix
 
 import { Context } from "grammy";
 
@@ -8,7 +9,7 @@ interface StreamOptions {
   userMessage?: string;
 }
 
-// Add emoji prefix for visual style
+// Emoji prefix for visual style
 const addEmojiPrefix = (text: string): string => {
   const emojis = ["🤖", "💬", "✨", "🎯", "💡", "⚡", "🚀"];
   const prefix = emojis[Math.floor(Math.random() * emojis.length)];
@@ -31,7 +32,7 @@ export const streamResponse = async (
     // Add emoji prefix
     const textWithEmoji = addEmojiPrefix(text);
     
-    // Stream character by character for smooth effect
+    // Character-by-character streaming for smooth effect
     if (chunks && text.length > 200) {
       let msg = await ctx.reply("...");
       let displayText = "";
@@ -39,6 +40,7 @@ export const streamResponse = async (
       for (let i = 0; i < textWithEmoji.length; i++) {
         displayText += textWithEmoji[i];
         
+        // Edit every 5 characters
         if (i % 5 === 0 || i === textWithEmoji.length - 1) {
           try {
             await ctx.api.editMessageText(ctx.chat!.id, msg.message_id, displayText);
@@ -49,6 +51,7 @@ export const streamResponse = async (
         }
       }
     } else {
+      // Short message - send directly
       await new Promise(resolve => setTimeout(resolve, 300));
       await ctx.reply(textWithEmoji);
     }

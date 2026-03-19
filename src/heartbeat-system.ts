@@ -1,4 +1,5 @@
-// NEXUM Heartbeat System - Periodic checks and actions
+// NEXUM Heartbeat System
+// Periodic health checks and background tasks
 
 import { Bot, Context } from "grammy";
 import { exec } from "child_process";
@@ -8,7 +9,7 @@ const execAsync = promisify(exec);
 
 interface HeartbeatCheck {
   name: string;
-  interval: number; // ms
+  interval: number;
   check: () => Promise<boolean>;
   action?: () => Promise<void>;
 }
@@ -25,7 +26,7 @@ export class HeartbeatSystem {
     for (const [name, check] of this.checks) {
       this.scheduleCheck(bot, adminId, name, check);
     }
-    console.log("❤️ Heartbeat system started");
+    console.log("❤️ NEXUM Heartbeat system started");
   }
   
   private scheduleCheck(bot: Bot, adminId: number, name: string, check: HeartbeatCheck) {
@@ -54,14 +55,14 @@ export class HeartbeatSystem {
       clearTimeout(timer);
     }
     this.timers.clear();
+    console.log("❤️ Heartbeat system stopped");
   }
 }
 
-// Default checks
 export const createDefaultChecks = (): HeartbeatCheck[] => [
   {
     name: "GitHub Sync",
-    interval: 10 * 60 * 1000, // 10 min
+    interval: 10 * 60 * 1000,
     check: async () => {
       try {
         const { stdout } = await execAsync("git status");
@@ -77,7 +78,7 @@ export const createDefaultChecks = (): HeartbeatCheck[] => [
   
   {
     name: "Railway Status",
-    interval: 15 * 60 * 1000, // 15 min
+    interval: 15 * 60 * 1000,
     check: async () => {
       try {
         const response = await fetch("https://nexum-bot-production-ae70.up.railway.app/health");
@@ -90,11 +91,10 @@ export const createDefaultChecks = (): HeartbeatCheck[] => [
   
   {
     name: "Memory Cleanup",
-    interval: 60 * 60 * 1000, // 1 hour
+    interval: 60 * 60 * 1000,
     check: async () => {
-      // Check memory usage
       const used = process.memoryUsage();
-      return used.heapUsed < 500 * 1024 * 1024; // Less than 500MB
+      return used.heapUsed < 500 * 1024 * 1024;
     },
     action: async () => {
       if (global.gc) global.gc();

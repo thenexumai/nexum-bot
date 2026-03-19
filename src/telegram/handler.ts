@@ -1,4 +1,5 @@
-// Telegram Handler - OpenClaw-style messaging with context-aware emoji reactions
+// NEXUM Telegram Message Handler
+// Handles all incoming messages with personalized AI responses
 
 import { Bot, Context } from "grammy";
 import { getUserSoul, addToContext, clearContext, buildSystemPrompt, addToMemory } from "../soul";
@@ -61,7 +62,7 @@ export const handleMessage = async (ctx: Context, bot: Bot) => {
       // Add to context
       addToContext(userId, "assistant", response.text);
       
-      // Stream response with context-aware emoji reaction
+      // Stream response with emoji prefix and smooth typing effect
       await streamResponse(ctx, response.text, { userMessage: msg });
     } else {
       await ctx.reply("Что-то не получается. Попробуй ещё раз.");

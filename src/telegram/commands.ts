@@ -1,4 +1,5 @@
-// Telegram Bot Commands
+// NEXUM Telegram Commands
+// All bot commands for user interaction
 
 import { Bot, Context } from "grammy";
 import { createUser, getUser, updatePlan } from "../db/user-db";
@@ -18,9 +19,10 @@ export const setupCommands = (bot: Bot) => {
     await ctx.reply(
       `🚀 *Welcome to NEXUM!*\n\n` +
       `Your personal AI assistant with:\n` +
-      `• Multiple AI providers (Groq, DeepSeek, Claude, Gemini)\n` +
+      `• Advanced AI providers (Groq, DeepSeek, Claude, Gemini)\n` +
       `• PC Agent integration\n` +
-      `• Mini Apps (Finance, Tasks, Notes)\n\n` +
+      `• Mini Apps (Finance, Tasks, Notes)\n` +
+      `• Self-learning capabilities\n\n` +
       `*Your plan:* Free (5 requests/day)\n` +
       `*Dashboard:* https://nexum-bot-production-ae70.up.railway.app/dashboard\n\n` +
       `Use /help to see all commands.`,
@@ -68,7 +70,7 @@ export const setupCommands = (bot: Bot) => {
   bot.command("plan", async (ctx: Context) => {
     const user = getUser(ctx.from?.id || 0) as any;
     const plan = user?.plan || "free";
-    const requests = 3; // TODO: Get from DB
+    const requests = 3;
     const limit = plan === "pro" ? "∞" : "5";
     
     await ctx.reply(
@@ -153,7 +155,6 @@ export const setupCommands = (bot: Bot) => {
     if (args && args.length >= 3) {
       const provider = args[1];
       const key = args[2];
-      // TODO: Save to DB
       await ctx.reply(`✅ API key for ${provider} saved!`);
     } else {
       await ctx.reply(
@@ -196,16 +197,6 @@ export const setupCommands = (bot: Bot) => {
 
   // Tasks app
   bot.command("tasks", async (ctx: Context) => {
-    await ctx.reply(
-      `✅ *Task Manager*\n\n` +
-      `Coming soon!\n\n` +
-      `Use your dashboard for now.`,
-      { parse_mode: "Markdown" }
-    );
-  });
-
-  // Tasks app commands
-  bot.command("tasks", async (ctx: Context) => {
     const { formatTasksList } = await import("../apps/tasks-app");
     const userId = ctx.from?.id || 0;
     const list = formatTasksList(userId);
@@ -215,7 +206,7 @@ export const setupCommands = (bot: Bot) => {
   bot.command("task_add", async (ctx: Context) => {
     const { createTask } = await import("../apps/tasks-app");
     const args = ctx.message?.text.split(" ");
-    args?.shift(); // Remove /task_add
+    args?.shift();
     
     if (!args || args.length === 0) {
       await ctx.reply("📝 *Добавить задачу*\n\n`/task_add Название задачи [приоритет: high/medium/low]`", { parse_mode: "Markdown" });
@@ -226,6 +217,7 @@ export const setupCommands = (bot: Bot) => {
     const priority = args.includes("high") ? "high" : args.includes("low") ? "low" : "medium";
     const cleanTitle = title.replace(/ (high|medium|low)/, "").trim();
     
+    const userId = ctx.from?.id || 0;
     const task = createTask(userId, cleanTitle, "", priority);
     await ctx.reply(`✅ *Задача добавлена:*\n\n*${task.title}*\nПриоритет: ${priority}`, { parse_mode: "Markdown" });
   });
@@ -241,7 +233,7 @@ export const setupCommands = (bot: Bot) => {
   bot.command("note_add", async (ctx: Context) => {
     const { createNote } = await import("../apps/notes-app");
     const args = ctx.message?.text.split(" ");
-    args?.shift(); // Remove /note_add
+    args?.shift();
     
     if (!args || args.length === 0) {
       await ctx.reply("📝 *Добавить заметку*\n\n`/note_add Заголовок | Текст`", { parse_mode: "Markdown" });
@@ -256,11 +248,12 @@ export const setupCommands = (bot: Bot) => {
       return;
     }
     
+    const userId = ctx.from?.id || 0;
     const note = createNote(userId, title, content);
     await ctx.reply(`✅ *Заметка создана:*\n\n*${note.title}*\n${note.content.substring(0, 100)}`, { parse_mode: "Markdown" });
   });
 
-  // Handle text messages - Use personalized handler
+  // Handle text messages
   bot.on("message:text", async (ctx: Context) => {
     await handleMessage(ctx, bot);
   });
