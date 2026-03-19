@@ -1,7 +1,8 @@
-// Telegram Handler - OpenClaw-style messaging (no reactions, real-time typing)
+// Telegram Handler - OpenClaw-style messaging with context-aware emoji reactions
 
 import { Bot, Context } from "grammy";
 import { getUserSoul, addToContext, clearContext, buildSystemPrompt, addToMemory } from "../soul";
+import { streamResponse } from "../streaming-response";
 
 export const handleMessage = async (ctx: Context, bot: Bot) => {
   const msg = ctx.message?.text;
@@ -60,12 +61,8 @@ export const handleMessage = async (ctx: Context, bot: Bot) => {
       // Add to context
       addToContext(userId, "assistant", response.text);
       
-      // Simulate typing delay (real-time feel)
-      const delay = Math.min(response.text.length * 20, 2000);
-      await new Promise(resolve => setTimeout(resolve, delay));
-      
-      // Send plain text (no reactions, no markdown formatting for simple messages)
-      await ctx.reply(response.text);
+      // Stream response with context-aware emoji reaction
+      await streamResponse(ctx, response.text, { userMessage: msg });
     } else {
       await ctx.reply("Что-то не получается. Попробуй ещё раз.");
     }
