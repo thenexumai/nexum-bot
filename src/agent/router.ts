@@ -205,15 +205,19 @@ export async function chatStreaming(
     }
   }
 
-  // Fallback — non-streaming, simulate token delivery
+  // Fallback — получаем полный ответ, отдаём через draft с правильными паузами
   const result = await chat(uid, messages, system);
-  // Simulate streaming by delivering result in chunks
-  const words = result.split(' ');
+  
+  // Разбиваем на параграфы и отдаём с паузами между ними — как реальный стриминг
+  const paragraphs = result.split(/\n\n+/);
   let acc = '';
-  for (const word of words) {
-    acc += (acc ? ' ' : '') + word;
+  for (let i = 0; i < paragraphs.length; i++) {
+    acc += (i > 0 ? '\n\n' : '') + paragraphs[i];
     onToken(acc);
-    await new Promise(r => setTimeout(r, 20));
+    // Пауза между параграфами как будто AI печатает
+    if (i < paragraphs.length - 1) {
+      await new Promise(r => setTimeout(r, 300 + paragraphs[i].length * 8));
+    }
   }
   return result;
 }

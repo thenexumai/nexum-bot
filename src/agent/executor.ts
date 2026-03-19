@@ -1,232 +1,308 @@
-// NEXUM Agent Executor — OpenClaw-style autonomous agent
+// NEXUM Agent Executor — полный аналог OpenClaw агента
+// Цикл инструментов: AI → tool call → результат → AI продолжает (до 8 итераций)
 
 import { chat } from './router';
-import { getMemories, getHistory, saveMessage, autoExtract } from './memory';
+import { getMemories, getHistory, saveMessage, autoExtract, saveMemory } from './memory';
 import { config } from '../core/config';
 import { db } from '../core/db';
 import { webSearch } from '../tools/search';
 
-// ── Tool definitions (OpenClaw-style) ────────────────────────────────────────
-
 interface Tool {
   name: string;
   description: string;
-  handler: (uid: number, args: string) => Promise<string>;
+  params: string;
+  handler: (uid: number, args: Record<string, string>) => Promise<string>;
 }
 
-const TOOLS: Tool[] = [
+export const TOOLS: Tool[] = [
   {
-    name: 'search',
-    description: 'Search the web. Args: query string',
-    handler: async (_uid, args) => webSearch(args),
+    name: 'web_search',
+    description: 'Поиск в интернете',
+    params: 'query: строка запроса',
+    handler: async (_uid, args) => webSearch(args.query || ''),
   },
   {
-    name: 'note_save',
-    description: 'Save a note. Args: title|content',
-    handler: async (uid, args) => {
-      const [title, content] = args.split('|').map(s => s.trim());
-      if (!title || !content) return 'Error: use "title|content"';
-      db.prepare('INSERT INTO notes (uid, title, content) VALUES (?,?,?)').run(uid, title, content);
-      return `Note saved: "${title}"`;
-    },
-  },
-  {
-    name: 'task_create',
-    description: 'Create a task. Args: title|priority(optional)',
-    handler: async (uid, args) => {
-      const [title, priority = 'medium'] = args.split('|').map(s => s.trim());
-      db.prepare('INSERT INTO tasks (uid, title, priority) VALUES (?,?,?)').run(uid, title, priority);
-      return `Task created: "${title}" [${priority}]`;
+    name: 'web_fetch',
+    description: 'Загрузить и прочитать URL',
+    params: 'url: адрес страницы',
+    handler: async (_uid, args) => {
+      try {
+        const r = await fetch(args.url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10000) });
+        const html = await r.text();
+        const text = html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<[^>]+>/g,' ').replace(/\s{3,}/g,'\n\n').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim().slice(0,4000);
+        return `Содержимое ${args.url}:\n\n${text}`;
+      } catch (e: any) { return `Ошибка загрузки: ${e.message}`; }
     },
   },
   {
     name: 'finance_add',
-    description: 'Add a finance entry. Args: type(income/expense)|amount|category|note',
+    description: 'Записать доход или расход в Finance',
+    params: 'type: income|expense, amount: сумма числом, category: категория, note: описание',
     handler: async (uid, args) => {
-      const [type, amount, category = 'other', note = ''] = args.split('|').map(s => s.trim());
-      db.prepare('INSERT INTO finance (uid, type, amount, category, note) VALUES (?,?,?,?,?)').run(uid, type, parseFloat(amount), category, note);
-      return `Finance entry added: ${type} ${amount} (${category})`;
+      const amount = parseFloat(args.amount);
+      if (isNaN(amount)) return 'Ошибка: неверная сумма';
+      db.prepare('INSERT INTO finance (uid, type, amount, category, note) VALUES (?,?,?,?,?)').run(uid, args.type||'expense', amount, args.category||'other', args.note||'');
+      return `${args.type==='income'?'Доход':'Расход'} ${amount.toLocaleString()} записан (${args.category||'other'})`;
+    },
+  },
+  {
+    name: 'finance_balance',
+    description: 'Показать баланс и статистику',
+    params: 'period: month|week|today|all',
+    handler: async (uid, args) => {
+      const period = args.period||'month';
+      const now = new Date();
+      let since = '';
+      if (period==='today') since=now.toISOString().split('T')[0];
+      else if (period==='week') { const d=new Date(now); d.setDate(d.getDate()-7); since=d.toISOString().split('T')[0]; }
+      else if (period==='month') since=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+      const where = since ? `AND date(created_at)>='${since}'` : '';
+      const rows = db.prepare(`SELECT type, SUM(amount) as total FROM finance WHERE uid=? ${where} GROUP BY type`).all(uid) as any[];
+      const income = rows.find(r=>r.type==='income')?.total||0;
+      const expense = rows.find(r=>r.type==='expense')?.total||0;
+      const recent = db.prepare(`SELECT type,amount,category,note FROM finance WHERE uid=? ${where} ORDER BY id DESC LIMIT 5`).all(uid) as any[];
+      const list = recent.map(r=>`• ${r.type==='income'?'+':'-'}${r.amount} ${r.category}${r.note?' ('+r.note+')':''}`).join('\n');
+      return `Финансы (${period}):\nДоходы: ${income.toLocaleString()}\nРасходы: ${expense.toLocaleString()}\nБаланс: ${(income-expense).toLocaleString()}\n\nПоследние:\n${list||'нет'}`;
+    },
+  },
+  {
+    name: 'task_create',
+    description: 'Создать задачу в Tasks',
+    params: 'title: название, priority: high|medium|low, project: проект (необязательно)',
+    handler: async (uid, args) => {
+      if (!args.title) return 'Ошибка: нужно название';
+      const p = ['high','medium','low','critical'].includes(args.priority) ? args.priority : 'medium';
+      db.prepare('INSERT INTO tasks (uid,title,priority,project) VALUES (?,?,?,?)').run(uid, args.title, p, args.project||'General');
+      return `Задача создана: "${args.title}" [${p}]`;
+    },
+  },
+  {
+    name: 'task_list',
+    description: 'Список задач',
+    params: 'status: open|done|all',
+    handler: async (uid, args) => {
+      const where = args.status==='done' ? "status='done'" : args.status==='all' ? '1=1' : "status!='done'";
+      const tasks = db.prepare(`SELECT title,priority,project FROM tasks WHERE uid=? AND ${where} ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END LIMIT 15`).all(uid) as any[];
+      if (!tasks.length) return 'Задач нет';
+      return tasks.map(t=>`• [${t.priority[0].toUpperCase()}] ${t.title}${t.project!=='General'?' ('+t.project+')':''}`).join('\n');
+    },
+  },
+  {
+    name: 'note_save',
+    description: 'Сохранить заметку в Notes',
+    params: 'title: заголовок, content: текст заметки',
+    handler: async (uid, args) => {
+      if (!args.content) return 'Ошибка: нужен текст';
+      db.prepare('INSERT INTO notes (uid,title,content) VALUES (?,?,?)').run(uid, args.title||'', args.content);
+      return `Заметка сохранена: "${args.title||'Без названия'}"`;
+    },
+  },
+  {
+    name: 'note_list',
+    description: 'Список заметок',
+    params: 'search: поиск (необязательно)',
+    handler: async (uid, args) => {
+      const notes = args.search
+        ? db.prepare('SELECT title,substr(content,1,80) as p FROM notes WHERE uid=? AND (title LIKE ? OR content LIKE ?) ORDER BY updated_at DESC LIMIT 8').all(uid,`%${args.search}%`,`%${args.search}%`) as any[]
+        : db.prepare('SELECT title,substr(content,1,80) as p FROM notes WHERE uid=? ORDER BY pinned DESC,updated_at DESC LIMIT 8').all(uid) as any[];
+      if (!notes.length) return 'Заметок нет';
+      return notes.map(n=>`• ${n.title||'Без названия'}: ${n.p}...`).join('\n');
+    },
+  },
+  {
+    name: 'habit_check',
+    description: 'Показать привычки с прогрессом',
+    params: '',
+    handler: async (uid, _args) => {
+      const today = new Date().toISOString().split('T')[0];
+      const habits = db.prepare('SELECT * FROM habits WHERE uid=? ORDER BY id').all(uid) as any[];
+      if (!habits.length) return 'Привычек нет. Создай через /habits';
+      return habits.map(h => {
+        const done = db.prepare('SELECT id FROM habit_logs WHERE habit_id=? AND date(done_at)=?').get(h.id,today);
+        return `${done?'✓':'○'} ${h.name} — серия: ${h.streak}д`;
+      }).join('\n');
     },
   },
   {
     name: 'memory_save',
-    description: 'Save a fact about the user. Args: key|value',
+    description: 'Запомнить факт о пользователе',
+    params: 'key: ключ, value: значение',
     handler: async (uid, args) => {
-      const [key, value] = args.split('|').map(s => s.trim());
-      const { saveMemory } = await import('./memory');
-      saveMemory(uid, key, value);
-      return `Remembered: ${key} = ${value}`;
+      if (!args.key||!args.value) return 'Ошибка: нужны key и value';
+      saveMemory(uid, args.key, args.value);
+      return `Запомнил: ${args.key} = ${args.value}`;
+    },
+  },
+  {
+    name: 'memory_get',
+    description: 'Всё что знаю о пользователе',
+    params: '',
+    handler: async (uid, _args) => {
+      const mems = getMemories(uid);
+      return mems.length ? mems.map(m=>`${m.key}: ${m.value}`).join('\n') : 'Память пуста';
     },
   },
   {
     name: 'reminder_set',
-    description: 'Set a reminder. Args: text|minutes_from_now',
+    description: 'Поставить напоминание',
+    params: 'text: текст, minutes: через сколько минут',
     handler: async (uid, args) => {
-      const [text, minsStr] = args.split('|').map(s => s.trim());
-      const mins = parseInt(minsStr) || 30;
-      const fireAt = new Date(Date.now() + mins * 60000).toISOString();
-      const chatId = db.prepare('SELECT uid FROM users WHERE uid=?').get(uid) as any;
-      db.prepare('INSERT INTO reminders (uid, chat_id, text, fire_at) VALUES (?,?,?,?)').run(uid, uid, text, fireAt);
-      return `Reminder set for ${mins} minutes: "${text}"`;
+      const mins = parseInt(args.minutes)||30;
+      const fireAt = new Date(Date.now()+mins*60000).toISOString();
+      db.prepare('INSERT INTO reminders (uid,chat_id,text,fire_at) VALUES (?,?,?,?)').run(uid,uid,args.text||'Напоминание',fireAt);
+      const label = mins>=60 ? `${Math.floor(mins/60)}ч ${mins%60}м` : `${mins}м`;
+      return `Напоминание через ${label}: "${args.text}"`;
+    },
+  },
+  {
+    name: 'stats',
+    description: 'Статистика пользователя',
+    params: '',
+    handler: async (uid, _args) => {
+      const msgs = (db.prepare('SELECT COUNT(*) as c FROM conversations WHERE uid=?').get(uid) as any)?.c||0;
+      const notes = (db.prepare('SELECT COUNT(*) as c FROM notes WHERE uid=?').get(uid) as any)?.c||0;
+      const tasks = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE uid=? AND status!='done'").get(uid) as any)?.c||0;
+      const finance = (db.prepare('SELECT COUNT(*) as c FROM finance WHERE uid=?').get(uid) as any)?.c||0;
+      return `Сообщений: ${msgs}\nЗаметок: ${notes}\nАктивных задач: ${tasks}\nФинансовых записей: ${finance}`;
     },
   },
 ];
 
-// ── System prompt builder ─────────────────────────────────────────────────────
+// ── Парсер вызовов инструментов ───────────────────────────────────────────────
+
+interface ToolCall { tool: string; args: Record<string, string>; }
+
+function parseToolCalls(text: string): ToolCall[] {
+  const calls: ToolCall[] = [];
+  // XML-style: <tool name="web_search" query="запрос" />
+  const xmlRe = /<tool\s+name="([^"]+)"([^\/]*)\s*\/>/g;
+  let m;
+  while ((m = xmlRe.exec(text)) !== null) {
+    const args: Record<string,string> = {};
+    const attrRe = /(\w+)="([^"]*)"/g; let a;
+    while ((a = attrRe.exec(m[2])) !== null) args[a[1]] = a[2];
+    calls.push({ tool: m[1], args });
+  }
+  // Pipe-style fallback: [TOOL:name|key=val]
+  const pipeRe = /\[TOOL:([^\]|]+)\|?([^\]]*)\]/g;
+  while ((m = pipeRe.exec(text)) !== null) {
+    const name = m[1].trim();
+    const args: Record<string,string> = {};
+    if (m[2]) {
+      if (m[2].includes('=')) { m[2].split('|').forEach(p=>{ const [k,...v]=p.split('='); if(k) args[k.trim()]=v.join('=').trim(); }); }
+      else { const tool=TOOLS.find(t=>t.name===name); args[tool?.params.split(':')[0]?.trim()||'query']=m[2].split('|')[0]?.trim()||''; }
+    }
+    if (!calls.find(c=>c.tool===name)) calls.push({ tool: name, args });
+  }
+  return calls;
+}
+
+function stripToolCalls(text: string): string {
+  return text.replace(/<tool\s+name="[^"]+"\s*[^\/]*\/>/g,'').replace(/\[TOOL:[^\]]+\]/g,'').replace(/\n{3,}/g,'\n\n').trim();
+}
+
+// ── Системный промпт ───────────────────────────────────────────────────────────
 
 export function buildSystemPrompt(uid: number): string {
-  const memories = getMemories(uid).filter(m => !['voice_mode', 'voice_lang', 'voice_idx'].includes(m.key));
+  const memories = getMemories(uid).filter(m=>!['voice_mode','voice_lang','voice_idx'].includes(m.key));
   const isAdmin = config.adminIds.includes(uid);
+  const timeStr = new Date().toLocaleString('ru-RU',{ timeZone:'Asia/Tashkent', dateStyle:'short', timeStyle:'short' });
+  const toolList = TOOLS.map(t=>`- **${t.name}**: ${t.description} | Параметры: ${t.params}`).join('\n');
 
-  const sections: string[] = [];
+  let prompt = `Ты NEXUM — личный AI-ассистент. Умный, прямой, полезный.
 
-  sections.push(`# Личность
-Ты NEXUM — личный AI-ассистент. Умный, быстрый, полезный. Говоришь как умный друг, не как робот.
-Отвечаешь на языке пользователя. Без лишних слов. Без "Конечно!", "Отлично!", "Я понял!".`);
+## Стиль ответов
+- Отвечай на языке пользователя
+- Структурируй текст: абзацы, списки по делу
+- Без воды и лишних слов
+- Код в блоках \`\`\`
+- Не начинай с "Конечно!", "Отлично!" и т.п.
 
-  if (isAdmin) {
-    sections.push(`# Роль
-Это ADMIN. Полный доступ ко всем командам системы.`);
-  }
+## Время
+${timeStr} (Ташкент UTC+5)`;
 
-  if (memories.length > 0) {
-    sections.push(`# Что я знаю о пользователе
-${memories.map(m => `- ${m.key}: ${m.value}`).join('\n')}`);
-  }
+  if (isAdmin) prompt += `\n\n## Роль\nADMIN — полный доступ к системе.`;
+  if (memories.length>0) prompt += `\n\n## Знаю о пользователе\n${memories.map(m=>`- ${m.key}: ${m.value}`).join('\n')}`;
 
-  sections.push(`# Инструменты — используй АВТОМАТИЧЕСКИ когда нужно
+  prompt += `\n\n## Инструменты
+Вызывай инструменты через XML:
+\`<tool name="название" параметр1="значение" />\`
 
-Когда пользователь говорит о деньгах, доходах, расходах — СРАЗУ вызови finance_add.
-Когда упоминает задачу, дело, нужно сделать — СРАЗУ вызови task_create.
-Когда хочет запомнить что-то или сохранить заметку — СРАЗУ вызови note_save.
-Когда спрашивает что-то актуальное — СРАЗУ вызови search.
-Когда говорит что-то о себе (имя, город, работа) — СРАЗУ вызови memory_save.
+${toolList}
 
-Синтаксис вызова: [TOOL:название|аргументы]
+## Правила
+- Вызывай инструменты СРАЗУ, не жди подтверждения
+- Упомянул деньги/расход → finance_add
+- Упомянул задачу → task_create  
+- Хочет запомнить → note_save или memory_save
+- Вопрос о текущих событиях → web_search
+- Можно несколько инструментов за раз
 
-Доступные инструменты:
-- [TOOL:search|запрос] — поиск в интернете
-- [TOOL:finance_add|income|сумма|категория|описание] — записать доход
-- [TOOL:finance_add|expense|сумма|категория|описание] — записать расход
-- [TOOL:task_create|название|приоритет] — создать задачу (приоритет: high/medium/low)
-- [TOOL:note_save|заголовок|текст] — сохранить заметку
-- [TOOL:memory_save|ключ|значение] — запомнить факт о пользователе
-- [TOOL:reminder_set|текст|минуты] — поставить напоминание
+Пример:
+Пользователь: "потратил 50000 на продукты"
+<tool name="finance_add" type="expense" amount="50000" category="food" note="Продукты" />
+Записал расход 50 000 в категорию "Еда".`;
 
-Примеры:
-Пользователь: "пришла зарплата 5000"
-Ответ: Записал твою зарплату! [TOOL:finance_add|income|5000|salary|Зарплата]
-
-Пользователь: "нужно купить молоко"
-Ответ: Добавил в задачи! [TOOL:task_create|Купить молоко|low]
-
-Пользователь: "потратил 200 на еду"
-Ответ: Записал расход! [TOOL:finance_add|expense|200|food|Еда]
-
-ВАЖНО: Сначала скажи что делаешь, потом вызови инструмент. Не жди подтверждения — действуй сразу.`);
-
-  return sections.join('\n\n');
+  return prompt;
 }
 
-// ── Tool call parser ──────────────────────────────────────────────────────────
+// ── Главная функция — цикл инструментов ──────────────────────────────────────
 
-async function executeToolCalls(uid: number, text: string): Promise<{ text: string; toolResults: string[] }> {
-  const toolRegex = /\[TOOL:([^\]|]+)\|?([^\]]*)\]/g;
-  const results: string[] = [];
-  let processedText = text;
+export async function execute(uid: number, input: string, hasImage = false): Promise<string> {
+  autoExtract(uid, input);
+  const systemPrompt = buildSystemPrompt(uid);
+  const history = getHistory(uid, 20);
+  let messages: Array<{role:'user'|'assistant'|'system'; content:string}> = [
+    ...history.map(h=>({ role:h.role as 'user'|'assistant', content:h.content })),
+    { role:'user', content:input },
+  ];
 
-  let match;
-  while ((match = toolRegex.exec(text)) !== null) {
-    const [fullMatch, toolName, args] = match;
-    const tool = TOOLS.find(t => t.name === toolName.trim());
-    if (!tool) continue;
+  let finalResponse = '';
+  for (let iter=0; iter<8; iter++) {
+    let response: string;
+    try { response = await chat(uid, messages, systemPrompt, hasImage); }
+    catch (e:any) { return `Ошибка AI: ${e.message}`; }
 
-    try {
-      const result = await tool.handler(uid, args || '');
-      results.push(`[${toolName}]: ${result}`);
-      processedText = processedText.replace(fullMatch, `\n> ${result}\n`);
-    } catch (e: any) {
-      const err = `[${toolName}]: Error — ${e.message}`;
-      results.push(err);
-      processedText = processedText.replace(fullMatch, '');
-    }
-  }
+    const toolCalls = parseToolCalls(response);
+    if (toolCalls.length===0) { finalResponse=response; break; }
 
-  return { text: processedText.trim(), toolResults: results };
-}
-
-// ── Main execute function ─────────────────────────────────────────────────────
-
-export async function execute(userId: number, input: string, hasImage = false): Promise<string> {
-  try {
-    // Auto-extract facts from user message
-    autoExtract(userId, input);
-
-    const systemPrompt = buildSystemPrompt(userId);
-    const history = getHistory(userId, 20);
-
-    const messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = [
-      ...history.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
-      { role: 'user', content: input },
-    ];
-
-    let response = await chat(userId, messages, systemPrompt, hasImage);
-
-    // Execute any tool calls in response
-    const { text: processedResponse } = await executeToolCalls(userId, response);
-    const finalResponse = processedResponse || response;
-
-    // If tools were called, do a follow-up with results
-    if (processedResponse !== response && processedResponse.includes('>')) {
-      const followUpMessages = [
-        ...messages,
-        { role: 'assistant' as const, content: response },
-        { role: 'user' as const, content: `Tool results received. Summarize what was done and what the result is for the user.` },
-      ];
-      const followUp = await chat(userId, followUpMessages, systemPrompt);
-      saveMessage(userId, 'user', input);
-      saveMessage(userId, 'assistant', followUp);
-      return followUp;
+    const toolResults: string[] = [];
+    for (const call of toolCalls) {
+      const tool = TOOLS.find(t=>t.name===call.tool);
+      if (!tool) { toolResults.push(`[${call.tool}]: Инструмент не найден`); continue; }
+      try {
+        console.log(`[tool] ${call.tool}`, call.args);
+        const result = await tool.handler(uid, call.args);
+        toolResults.push(`[${call.tool}]: ${result}`);
+      } catch (e:any) { toolResults.push(`[${call.tool}]: Ошибка — ${e.message}`); }
     }
 
-    saveMessage(userId, 'user', input);
-    saveMessage(userId, 'assistant', finalResponse);
-
-    return finalResponse;
-  } catch (error: any) {
-    console.error('Execute error:', error);
-    return `Ошибка: ${error.message || 'Что-то пошло не так. Попробуй ещё раз.'}`;
+    const cleanResponse = stripToolCalls(response);
+    if (cleanResponse) finalResponse = cleanResponse;
+    messages.push({ role:'assistant', content:response });
+    messages.push({ role:'user', content:`Результаты:\n${toolResults.join('\n')}` });
   }
-}
 
-// ── Subagent runner (OpenClaw-style background tasks) ─────────────────────────
+  const result = stripToolCalls(finalResponse) || finalResponse;
+  saveMessage(uid, 'user', input);
+  saveMessage(uid, 'assistant', result);
+  return result;
+}
 
 export async function runSubagent(uid: number, task: string, bot: any): Promise<string> {
-  const runId = require('crypto').randomUUID().slice(0, 8);
-
-  db.prepare(`INSERT INTO subagent_runs (id, uid, task, status) VALUES (?,?,?,'running')`).run(runId, uid, task);
-
-  // Notify user
-  try {
-    await bot.api.sendMessage(uid, `Started background task [${runId}]:\n${task.slice(0, 100)}`);
-  } catch {}
-
-  // Run async
-  (async () => {
+  const runId = require('crypto').randomUUID().slice(0,8);
+  db.prepare(`INSERT INTO subagent_runs (id,uid,task,status) VALUES (?,?,?,'running')`).run(runId,uid,task);
+  try { await bot.api.sendMessage(uid,`Запущена задача [${runId}]:\n${task.slice(0,100)}`); } catch {}
+  (async()=>{
     try {
-      const systemPrompt = buildSystemPrompt(uid) + '\n\nYou are running as a background subagent. Complete the task autonomously.';
-      const messages = [{ role: 'user' as const, content: task }];
-      const result = await chat(uid, messages, systemPrompt);
-
-      db.prepare(`UPDATE subagent_runs SET status='done', result=?, finished_at=datetime('now') WHERE id=?`).run(result.slice(0, 2000), runId);
-
-      await bot.api.sendMessage(uid, `Subagent [${runId}] done:\n\n${result.slice(0, 3000)}`);
-    } catch (e: any) {
-      db.prepare(`UPDATE subagent_runs SET status='error', error=?, finished_at=datetime('now') WHERE id=?`).run(e.message, runId);
-      await bot.api.sendMessage(uid, `Subagent [${runId}] failed: ${e.message}`).catch(() => {});
+      const result = await execute(uid, task);
+      db.prepare(`UPDATE subagent_runs SET status='done',result=?,finished_at=datetime('now') WHERE id=?`).run(result.slice(0,2000),runId);
+      await bot.api.sendMessage(uid,`Задача [${runId}] выполнена:\n\n${result.slice(0,3000)}`);
+    } catch(e:any) {
+      db.prepare(`UPDATE subagent_runs SET status='error',error=?,finished_at=datetime('now') WHERE id=?`).run(e.message,runId);
+      await bot.api.sendMessage(uid,`Задача [${runId}] упала: ${e.message}`).catch(()=>{});
     }
   })();
-
   return runId;
 }
 
