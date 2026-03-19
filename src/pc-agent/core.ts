@@ -1,4 +1,4 @@
-// NEXUM PC Agent Core - OpenClaw analog with secure token handling
+// NEXUM PC Agent Core - Secure token handling
 
 import WebSocket from "ws";
 

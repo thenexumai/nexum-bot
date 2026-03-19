@@ -1,4 +1,4 @@
-// NEXUM Draft Stream — adapted from OpenClaw lane-delivery architecture
+// NEXUM Draft Stream - Message delivery system
 // Streams AI responses progressively to Telegram (edit-on-update)
 
 import type { Bot } from 'grammy';
@@ -54,7 +54,7 @@ export async function createDraftStream(params: {
       lastEdited = text;
     } catch (e: any) {
       if (e?.description?.includes('not modified')) return;
-      // Parse error — try plain text
+      // Parse error - try plain text
       try {
         await bot.api.editMessageText(chatId, statusMsg.message_id, text + ' ▋');
         lastEdited = text;

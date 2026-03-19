@@ -1,3 +1,6 @@
+// NEXUM AI Router
+// Multi-provider AI chat with fallback chain
+
 import { config, getKey } from '../core/config';
 import { db } from '../core/db';
 
@@ -11,8 +14,7 @@ function getUserApiKey(uid: number, provider: string): string | null {
   return row?.api_key || null;
 }
 
-// ── Provider callers ──────────────────────────────────────────────────────────
-
+// Provider callers
 async function cerebras(msgs: Message[], key: string, system: string): Promise<string> {
   const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
     method: 'POST',
@@ -37,7 +39,6 @@ async function gemini(msgs: Message[], key: string, system: string, vision = fal
   const model = vision ? 'gemini-1.5-flash' : 'gemini-1.5-flash';
   const contents = msgs.map(m => {
     if (typeof m.content === 'string') return { role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] };
-    // Vision message
     const parts = (m.content as any[]).map((c: any) => {
       if (c.type === 'image_url') {
         const b64 = c.image_url.url.replace(/^data:[^;]+;base64,/, '');
@@ -48,26 +49,14 @@ async function gemini(msgs: Message[], key: string, system: string, vision = fal
     });
     return { role: 'user', parts };
   });
+  
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents, systemInstruction: { parts: [{ text: system }] }, generationConfig: { maxOutputTokens: 2048, temperature: 0.7 } }),
+    body: JSON.stringify({ contents, systemInstruction: { role: 'user', parts: [{ text: system }] } }),
   });
-  if (!r.ok) throw new Error(`Gemini ${r.status}: ${await r.text().catch(()=>'')}`);
-  const json = await r.json() as any;
-  const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('Gemini: empty response');
-  return text;
-}
-
-async function openrouter(msgs: Message[], key: string, system: string): Promise<string> {
-  const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://nexum.ai' },
-    body: JSON.stringify({ model: 'meta-llama/llama-3.3-70b-instruct', messages: [{ role:'system', content:system }, ...msgs], max_tokens: 2048 }),
-  });
-  if (!r.ok) throw new Error(`OpenRouter ${r.status}`);
-  return ((await r.json()) as any).choices[0].message.content;
+  if (!r.ok) throw new Error(`Gemini ${r.status}`);
+  return ((await r.json()) as any).candidates[0].content.parts[0].text;
 }
 
 async function deepseek(msgs: Message[], key: string, system: string): Promise<string> {
@@ -84,19 +73,29 @@ async function claudeAI(msgs: Message[], key: string, system: string): Promise<s
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'claude-3-5-sonnet-20241022', max_tokens: 2048, system, messages: msgs.map(m => ({ role: m.role, content: m.content })) }),
+    body: JSON.stringify({ model: 'claude-3-haiku-20240307', max_tokens: 2048, system, messages: msgs }),
   });
   if (!r.ok) throw new Error(`Claude ${r.status}`);
   return ((await r.json()) as any).content[0].text;
 }
 
 async function grok(msgs: Message[], key: string, system: string): Promise<string> {
-  const r = await fetch('https://api.x.ai/v1/chat/completions', {
+  const r = await fetch('https://api.grok.com/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'grok-2-latest', messages: [{ role:'system', content:system }, ...msgs], max_tokens: 2048 }),
+    body: JSON.stringify({ model: 'grok-2-1212', messages: [{ role:'system', content:system }, ...msgs], max_tokens: 2048 }),
   });
   if (!r.ok) throw new Error(`Grok ${r.status}`);
+  return ((await r.json()) as any).choices[0].message.content;
+}
+
+async function openrouter(msgs: Message[], key: string, system: string): Promise<string> {
+  const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: 'anthropic/claude-3-haiku', messages: [{ role:'system', content:system }, ...msgs], max_tokens: 2048 }),
+  });
+  if (!r.ok) throw new Error(`OpenRouter ${r.status}`);
   return ((await r.json()) as any).choices[0].message.content;
 }
 
@@ -120,11 +119,11 @@ async function together(msgs: Message[], key: string, system: string): Promise<s
   return ((await r.json()) as any).choices[0].message.content;
 }
 
-// ── Main chat function with OpenClaw-style fallback chain ─────────────────────
+// Main chat function with fallback chain
 export async function chat(uid: number, messages: Message[], system: string, hasImage = false): Promise<string> {
   const errors: string[] = [];
 
-  // 1. User's own keys go first (OpenClaw pattern)
+  // 1. User's own API keys first (highest priority)
   const userProviders: Array<[string, () => Promise<string>]> = [];
   const uCerebras = getUserApiKey(uid, 'cerebras'); if (uCerebras) userProviders.push(['cerebras', () => cerebras(messages, uCerebras, system)]);
   const uGroq     = getUserApiKey(uid, 'groq');     if (uGroq)     userProviders.push(['groq',     () => groq(messages, uGroq, system)]);
@@ -148,7 +147,6 @@ export async function chat(uid: number, messages: Message[], system: string, has
       try { return await gemini(messages, gKey, system, true); }
       catch (e: any) { errors.push(`gemini_vision: ${e.message?.slice(0,60)}`); }
     }
-    // Fallback: strip image and process as text
     const textMessages = messages.map(m => ({
       ...m,
       content: Array.isArray(m.content)
@@ -158,7 +156,7 @@ export async function chat(uid: number, messages: Message[], system: string, has
     return await chat(uid, textMessages, system + '\n[Note: image could not be processed, describe what you would expect]', false);
   }
 
-  // 3. System key round-robin fallback chain (OpenClaw-style)
+  // 3. System API keys with fallback chain
   const k = (p: keyof typeof config.ai) => getKey(p);
   const chain: Array<[string, () => Promise<string>]> = [];
 

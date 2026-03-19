@@ -210,7 +210,7 @@ export function startServer(bot?: any) {
     res.json({ ok:true, data:users });
   });
 
-  // ── Approval API (OpenClaw-style) ─────────────────────────────────────────
+  // Approval API
   app.post('/api/approval/:id/approve', (req, res) => {
     const { id } = req.params;
     const uid = getUid(req);
@@ -314,7 +314,7 @@ export function startServer(bot?: any) {
   return app;
 }
 
-// ── Approval system (OpenClaw-style) ──────────────────────────────────────────
+// Approval system
 // Pending approvals map: id → { resolve, command, uid }
 export const pendingApprovals = new Map<string, {
   resolve: (approved: boolean) => void;

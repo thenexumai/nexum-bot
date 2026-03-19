@@ -1,4 +1,4 @@
-// NEXUM PC Agent CLI - OpenClaw-style interface
+// NEXUM PC Agent CLI - Command-line interface
 
 import { NEXUMAgentCore } from "./core";
 import readline from "readline";
