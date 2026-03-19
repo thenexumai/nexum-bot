@@ -1,4 +1,4 @@
-// NEXUM AI Router — multi-provider with full fallback chain
+// NEXUM AI Router — multi-provider с полным fallback и реальным стримингом токенов
 
 import { config, getKey } from '../core/config';
 import { db } from '../core/db';
@@ -7,6 +7,9 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string | any[];
 }
+
+// Колбек для стриминга токенов — как в OpenClaw
+export type TokenCallback = (token: string) => void;
 
 function getUserApiKey(uid: number, provider: string): string | null {
   const row = db.prepare('SELECT api_key FROM user_api_keys WHERE uid=? AND provider=?').get(uid, provider) as any;
@@ -131,13 +134,11 @@ export async function chat(uid: number, messages: Message[], system: string, has
   const uGrok     = getUserApiKey(uid, 'grok');     if (uGrok)     userPairs.push(['grok',        () => grokAI(messages, uGrok, system)]);
 
   for (const [name, fn] of userPairs) {
-    try {
-      console.log(`[ai] user_key provider=${name} uid=${uid}`);
-      return await fn();
-    } catch (e: any) { errors.push(`user_${name}: ${e.message?.slice(0,60)}`); }
+    try { console.log(`[ai] user_key provider=${name} uid=${uid}`); return await fn(); }
+    catch (e: any) { errors.push(`user_${name}: ${e.message?.slice(0,60)}`); }
   }
 
-  // 2. Vision-capable for images
+  // 2. Vision for images
   if (hasImage) {
     const gKey = getKey('gemini');
     if (gKey) {
@@ -167,12 +168,118 @@ export async function chat(uid: number, messages: Message[], system: string, has
   if (k('claude'))     chain.push(['claude',      () => claudeAI(messages,   k('claude')!,    system)]);
 
   for (const [name, fn] of chain) {
-    try {
-      console.log(`[ai] system provider=${name}`);
-      return await fn();
-    } catch (e: any) { errors.push(`${name}: ${e.message?.slice(0,60)}`); }
+    try { console.log(`[ai] system provider=${name}`); return await fn(); }
+    catch (e: any) { errors.push(`${name}: ${e.message?.slice(0,60)}`); }
   }
 
   console.error('[ai] all providers failed:', errors);
   throw new Error(`Все AI провайдеры недоступны.\n${errors.slice(0,3).join(', ')}`);
+}
+
+// ── Streaming chat — токены приходят через onToken колбек (как OpenClaw) ──────
+// Используем Groq/Cerebras которые поддерживают SSE streaming
+
+export async function chatStreaming(
+  uid: number,
+  messages: Message[],
+  system: string,
+  onToken: TokenCallback,
+): Promise<string> {
+  // Try Groq streaming first (fastest SSE)
+  const groqKey = getUserApiKey(uid, 'groq') || getKey('groq');
+  if (groqKey) {
+    try {
+      return await streamGroq(messages, groqKey, system, onToken);
+    } catch (e: any) {
+      console.warn('[stream] groq failed, fallback to non-streaming:', e.message?.slice(0,60));
+    }
+  }
+
+  // Try Cerebras streaming
+  const cbKey = getUserApiKey(uid, 'cerebras') || getKey('cerebras');
+  if (cbKey) {
+    try {
+      return await streamCerebras(messages, cbKey, system, onToken);
+    } catch (e: any) {
+      console.warn('[stream] cerebras failed:', e.message?.slice(0,60));
+    }
+  }
+
+  // Fallback — non-streaming, simulate token delivery
+  const result = await chat(uid, messages, system);
+  // Simulate streaming by delivering result in chunks
+  const words = result.split(' ');
+  let acc = '';
+  for (const word of words) {
+    acc += (acc ? ' ' : '') + word;
+    onToken(acc);
+    await new Promise(r => setTimeout(r, 20));
+  }
+  return result;
+}
+
+async function streamGroq(msgs: Message[], key: string, system: string, onToken: TokenCallback): Promise<string> {
+  const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages: [{ role: 'system', content: system }, ...msgs],
+      max_tokens: 2048,
+      temperature: 0.7,
+      stream: true,
+    }),
+  });
+  if (!r.ok) throw new Error(`Groq ${r.status}: ${await r.text().catch(() => '')}`);
+  return readSSEStream(r, onToken);
+}
+
+async function streamCerebras(msgs: Message[], key: string, system: string, onToken: TokenCallback): Promise<string> {
+  const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b',
+      messages: [{ role: 'system', content: system }, ...msgs],
+      max_tokens: 2048,
+      stream: true,
+    }),
+  });
+  if (!r.ok) throw new Error(`Cerebras ${r.status}: ${await r.text().catch(() => '')}`);
+  return readSSEStream(r, onToken);
+}
+
+// Parse SSE stream — standard OpenAI format used by Groq/Cerebras/etc
+async function readSSEStream(response: Response, onToken: TokenCallback): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let full = '';
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const data = line.slice(6).trim();
+      if (data === '[DONE]') break;
+      try {
+        const parsed = JSON.parse(data);
+        const token = parsed.choices?.[0]?.delta?.content;
+        if (token) {
+          full += token;
+          onToken(full); // Pass accumulated text like OpenClaw does
+        }
+      } catch { /* ignore parse errors */ }
+    }
+  }
+
+  return full || 'Нет ответа';
 }
