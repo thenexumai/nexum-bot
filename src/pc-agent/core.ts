@@ -40,7 +40,7 @@ export class NEXUMAgentCore {
       this.ws = new WebSocket(this.config.botUrl);
       
       this.ws.on("open", () => this.handleOpen());
-      this.ws.on("message", (data) => this.handleMessage(data));
+      this.ws.on("message", (data: any) => this.handleMessage(data.toString()));
       this.ws.on("close", () => this.handleClose());
       this.ws.on("error", (error) => this.handleError(error));
       

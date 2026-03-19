@@ -108,24 +108,21 @@ export const setupCommands = (bot: Bot) => {
       
       if (fs.existsSync(agentPath)) {
         await ctx.replyWithDocument(
-          { source: fs.createReadStream(agentPath), filename: `nexum_agent_${code}.py` },
+          { url: `file://${agentPath}` } as any,
           { 
-            caption: `🔗 *NEXUM PC Agent*\n\nПаринг код: *${code}*\n\nУстановка:\n\`pip install websocket-client\`\n\nЗапуск:\n\`python nexum_agent_${code}.py ${code}\``,
+            caption: `🔗 *NEXUM PC Agent*\n\nПаринг код: *${code}*`,
             parse_mode: "Markdown"
           }
         );
       } else {
         await ctx.reply(
-          `🔗 *PC Agent Pairing*\n\nCode: *${code}*\n\n\`python nexum_agent.py ${code}\``,
+          `🔗 *PC Agent Pairing*\n\nCode: *${code}*`,
           { parse_mode: "Markdown" }
         );
       }
     } catch (error) {
       console.error("File send error:", error);
-      await ctx.reply(
-        `🔗 *PC Agent Pairing*\n\nCode: *${code}*\n\n\`python nexum_agent.py ${code}\``,
-        { parse_mode: "Markdown" }
-      );
+      await ctx.reply(`🔗 Code: *${code}*`, { parse_mode: "Markdown" });
     }
   });
 

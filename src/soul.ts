@@ -1,7 +1,6 @@
 // NEXUM Soul System - Per-user personalization with admin support
-// Each user gets their own personalized AI experience
 
-import { config } from "../core/config";
+import { config } from "./core/config";
 
 interface UserMemory {
   name?: string;
@@ -20,15 +19,12 @@ interface UserSoul {
   lastActive: number;
 }
 
-// In-memory user souls - ISOLATED per user
 const userSouls = new Map<number, UserSoul>();
 
-// Check if user is admin
 export const isAdmin = (userId: number): boolean => {
   return config.adminIds.includes(userId);
 };
 
-// Get user's personalized soul - ISOLATED
 export const getUserSoul = (userId: number): UserSoul => {
   if (!userSouls.has(userId)) {
     userSouls.set(userId, {
@@ -50,7 +46,6 @@ export const getUserSoul = (userId: number): UserSoul => {
   return soul;
 };
 
-// Add to user's isolated memory
 export const addToMemory = (
   userId: number,
   category: keyof UserMemory,
@@ -67,7 +62,6 @@ export const addToMemory = (
   }
 };
 
-// Add to user's isolated session context
 export const addToContext = (
   userId: number,
   role: string,
@@ -81,13 +75,11 @@ export const addToContext = (
   }
 };
 
-// Clear user's own context only
 export const clearContext = (userId: number) => {
   const soul = getUserSoul(userId);
   soul.sessionContext = [];
 };
 
-// Build personalized system prompt for THIS user only
 export const buildSystemPrompt = (userId: number): string => {
   const soul = getUserSoul(userId);
   const { memory } = soul;
@@ -106,12 +98,7 @@ export const buildSystemPrompt = (userId: number): string => {
 8. Запоминай информацию о пользователе`;
 
   if (admin) {
-    prompt += `
-
-⚠️ ТЫ АДМИН! Имеешь доступ к:
-- Управлению системой
-- Просмотру статистики
-- Модерации контента`;
+    prompt += `\n\n⚠️ ТЫ АДМИН! Имеешь доступ к управлению системой и статистике.`;
   }
 
   if (memory.name) {
@@ -126,12 +113,11 @@ export const buildSystemPrompt = (userId: number): string => {
     prompt += `\n\nПроекты: ${memory.projects.join(", ")}`;
   }
 
-  prompt += `\n\n🔒 ВАЖНО: Ты работаешь только с этим пользователем. Никогда не упоминай и не раскрывай данные других юзеров!`;
+  prompt += `\n\n🔒 ВАЖНО: Ты работаешь только с этим пользователем!`;
 
   return prompt;
 };
 
-// Get user stats - ADMIN only can see all
 export const getUserStats = (userId: number) => {
   const soul = getUserSoul(userId);
   return {
@@ -145,7 +131,6 @@ export const getUserStats = (userId: number) => {
   };
 };
 
-// ADMIN: Get all users stats
 export const getAllUsersStats = (): Array<{userId: number, messages: number, lastActive: number}> => {
   const stats: Array<{userId: number, messages: number, lastActive: number}> = [];
   for (const [userId, soul] of userSouls) {
@@ -158,13 +143,11 @@ export const getAllUsersStats = (): Array<{userId: number, messages: number, las
   return stats.sort((a, b) => b.lastActive - a.lastActive);
 };
 
-// Save user's API key - ISOLATED
 export const saveUserApiKey = (userId: number, provider: string, key: string) => {
   const soul = getUserSoul(userId);
   soul.memory.apiKeys[provider] = key;
 };
 
-// Get user's API keys - ISOLATED
 export const getUserApiKeys = (userId: number): Record<string, string> => {
   const soul = getUserSoul(userId);
   return { ...soul.memory.apiKeys };
