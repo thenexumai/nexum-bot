@@ -3,7 +3,6 @@ const FormData = require('form-data');
 const fetch    = require('node-fetch');
 
 export async function transcribeVoice(buf: Buffer, filename = 'voice.ogg'): Promise<string> {
-  // Try Groq first (fastest)
   const groqKey = getKey('groq');
   if (groqKey) {
     try {
@@ -20,8 +19,5 @@ export async function transcribeVoice(buf: Buffer, filename = 'voice.ogg'): Prom
       console.warn('[stt] groq', await r.text());
     } catch (e) { console.warn('[stt] groq error:', e); }
   }
-
-  // Fallback: Cerebras can't do STT, try OpenRouter with whisper (not available)
-  // Return empty so caller can handle gracefully
-  throw new Error('Нет ключа для STT (нужен Groq или OpenAI)');
+  throw new Error('STT unavailable (need Groq key)');
 }

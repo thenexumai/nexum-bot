@@ -66,7 +66,7 @@ db.exec(`
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     uid         INTEGER NOT NULL,
     name        TEXT NOT NULL,
-    emoji       TEXT DEFAULT '🎯',
+    emoji       TEXT DEFAULT '●',
     frequency   TEXT DEFAULT 'daily',
     streak      INTEGER DEFAULT 0,
     best_streak INTEGER DEFAULT 0,
@@ -87,7 +87,7 @@ db.exec(`
     name       TEXT NOT NULL,
     currency   TEXT DEFAULT 'UZS',
     balance    REAL DEFAULT 0,
-    icon       TEXT DEFAULT '💳',
+    icon       TEXT DEFAULT '$',
     created_at TEXT DEFAULT (datetime('now'))
   );
 

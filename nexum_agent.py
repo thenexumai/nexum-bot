@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
 NEXUM PC Agent — connects your computer to NEXUM bot via WebSocket.
-Capabilities: screenshots, mouse/keyboard control, terminal, files, browser, notifications, HTTP.
+Capabilities: screenshots, mouse/keyboard control, terminal, files,
+browser, notifications, HTTP, system info, processes.
 """
-import sys, os, subprocess, platform, json, time, threading, base64, tempfile, pathlib
+import sys, os, subprocess, platform, json, time, threading, base64
+import tempfile, pathlib, asyncio
 
 _PLATFORM = platform.system()  # Windows / Darwin / Linux
 
-# ── Auto-install deps ─────────────────────────────────────────────────────────
+# ── Auto-install deps ──────────────────────────────────────────────────────────
 _REQUIRED = {
     'websockets': 'websockets',
     'psutil':     'psutil',
@@ -19,530 +21,341 @@ _REQUIRED = {
 
 def _ensure_deps():
     for imp, pkg in _REQUIRED.items():
-        try:
-            __import__(imp)
+        try: __import__(imp)
         except ImportError:
-            print(f"📦 Installing {pkg}...")
-            subprocess.run([sys.executable, "-m", "pip", "install", pkg], check=True, capture_output=True)
+            print(f'Installing {pkg}...')
+            subprocess.run([sys.executable, '-m', 'pip', 'install', pkg], check=True, capture_output=True)
 
 _ensure_deps()
 
-import asyncio, websockets, psutil, requests
+import websockets, psutil, requests
 from PIL import ImageGrab, Image
 import pyautogui
 import pyperclip
 
-# ── Config ────────────────────────────────────────────────────────────────────
-CONFIG_FILE   = pathlib.Path.home() / ".nexum_agent.json"
-PLATFORM_NAME = f"{_PLATFORM} {platform.machine()}"
+# ── Config ─────────────────────────────────────────────────────────────────────
+CONFIG_FILE   = pathlib.Path.home() / '.nexum_agent.json'
+PLATFORM_NAME = f'{_PLATFORM} {platform.machine()}'
 DEVICE_ID     = platform.node()
 
 def load_config():
     if CONFIG_FILE.exists():
         try:
-            with open(CONFIG_FILE) as f:
-                return json.load(f)
-        except:
-            pass
+            with open(CONFIG_FILE) as f: return json.load(f)
+        except: pass
     return {}
 
 def save_config(cfg: dict):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(cfg, f, indent=2)
+    with open(CONFIG_FILE, 'w') as f: json.dump(cfg, f, indent=2)
 
 cfg = load_config()
 
-# ── Get server URL ────────────────────────────────────────────────────────────
 def get_server_url():
-    url = cfg.get("server_url", "").strip()
+    url = cfg.get('server_url', '').strip()
+    if not url: url = os.environ.get('NEXUM_SERVER', '').strip()
     if not url:
-        url = os.environ.get("NEXUM_SERVER", "").strip()
-    if not url:
-        print("\n🔗 Enter your NEXUM server URL")
-        print("   Example: wss://nexum-bot-production-ae70.up.railway.app/ws")
-        url = input("   URL: ").strip()
-        if url:
-            cfg["server_url"] = url
-            save_config(cfg)
+        print('\nEnter your NEXUM server WebSocket URL')
+        print('  Example: wss://nexum-bot-production-ae70.up.railway.app/ws')
+        url = input('  URL: ').strip()
+        if url: cfg['server_url'] = url; save_config(cfg)
     return url
 
 SERVER_URL = get_server_url()
 if not SERVER_URL:
-    print("❌ No server URL provided. Exiting.")
+    print('No server URL. Exiting.')
     sys.exit(1)
 
-# ── Screenshot ────────────────────────────────────────────────────────────────
+# ── Screenshot ─────────────────────────────────────────────────────────────────
 def take_screenshot(region=None) -> str:
-    """Returns base64-encoded PNG screenshot."""
     try:
-        if region and len(region) == 4:
-            img = ImageGrab.grab(bbox=region)
-        else:
-            img = ImageGrab.grab()
-        # Resize if too large
+        img = ImageGrab.grab(bbox=region) if (region and len(region)==4) else ImageGrab.grab()
         w, h = img.size
         if w > 1920:
-            ratio = 1920 / w
-            img = img.resize((int(w*ratio), int(h*ratio)), Image.LANCZOS)
+            ratio = 1920/w; img = img.resize((int(w*ratio), int(h*ratio)), Image.LANCZOS)
         buf = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
         img.save(buf.name, 'PNG', optimize=True)
-        with open(buf.name, 'rb') as f:
-            data = base64.b64encode(f.read()).decode()
+        with open(buf.name, 'rb') as f: data = base64.b64encode(f.read()).decode()
         os.unlink(buf.name)
         return data
-    except Exception as e:
-        raise RuntimeError(f"Screenshot failed: {e}")
+    except Exception as e: raise RuntimeError(f'Screenshot failed: {e}')
 
-# ── Run command ───────────────────────────────────────────────────────────────
+# ── Run command ────────────────────────────────────────────────────────────────
 def run_command(cmd: str, timeout=30) -> str:
-    """Execute shell command and return output."""
     try:
-        result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True,
-            timeout=timeout,
-            encoding='utf-8', errors='replace'
-        )
-        out = result.stdout.strip()
-        err = result.stderr.strip()
-        if out and err:
-            return f"{out}\n\nSTDERR:\n{err}"
-        return out or err or "(no output)"
-    except subprocess.TimeoutExpired:
-        return f"⏱ Command timed out after {timeout}s"
-    except Exception as e:
-        return f"❌ Error: {e}"
+        shell = True
+        result = subprocess.run(cmd, shell=shell, capture_output=True, text=True, timeout=timeout)
+        out = (result.stdout + result.stderr).strip()
+        return out[:4000] if out else '(no output)'
+    except subprocess.TimeoutExpired: return f'Command timed out after {timeout}s'
+    except Exception as e: return f'Error: {e}'
 
-# Background processes
-_bg_procs: dict = {}
-_bg_id = 0
-
-def run_background(cmd: str) -> str:
-    global _bg_id
-    _bg_id += 1
-    proc_id = f"bg_{_bg_id}"
-    proc = subprocess.Popen(cmd, shell=True)
-    _bg_procs[proc_id] = {'proc': proc, 'cmd': cmd, 'started': time.time()}
-    return f"🔄 Started background process `{proc_id}`\nPID: {proc.pid}\nCommand: {cmd}"
-
-def list_bg() -> str:
-    if not _bg_procs:
-        return "No background processes"
-    lines = []
-    for pid, info in _bg_procs.items():
-        status = "running" if info['proc'].poll() is None else f"exited({info['proc'].returncode})"
-        lines.append(f"• `{pid}` [{status}] {info['cmd'][:60]}")
-    return "\n".join(lines)
-
-def stop_bg(proc_id: str) -> str:
-    if proc_id not in _bg_procs:
-        return f"❌ Process `{proc_id}` not found"
-    _bg_procs[proc_id]['proc'].terminate()
-    del _bg_procs[proc_id]
-    return f"✅ Stopped `{proc_id}`"
-
-# ── System info ───────────────────────────────────────────────────────────────
+# ── System info ────────────────────────────────────────────────────────────────
 def get_sysinfo() -> str:
-    cpu    = psutil.cpu_percent(interval=1)
-    mem    = psutil.virtual_memory()
-    disk   = psutil.disk_usage('/')
-    net    = psutil.net_io_counters()
-    boot   = time.time() - psutil.boot_time()
-    uptime = f"{int(boot//3600)}h {int((boot%3600)//60)}m"
+    try:
+        cpu = psutil.cpu_percent(interval=1)
+        mem = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        return (
+            f'Platform: {PLATFORM_NAME}\n'
+            f'CPU: {cpu}%\n'
+            f'RAM: {mem.percent}% ({round(mem.used/1e9,1)}GB / {round(mem.total/1e9,1)}GB)\n'
+            f'Disk: {disk.percent}% ({round(disk.used/1e9,1)}GB / {round(disk.total/1e9,1)}GB)\n'
+            f'Boot: {time.ctime(psutil.boot_time())}'
+        )
+    except Exception as e: return f'Error: {e}'
 
-    gb = 1024**3
-    return (
-        f"💻 **System Info**\n\n"
-        f"🖥 OS: {_PLATFORM} {platform.version()[:40]}\n"
-        f"📱 Device: {DEVICE_ID}\n"
-        f"⚙️ CPU: {cpu}% ({psutil.cpu_count()} cores)\n"
-        f"🧠 RAM: {mem.used/gb:.1f}/{mem.total/gb:.1f} GB ({mem.percent}%)\n"
-        f"💾 Disk: {disk.used/gb:.1f}/{disk.total/gb:.1f} GB ({disk.percent}%)\n"
-        f"🌐 Net: ↑{net.bytes_sent/1024/1024:.1f}MB ↓{net.bytes_recv/1024/1024:.1f}MB\n"
-        f"⏱ Uptime: {uptime}"
-    )
+# ── Process list ───────────────────────────────────────────────────────────────
+def get_processes(limit=20) -> str:
+    try:
+        procs = sorted(psutil.process_iter(['pid','name','cpu_percent','memory_percent']),
+                      key=lambda p: p.info['cpu_percent'] or 0, reverse=True)
+        lines = [f"{p.info['pid']:6d}  {(p.info['cpu_percent'] or 0):5.1f}%  {(p.info['memory_percent'] or 0):5.1f}%  {p.info['name']}" for p in procs[:limit]]
+        return 'PID     CPU    MEM    NAME\n' + '\n'.join(lines)
+    except Exception as e: return f'Error: {e}'
 
-def get_processes(limit=15) -> str:
-    procs = sorted(psutil.process_iter(['pid','name','cpu_percent','memory_percent','status']),
-                   key=lambda p: p.info.get('cpu_percent',0) or 0, reverse=True)[:limit]
-    lines = [f"{'PID':<8} {'CPU%':<7} {'MEM%':<7} {'NAME'}"]
-    lines.append("─" * 40)
-    for p in procs:
-        i = p.info
-        lines.append(f"{i['pid']:<8} {(i['cpu_percent'] or 0):<7.1f} {(i['memory_percent'] or 0):<7.1f} {(i['name'] or '?')[:30]}")
-    return "```\n" + "\n".join(lines) + "\n```"
-
+# ── Kill process ───────────────────────────────────────────────────────────────
 def kill_process(target: str) -> str:
     killed = []
-    for p in psutil.process_iter(['pid', 'name']):
+    for p in psutil.process_iter(['pid','name']):
         try:
-            if str(p.pid) == target or target.lower() in (p.info['name'] or '').lower():
-                p.terminate()
-                killed.append(f"{p.info['name']} (PID {p.pid})")
-        except:
-            pass
-    return f"✅ Killed: {', '.join(killed)}" if killed else f"❌ Process not found: {target}"
+            if target.isdigit():
+                if p.pid == int(target): p.kill(); killed.append(str(p.pid))
+            elif target.lower() in p.name().lower():
+                p.kill(); killed.append(p.name())
+        except: pass
+    return f'Killed: {", ".join(killed)}' if killed else f'Process not found: {target}'
 
-# ── Filesystem ────────────────────────────────────────────────────────────────
-def filesystem_op(op: str, path: str = "~", content: str = "") -> str:
-    path = os.path.expanduser(path)
+# ── File operations ────────────────────────────────────────────────────────────
+def file_op(op: str, path: str, content: str = '') -> str:
     try:
-        if op == "list":
-            entries = sorted(os.listdir(path))
-            dirs  = [f"📁 {e}" for e in entries if os.path.isdir(os.path.join(path, e))]
-            files = [f"📄 {e}" for e in entries if os.path.isfile(os.path.join(path, e))]
-            return f"📂 {path}\n\n" + "\n".join(dirs + files) or "(empty)"
-        elif op == "read":
-            with open(path, encoding='utf-8', errors='replace') as f:
-                data = f.read(8000)
-            return f"📄 `{path}`:\n```\n{data}\n```"
-        elif op == "write":
-            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-            with open(path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            return f"✅ Written to {path}"
-        elif op == "delete":
-            if os.path.isfile(path):
-                os.remove(path)
-            else:
-                import shutil
-                shutil.rmtree(path)
-            return f"🗑 Deleted: {path}"
-        elif op == "exists":
-            return f"{'✅ Exists' if os.path.exists(path) else '❌ Not found'}: {path}"
-        elif op == "mkdir":
-            os.makedirs(path, exist_ok=True)
-            return f"✅ Created directory: {path}"
-        else:
-            return f"❌ Unknown op: {op}"
-    except Exception as e:
-        return f"❌ Error: {e}"
+        p = pathlib.Path(os.path.expanduser(path))
+        if op == 'list':
+            items = list(p.iterdir()) if p.is_dir() else []
+            return '\n'.join(f"{'[D]' if i.is_dir() else '[F]'} {i.name}" for i in sorted(items)[:50])
+        elif op == 'read':
+            return p.read_text(encoding='utf-8', errors='replace')[:3000]
+        elif op == 'write':
+            p.parent.mkdir(parents=True, exist_ok=True); p.write_text(content, encoding='utf-8'); return f'Written: {path}'
+        elif op == 'delete':
+            p.unlink() if p.is_file() else __import__('shutil').rmtree(p); return f'Deleted: {path}'
+        else: return f'Unknown op: {op}'
+    except Exception as e: return f'Error: {e}'
 
-# ── Mouse & Keyboard ──────────────────────────────────────────────────────────
-def mouse_action(action: str, x=0, y=0, text="") -> str:
-    try:
-        pyautogui.FAILSAFE = False
-        if action == "move":
-            pyautogui.moveTo(x, y, duration=0.3)
-            return f"✅ Mouse moved to ({x}, {y})"
-        elif action == "click":
-            pyautogui.click(x, y)
-            return f"✅ Clicked at ({x}, {y})"
-        elif action == "double":
-            pyautogui.doubleClick(x, y)
-            return f"✅ Double-clicked at ({x}, {y})"
-        elif action == "right":
-            pyautogui.rightClick(x, y)
-            return f"✅ Right-clicked at ({x}, {y})"
-        elif action == "scroll":
-            pyautogui.scroll(int(text) if text else 3, x=x, y=y)
-            return f"✅ Scrolled"
-        elif action == "drag":
-            parts = text.split(',') if text else []
-            if len(parts) >= 2:
-                pyautogui.dragTo(int(parts[0]), int(parts[1]), duration=0.5)
-                return f"✅ Dragged to ({parts[0]}, {parts[1]})"
-        elif action == "position":
-            pos = pyautogui.position()
-            return f"🖱 Mouse position: ({pos.x}, {pos.y})"
-        return f"❌ Unknown action: {action}"
-    except Exception as e:
-        return f"❌ Mouse error: {e}"
+# ── Clipboard ──────────────────────────────────────────────────────────────────
+def get_clipboard() -> str:
+    try: return pyperclip.paste()[:2000]
+    except Exception as e: return f'Error: {e}'
 
-def keyboard_action(action: str, text="") -> str:
-    try:
-        if action == "type":
-            pyautogui.write(text, interval=0.02)
-            return f"✅ Typed: {text[:50]}"
-        elif action == "hotkey":
-            keys = [k.strip() for k in text.split('+')]
-            pyautogui.hotkey(*keys)
-            return f"✅ Pressed: {text}"
-        elif action == "press":
-            pyautogui.press(text)
-            return f"✅ Pressed key: {text}"
-        elif action == "typewrite":
-            pyautogui.typewrite(text)
-            return f"✅ Typewritten: {text[:50]}"
-        return f"❌ Unknown action: {action}"
-    except Exception as e:
-        return f"❌ Keyboard error: {e}"
+def set_clipboard(text: str) -> str:
+    try: pyperclip.copy(text); return 'Clipboard set'
+    except Exception as e: return f'Error: {e}'
 
-# ── Clipboard ─────────────────────────────────────────────────────────────────
-def clipboard_op(op: str, text="") -> str:
-    try:
-        if op == "read":
-            content = pyperclip.paste()
-            return f"📋 Clipboard:\n```\n{content[:2000]}\n```" if content else "📋 Clipboard is empty"
-        elif op == "write":
-            pyperclip.copy(text)
-            return f"✅ Copied to clipboard: {text[:100]}"
-        return f"❌ Unknown op: {op}"
-    except Exception as e:
-        return f"❌ Clipboard error: {e}"
-
-# ── Notifications ─────────────────────────────────────────────────────────────
+# ── Notification ───────────────────────────────────────────────────────────────
 def send_notification(title: str, message: str) -> str:
     try:
-        if _PLATFORM == "Windows":
-            subprocess.Popen(['powershell', '-Command',
-                f'Add-Type -AssemblyName System.Windows.Forms; '
-                f'$n = New-Object System.Windows.Forms.NotifyIcon; '
-                f'$n.Icon = [System.Drawing.SystemIcons]::Information; '
-                f'$n.Visible = $True; '
-                f'$n.ShowBalloonTip(5000, "{title}", "{message}", [System.Windows.Forms.ToolTipIcon]::Info)'
-            ])
-        elif _PLATFORM == "Darwin":
+        if _PLATFORM == 'Darwin':
             subprocess.run(['osascript', '-e', f'display notification "{message}" with title "{title}"'])
+        elif _PLATFORM == 'Windows':
+            subprocess.run(['powershell', '-command', f'[System.Windows.Forms.MessageBox]::Show("{message}", "{title}")'])
         else:
             subprocess.run(['notify-send', title, message])
-        return f"✅ Notification sent: {title}"
-    except Exception as e:
-        return f"❌ Notification error: {e}"
+        return 'Notification sent'
+    except Exception as e: return f'Error: {e}'
 
-# ── Network info ──────────────────────────────────────────────────────────────
-def get_network() -> str:
+# ── Mouse / Keyboard ───────────────────────────────────────────────────────────
+def mouse_action(action: str, x: int = 0, y: int = 0) -> str:
     try:
-        interfaces = psutil.net_if_addrs()
-        lines = ["🌐 **Network**\n"]
-        for iface, addrs in list(interfaces.items())[:6]:
-            for addr in addrs:
-                if addr.family.name in ('AF_INET', '2'):
-                    lines.append(f"• {iface}: {addr.address}")
-        # External IP
-        try:
-            ext = requests.get("https://api.ipify.org", timeout=3).text
-            lines.append(f"\n🌍 External IP: {ext}")
-        except:
-            pass
-        return "\n".join(lines)
-    except Exception as e:
-        return f"❌ Network error: {e}"
+        pyautogui.FAILSAFE = False
+        if action == 'move': pyautogui.moveTo(x, y)
+        elif action == 'click': pyautogui.click(x, y)
+        elif action == 'right_click': pyautogui.rightClick(x, y)
+        elif action == 'double_click': pyautogui.doubleClick(x, y)
+        elif action == 'drag': pyautogui.dragTo(x, y, duration=0.5)
+        elif action == 'position':
+            pos = pyautogui.position()
+            return f'Mouse: {pos.x},{pos.y}'
+        return f'Mouse {action} at ({x},{y})'
+    except Exception as e: return f'Error: {e}'
 
-# ── Window management ─────────────────────────────────────────────────────────
-def window_op(op: str, window_id="") -> str:
+def keyboard_type(text: str) -> str:
+    try: pyautogui.write(text, interval=0.02); return f'Typed: {text[:50]}'
+    except Exception as e: return f'Error: {e}'
+
+def hotkey(combo: str) -> str:
     try:
-        if _PLATFORM == "Windows":
-            if op == "list":
-                result = subprocess.run(['powershell', '-Command',
-                    'Get-Process | Where-Object {$_.MainWindowTitle -ne ""} | Select-Object Id,ProcessName,MainWindowTitle | Format-Table -AutoSize'],
-                    capture_output=True, text=True, timeout=10)
-                return f"🪟 Windows:\n```\n{result.stdout[:2000]}\n```"
-            elif op == "focus" and window_id:
-                subprocess.run(['powershell', '-Command', f'(Get-Process | Where-Object {{$_.MainWindowTitle -like "*{window_id}*"}} | Select-Object -First 1).MainWindowHandle | ForEach-Object {{[Microsoft.VisualBasic.Interaction]::AppActivate($_)}}'])
-                return f"✅ Focused window: {window_id}"
-        elif _PLATFORM == "Darwin":
-            if op == "list":
-                result = subprocess.run(['osascript', '-e', 'tell app "System Events" to get name of every window of every process whose visible is true'], capture_output=True, text=True)
-                return f"🪟 Windows:\n{result.stdout[:2000]}"
-        return f"Window operation '{op}' completed"
-    except Exception as e:
-        return f"❌ Window error: {e}"
+        keys = [k.strip() for k in combo.split('+')]
+        pyautogui.hotkey(*keys)
+        return f'Hotkey: {combo}'
+    except Exception as e: return f'Error: {e}'
 
-# ── Browser ───────────────────────────────────────────────────────────────────
-def browser_open(url: str) -> str:
-    try:
-        import webbrowser
-        webbrowser.open(url)
-        return f"✅ Opened in browser: {url}"
-    except Exception as e:
-        return f"❌ Browser error: {e}"
+# ── Browser / App ──────────────────────────────────────────────────────────────
+def open_url(url: str) -> str:
+    try: import webbrowser; webbrowser.open(url); return f'Opened: {url}'
+    except Exception as e: return f'Error: {e}'
 
-# ── HTTP request ──────────────────────────────────────────────────────────────
-def http_request(method: str, url: str, body="") -> str:
-    try:
-        method = method.upper()
-        headers = {'Content-Type': 'application/json', 'User-Agent': 'NEXUM-Agent/12.0'}
-        if method == 'GET':
-            r = requests.get(url, headers=headers, timeout=15)
-        elif method == 'POST':
-            r = requests.post(url, data=body, headers=headers, timeout=15)
-        elif method == 'PUT':
-            r = requests.put(url, data=body, headers=headers, timeout=15)
-        elif method == 'DELETE':
-            r = requests.delete(url, headers=headers, timeout=15)
-        else:
-            return f"❌ Unsupported method: {method}"
-        try:
-            content = r.json()
-            text = json.dumps(content, indent=2, ensure_ascii=False)[:3000]
-        except:
-            text = r.text[:3000]
-        return f"**{method} {url}**\nStatus: {r.status_code}\n```\n{text}\n```"
-    except Exception as e:
-        return f"❌ HTTP error: {e}"
-
-# ── Open app ──────────────────────────────────────────────────────────────────
 def open_app(name: str) -> str:
     try:
-        if _PLATFORM == "Windows":
-            subprocess.Popen(['start', name], shell=True)
-        elif _PLATFORM == "Darwin":
-            subprocess.Popen(['open', '-a', name])
-        else:
-            subprocess.Popen([name])
-        return f"✅ Launched: {name}"
-    except Exception as e:
-        return f"❌ Launch error: {e}"
+        if _PLATFORM == 'Darwin': subprocess.Popen(['open', '-a', name])
+        elif _PLATFORM == 'Windows': subprocess.Popen(['start', name], shell=True)
+        else: subprocess.Popen([name])
+        return f'Opened: {name}'
+    except Exception as e: return f'Error: {e}'
 
-# ── Message handler ───────────────────────────────────────────────────────────
-async def handle_message(msg: dict) -> dict:
-    t      = msg.get("type", "")
-    req_id = msg.get("reqId", "")
-
+# ── HTTP request ───────────────────────────────────────────────────────────────
+def http_request(method: str, url: str, body: str = '') -> str:
     try:
-        if t == "screenshot":
-            data = take_screenshot(msg.get("region"))
-            return {"type": "screenshot_result", "reqId": req_id, "data": data}
+        r = requests.request(method.upper(), url, json=json.loads(body) if body else None, timeout=15)
+        return f'Status: {r.status_code}\n{r.text[:2000]}'
+    except Exception as e: return f'Error: {e}'
 
-        elif t == "run":
-            out = run_command(msg.get("command", "echo ok"))
-            return {"type": "result", "reqId": req_id, "data": out}
+# ── Network info ───────────────────────────────────────────────────────────────
+def get_network() -> str:
+    try:
+        addrs = psutil.net_if_addrs()
+        stats = psutil.net_io_counters()
+        ifaces = []
+        for name, addrs_list in addrs.items():
+            for addr in addrs_list:
+                if addr.family == 2:  # IPv4
+                    ifaces.append(f'{name}: {addr.address}')
+        return '\n'.join(ifaces[:10]) + f'\nSent: {round(stats.bytes_sent/1e6,1)}MB  Recv: {round(stats.bytes_recv/1e6,1)}MB'
+    except Exception as e: return f'Error: {e}'
 
-        elif t == "run_background":
-            out = run_background(msg.get("command", ""))
-            return {"type": "result", "reqId": req_id, "data": out}
+# ── Window management (macOS/Windows) ─────────────────────────────────────────
+def window_op(op: str) -> str:
+    try:
+        if _PLATFORM == 'Darwin':
+            scripts = {
+                'list':     'tell application "System Events" to get name of every process whose background only is false',
+                'minimize': 'tell application "System Events" to keystroke "m" using command down',
+                'fullscreen': 'tell application "System Events" to keystroke "f" using {command down, control down}',
+            }
+            if op in scripts:
+                r = subprocess.run(['osascript', '-e', scripts[op]], capture_output=True, text=True)
+                return r.stdout.strip() or r.stderr.strip() or 'Done'
+        return run_command(f'xdotool {op}' if _PLATFORM == 'Linux' else 'Not supported')
+    except Exception as e: return f'Error: {e}'
 
-        elif t == "bg_list":
-            return {"type": "result", "reqId": req_id, "data": list_bg()}
+# ── WebSocket Agent ────────────────────────────────────────────────────────────
+uid = cfg.get('uid')
+linked = bool(uid)
 
-        elif t == "bg_stop":
-            return {"type": "result", "reqId": req_id, "data": stop_bg(msg.get("proc_id", ""))}
+async def handle_message(ws, msg: dict) -> dict:
+    mtype = msg.get('type')
+    reqId = msg.get('reqId', '')
 
-        elif t == "sysinfo":
-            return {"type": "result", "reqId": req_id, "data": get_sysinfo()}
+    if mtype == 'run':
+        output = run_command(msg.get('command', ''))
+        return {'type': 'result', 'reqId': reqId, 'output': output}
 
-        elif t == "processes":
-            return {"type": "result", "reqId": req_id, "data": get_processes(msg.get("limit", 15))}
+    elif mtype == 'screenshot':
+        data = take_screenshot(msg.get('region'))
+        return {'type': 'screenshot_result', 'reqId': reqId, 'data': data}
 
-        elif t == "kill_process":
-            return {"type": "result", "reqId": req_id, "data": kill_process(msg.get("input", ""))}
+    elif mtype == 'sysinfo':
+        return {'type': 'result', 'reqId': reqId, 'output': get_sysinfo()}
 
-        elif t == "network":
-            return {"type": "result", "reqId": req_id, "data": get_network()}
+    elif mtype == 'ps':
+        return {'type': 'result', 'reqId': reqId, 'output': get_processes()}
 
-        elif t == "filesystem":
-            return {"type": "result", "reqId": req_id, "data": filesystem_op(
-                msg.get("op", "list"), msg.get("path", "~"), msg.get("content", "")
-            )}
+    elif mtype == 'kill':
+        return {'type': 'result', 'reqId': reqId, 'output': kill_process(msg.get('target', ''))}
 
-        elif t == "clipboard":
-            return {"type": "result", "reqId": req_id, "data": clipboard_op(
-                msg.get("op", "read"), msg.get("text", "")
-            )}
+    elif mtype == 'files':
+        return {'type': 'result', 'reqId': reqId, 'output': file_op(msg.get('op','list'), msg.get('path','~'), msg.get('content',''))}
 
-        elif t == "notify":
-            return {"type": "result", "reqId": req_id, "data": send_notification(
-                msg.get("title", "NEXUM"), msg.get("message", "")
-            )}
+    elif mtype == 'clipboard':
+        action = msg.get('action', 'get')
+        output = set_clipboard(msg.get('text','')) if action == 'set' else get_clipboard()
+        return {'type': 'result', 'reqId': reqId, 'output': output}
 
-        elif t == "mouse":
-            return {"type": "result", "reqId": req_id, "data": mouse_action(
-                msg.get("action", "position"), msg.get("x", 0), msg.get("y", 0), msg.get("text", "")
-            )}
+    elif mtype == 'notify':
+        parts = msg.get('message', '').split('|', 1)
+        return {'type': 'result', 'reqId': reqId, 'output': send_notification(parts[0], parts[1] if len(parts)>1 else parts[0])}
 
-        elif t == "keyboard":
-            return {"type": "result", "reqId": req_id, "data": keyboard_action(
-                msg.get("action", "type"), msg.get("text", "")
-            )}
+    elif mtype == 'mouse':
+        return {'type': 'result', 'reqId': reqId, 'output': mouse_action(msg.get('action','click'), msg.get('x',0), msg.get('y',0))}
 
-        elif t == "window":
-            return {"type": "result", "reqId": req_id, "data": window_op(
-                msg.get("op", "list"), msg.get("window_id", "")
-            )}
+    elif mtype == 'keyboard':
+        return {'type': 'result', 'reqId': reqId, 'output': keyboard_type(msg.get('text',''))}
 
-        elif t == "browser":
-            return {"type": "result", "reqId": req_id, "data": browser_open(msg.get("input", ""))}
+    elif mtype == 'hotkey':
+        return {'type': 'result', 'reqId': reqId, 'output': hotkey(msg.get('combo',''))}
 
-        elif t == "open_app":
-            return {"type": "result", "reqId": req_id, "data": open_app(msg.get("input", ""))}
+    elif mtype == 'browser':
+        return {'type': 'result', 'reqId': reqId, 'output': open_url(msg.get('url',''))}
 
-        elif t == "http":
-            return {"type": "result", "reqId": req_id, "data": http_request(
-                msg.get("method", "GET"), msg.get("url", ""), msg.get("body", "")
-            )}
+    elif mtype == 'openapp':
+        return {'type': 'result', 'reqId': reqId, 'output': open_app(msg.get('name',''))}
 
-        else:
-            return {"type": "result", "reqId": req_id, "data": f"❓ Unknown command type: {t}"}
+    elif mtype == 'http':
+        return {'type': 'result', 'reqId': reqId, 'output': http_request(msg.get('method','GET'), msg.get('url',''), msg.get('body',''))}
 
-    except Exception as e:
-        return {"type": "result", "reqId": req_id, "data": f"❌ Error handling {t}: {e}"}
+    elif mtype == 'network':
+        return {'type': 'result', 'reqId': reqId, 'output': get_network()}
 
-# ── WebSocket client ──────────────────────────────────────────────────────────
-async def run_agent():
-    uid = cfg.get("uid")
-    device_id = DEVICE_ID
+    elif mtype == 'window':
+        return {'type': 'result', 'reqId': reqId, 'output': window_op(msg.get('op','list'))}
+
+    elif mtype == 'ping':
+        return {'type': 'pong'}
+
+    elif mtype == 'linked':
+        global uid, linked
+        uid = msg.get('uid')
+        linked = True
+        cfg['uid'] = uid; save_config(cfg)
+        print(f'Linked to Telegram user {uid}')
+        return None
+
+    return {'type': 'error', 'reqId': reqId, 'message': f'Unknown type: {mtype}'}
+
+
+async def run():
+    global uid, linked
+    print(f'NEXUM Agent starting...')
+    print(f'Device: {DEVICE_ID}  Platform: {PLATFORM_NAME}')
+    print(f'Server: {SERVER_URL}')
 
     while True:
         try:
-            print(f"\n🔌 Connecting to {SERVER_URL}...")
-            async with websockets.connect(SERVER_URL, ping_interval=20, ping_timeout=30) as ws:
-                print("✅ Connected!")
+            async with websockets.connect(SERVER_URL, ping_interval=30, ping_timeout=10) as ws:
+                print('Connected to NEXUM server')
 
-                if uid:
-                    # Re-register with saved UID
-                    await ws.send(json.dumps({"type": "register", "uid": uid, "device_id": device_id, "platform": PLATFORM_NAME}))
-                    print(f"📱 Re-registered as UID {uid}")
-                else:
+                if not linked:
                     # Request link code
-                    await ws.send(json.dumps({"type": "request_link", "device_id": device_id, "platform": PLATFORM_NAME}))
+                    await ws.send(json.dumps({'type': 'request_link', 'device_id': DEVICE_ID, 'platform': PLATFORM_NAME}))
+                    resp = json.loads(await ws.recv())
+                    code = resp.get('code', '')
+                    print(f'\nPairing code: {code}')
+                    print('Send /link in your Telegram bot, then enter this code\n')
+
+                    # Wait for link
+                    msg = json.loads(await ws.recv())
+                    if msg.get('type') == 'linked':
+                        uid = msg.get('uid')
+                        linked = True
+                        cfg['uid'] = uid; save_config(cfg)
+                        print(f'Linked to Telegram user {uid}')
+
+                # Register
+                if uid:
+                    await ws.send(json.dumps({'type': 'register', 'uid': uid, 'device_id': DEVICE_ID, 'platform': PLATFORM_NAME}))
+                    print(f'Agent registered (uid={uid}). Waiting for commands...')
 
                 async for raw in ws:
                     try:
                         msg = json.loads(raw)
-                        mtype = msg.get("type")
-
-                        if mtype == "link_code":
-                            code = msg.get("code", "")
-                            print(f"\n{'='*50}")
-                            print(f"🔑 LINK CODE: {code}")
-                            print(f"   Send to bot: /link {code}")
-                            print(f"{'='*50}\n")
-
-                        elif mtype == "linked":
-                            uid = msg.get("uid")
-                            cfg["uid"] = uid
-                            save_config(cfg)
-                            print(f"✅ Linked to Telegram UID: {uid}")
-                            # Register now
-                            await ws.send(json.dumps({"type": "register", "uid": uid, "device_id": device_id, "platform": PLATFORM_NAME}))
-
-                        elif mtype == "registered":
-                            print(f"✅ Agent registered and ready!")
-                            print(f"   Commands available in Telegram: /screenshot /run /sysinfo etc.")
-
-                        elif mtype == "pong":
-                            pass  # keepalive
-
-                        elif msg.get("reqId"):
-                            # Handle command
-                            response = await handle_message(msg)
-                            await ws.send(json.dumps(response))
-
-                    except json.JSONDecodeError:
-                        pass
+                        result = await handle_message(ws, msg)
+                        if result:
+                            await ws.send(json.dumps(result))
                     except Exception as e:
-                        print(f"❌ Message error: {e}")
+                        print(f'Handler error: {e}')
 
-        except websockets.exceptions.ConnectionClosed:
-            print("⚠️ Connection closed, reconnecting in 5s...")
-        except OSError as e:
-            print(f"❌ Connection error: {e}")
-            print("   Retrying in 10s...")
-            await asyncio.sleep(5)
         except Exception as e:
-            print(f"❌ Unexpected error: {e}")
+            print(f'Connection error: {e}. Reconnecting in 5s...')
+            await asyncio.sleep(5)
 
-        await asyncio.sleep(5)
 
-# ── Entry point ───────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    print("=" * 50)
-    print("  NEXUM PC Agent")
-    print(f"  Platform: {PLATFORM_NAME}")
-    print(f"  Device:   {DEVICE_ID}")
-    print("=" * 50)
-
-    try:
-        asyncio.run(run_agent())
-    except KeyboardInterrupt:
-        print("\n👋 Agent stopped.")
+if __name__ == '__main__':
+    asyncio.run(run())

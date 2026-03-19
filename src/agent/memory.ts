@@ -8,7 +8,7 @@ export function saveMemory(uid: number, key: string, value: string) {
 }
 
 export function getMemories(uid: number): Array<{ key: string; value: string }> {
-  return db.prepare('SELECT key, value FROM memory WHERE uid=? ORDER BY id DESC LIMIT 30').all(uid) as any;
+  return db.prepare('SELECT key, value FROM memory WHERE uid=? ORDER BY id DESC LIMIT 50').all(uid) as any;
 }
 
 export function clearMemory(uid: number) {
@@ -17,7 +17,6 @@ export function clearMemory(uid: number) {
 
 export function saveMessage(uid: number, role: 'user' | 'assistant', content: string) {
   db.prepare('INSERT INTO conversations (uid, role, content) VALUES (?,?,?)').run(uid, role, content.slice(0, 4000));
-  // Keep last 120 per user
   db.prepare(`
     DELETE FROM conversations WHERE uid=? AND id NOT IN (
       SELECT id FROM conversations WHERE uid=? ORDER BY id DESC LIMIT 120
@@ -33,7 +32,6 @@ export function clearHistory(uid: number) {
   db.prepare('DELETE FROM conversations WHERE uid=?').run(uid);
 }
 
-// Auto-extract facts from conversation
 export function autoExtract(uid: number, userText: string) {
   const save = (k: string, v: string) => saveMemory(uid, k, v);
   const nameMatch = userText.match(/меня зовут\s+([А-ЯЁA-Z][а-яёa-z]+)/i);

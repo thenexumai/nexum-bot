@@ -6,7 +6,6 @@ import crypto      from 'crypto';
 import { config }  from '../core/config';
 import { db }      from '../core/db';
 
-// Public dir works both in dev (src/public) and prod (dist/public)
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
 function validateInitData(initData: string): number | null {
@@ -52,10 +51,9 @@ export function startServer(bot?: any) {
     });
   }
   app.get('/hub', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'hub.html')));
-  app.get('/tools-app', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'tools.html')));
 
   // ── Health check ─────────────────────────────────────────────────────────
-  app.get('/health', (_req, res) => res.json({ ok: true, version: '12.0.0', uptime: process.uptime() }));
+  app.get('/health', (_req, res) => res.json({ ok: true, version: '14.0.0', uptime: process.uptime() }));
 
   // ── Site viewer ──────────────────────────────────────────────────────────
   app.get('/site/:id', (req, res) => {
@@ -70,7 +68,7 @@ export function startServer(bot?: any) {
     const uid = getUid(req); if (!uid) return res.status(400).json({ ok:false, error:'No uid' });
     let acc = db.prepare('SELECT * FROM accounts WHERE uid=? ORDER BY id').all(uid) as any[];
     if (!acc.length) {
-      db.prepare('INSERT INTO accounts (uid,name,currency,balance,icon) VALUES (?,?,?,?,?)').run(uid,'Cash','UZS',0,'💵');
+      db.prepare('INSERT INTO accounts (uid,name,currency,balance,icon) VALUES (?,?,?,?,?)').run(uid,'Cash','UZS',0,'$');
       acc = db.prepare('SELECT * FROM accounts WHERE uid=? ORDER BY id').all(uid) as any[];
     }
     res.json({ ok:true, data:acc });
@@ -78,7 +76,7 @@ export function startServer(bot?: any) {
   app.post('/api/accounts', (req, res) => {
     const uid = getUid(req); const { name, currency, balance, icon } = req.body;
     if (!uid || !name) return res.status(400).json({ ok:false, error:'Missing' });
-    const r = db.prepare('INSERT INTO accounts (uid,name,currency,balance,icon) VALUES (?,?,?,?,?)').run(uid,name,currency||'UZS',balance||0,icon||'💳');
+    const r = db.prepare('INSERT INTO accounts (uid,name,currency,balance,icon) VALUES (?,?,?,?,?)').run(uid,name,currency||'UZS',balance||0,icon||'$');
     res.json({ ok:true, id:r.lastInsertRowid });
   });
   app.delete('/api/accounts/:id', (req, res) => { db.prepare('DELETE FROM accounts WHERE id=?').run(parseInt(req.params.id)); res.json({ ok:true }); });
@@ -87,7 +85,7 @@ export function startServer(bot?: any) {
   app.get('/api/finance', (req, res) => {
     const uid = getUid(req); if (!uid) return res.status(400).json({ ok:false, error:'No uid' });
     const period = (req.query.period as string) || 'month';
-    const now    = new Date();
+    const now = new Date();
     let since: string;
     if      (period === 'today') since = now.toISOString().split('T')[0];
     else if (period === 'week')  { const d = new Date(now); d.setDate(d.getDate()-7); since = d.toISOString().split('T')[0]; }
@@ -144,7 +142,7 @@ export function startServer(bot?: any) {
   // ── API: Habits ──────────────────────────────────────────────────────────
   app.get('/api/habits', (req, res) => {
     const uid = getUid(req); if (!uid) return res.status(400).json({ ok:false, error:'No uid' });
-    const today  = new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0];
     const habits = (db.prepare('SELECT * FROM habits WHERE uid=? ORDER BY id').all(uid) as any[]).map(h => {
       const logs = (db.prepare(`SELECT date(done_at) as d FROM habit_logs WHERE habit_id=? AND done_at>=date('now','-30 days') GROUP BY date(done_at)`).all(h.id) as any[]).map(r => r.d);
       return { ...h, logs, done_today: logs.includes(today) };
@@ -154,12 +152,12 @@ export function startServer(bot?: any) {
   app.post('/api/habits', (req, res) => {
     const uid = getUid(req); const { name, emoji } = req.body;
     if (!uid || !name) return res.status(400).json({ ok:false, error:'Missing' });
-    const r = db.prepare('INSERT INTO habits (uid,name,emoji) VALUES (?,?,?)').run(uid,name,emoji||'🎯');
+    const r = db.prepare('INSERT INTO habits (uid,name,emoji) VALUES (?,?,?)').run(uid,name,emoji||'●');
     res.json({ ok:true, id:r.lastInsertRowid });
   });
   app.post('/api/habits/:id/toggle', (req, res) => {
-    const id    = parseInt(req.params.id);
-    const uid   = getUid(req);
+    const id = parseInt(req.params.id);
+    const uid = getUid(req);
     const today = new Date().toISOString().split('T')[0];
     const existing = db.prepare(`SELECT id FROM habit_logs WHERE habit_id=? AND date(done_at)=?`).get(id, today) as any;
     if (existing) {
@@ -167,11 +165,11 @@ export function startServer(bot?: any) {
       db.prepare('UPDATE habits SET streak=MAX(0,streak-1) WHERE id=?').run(id);
     } else {
       db.prepare('INSERT INTO habit_logs (habit_id,uid,done_at) VALUES (?,?,datetime(?))').run(id,uid||0,today+'T12:00:00');
-      const yd  = new Date(); yd.setDate(yd.getDate()-1);
+      const yd = new Date(); yd.setDate(yd.getDate()-1);
       const yds = yd.toISOString().split('T')[0];
       const hadYd = db.prepare(`SELECT id FROM habit_logs WHERE habit_id=? AND date(done_at)=?`).get(id, yds);
-      const h   = db.prepare('SELECT * FROM habits WHERE id=?').get(id) as any;
-      const ns  = hadYd ? (h?.streak||0)+1 : 1;
+      const h = db.prepare('SELECT * FROM habits WHERE id=?').get(id) as any;
+      const ns = hadYd ? (h?.streak||0)+1 : 1;
       db.prepare('UPDATE habits SET streak=?,best_streak=MAX(best_streak,?),last_done=? WHERE id=?').run(ns,ns,today,id);
     }
     res.json({ ok:true });
@@ -190,7 +188,7 @@ export function startServer(bot?: any) {
   });
   app.delete('/api/websites/:id', (req, res) => { db.prepare('DELETE FROM websites WHERE id=?').run(parseInt(req.params.id)); res.json({ ok:true }); });
 
-  // ── API: Custom Tools ────────────────────────────────────────────────────
+  // ── API: Custom Tools ─────────────────────────────────────────────────────
   app.get('/api/tools', (req, res) => {
     const uid = getUid(req); if (!uid) return res.status(400).json({ ok:false, error:'No uid' });
     res.json({ ok:true, data:db.prepare('SELECT id,name,description,trigger_pattern,usage_count,active,created_at FROM custom_tools WHERE (uid=? OR uid=0) ORDER BY usage_count DESC').all(uid) });
@@ -201,16 +199,11 @@ export function startServer(bot?: any) {
   app.get('/api/admin/users', (req, res) => {
     const uid = getUid(req);
     if (!uid || !config.adminIds.includes(uid)) return res.status(403).json({ ok:false, error:'Forbidden' });
-    const users = db.prepare(`
-      SELECT u.uid, u.username, u.first_name, u.created_at,
-             COUNT(c.id) as message_count
-      FROM users u LEFT JOIN conversations c ON c.uid=u.uid
-      GROUP BY u.uid ORDER BY u.created_at DESC
-    `).all();
+    const users = db.prepare(`SELECT u.uid, u.username, u.first_name, u.created_at, COUNT(c.id) as message_count FROM users u LEFT JOIN conversations c ON c.uid=u.uid GROUP BY u.uid ORDER BY u.created_at DESC`).all();
     res.json({ ok:true, data:users });
   });
 
-  // ── Approval API (OpenClaw-style) ─────────────────────────────────────────
+  // ── Approval API ──────────────────────────────────────────────────────────
   app.post('/api/approval/:id/approve', (req, res) => {
     const { id } = req.params;
     const uid = getUid(req);
@@ -232,7 +225,7 @@ export function startServer(bot?: any) {
     res.json({ ok:true });
   });
 
-  // ── WebSocket (PC Agent) ─────────────────────────────────────────────────
+  // ── WebSocket (PC Agent) ──────────────────────────────────────────────────
   const httpServer = createServer(app);
   const wss        = new WebSocketServer({ server: httpServer, path: '/ws' });
   const linkCodes  = new Map<string, { deviceId: string; platform: string; ws: WebSocket }>();
@@ -250,24 +243,37 @@ export function startServer(bot?: any) {
         if (mtype === 'request_link') {
           const code = Math.random().toString(36).slice(2, 8).toUpperCase();
           linkCodes.set(code, { deviceId: msg.device_id, platform: msg.platform || 'Unknown', ws });
-          const expires = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+          const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
           db.prepare('INSERT OR REPLACE INTO link_codes (code,device_id,platform,expires_at) VALUES (?,?,?,?)').run(code, msg.device_id, msg.platform || 'Unknown', expires);
           ws.send(JSON.stringify({ type: 'link_code', code }));
-          console.log(`[ws] link_code=${code} platform=${msg.platform}`);
 
         } else if (mtype === 'register') {
           wsUid = msg.uid;
           if (wsUid) {
             agents.set(wsUid, ws);
-            db.prepare(`INSERT INTO pc_agents (uid,device_id,device_name,platform,last_seen,status) VALUES (?,?,?,?,datetime('now'),'online')
-              ON CONFLICT(uid) DO UPDATE SET device_id=excluded.device_id,device_name=excluded.device_name,platform=excluded.platform,last_seen=excluded.last_seen,status='online'`)
-              .run(wsUid, msg.device_id, msg.device_id, msg.platform || 'Unknown');
+            db.prepare(`INSERT INTO pc_agents (uid,device_id,device_name,platform,last_seen,status) VALUES (?,?,?,?,datetime('now'),'online') ON CONFLICT(uid) DO UPDATE SET device_id=excluded.device_id,device_name=excluded.device_name,platform=excluded.platform,last_seen=excluded.last_seen,status='online'`).run(wsUid, msg.device_id, msg.device_id, msg.platform || 'Unknown');
             ws.send(JSON.stringify({ type: 'registered' }));
-            console.log(`[ws] registered uid=${wsUid}`);
           }
+
+        } else if (mtype === 'link') {
+          const code = msg.code?.toUpperCase();
+          const uid = msg.uid;
+          if (code && uid) {
+            const entry = linkCodes.get(code);
+            if (entry) {
+              entry.ws.send(JSON.stringify({ type: 'linked', uid }));
+              agents.set(uid, entry.ws);
+              linkCodes.delete(code);
+              ws.send(JSON.stringify({ type: 'linked_ok' }));
+            } else {
+              ws.send(JSON.stringify({ type: 'link_error', message: 'Invalid or expired code' }));
+            }
+          }
+
         } else if (mtype === 'result' || mtype === 'screenshot_result') {
           const p = pending.get(msg.reqId);
           if (p) { p.resolve(msg); pending.delete(msg.reqId); }
+
         } else if (mtype === 'ping') {
           ws.send(JSON.stringify({ type: 'pong' }));
           if (wsUid) db.prepare("UPDATE pc_agents SET last_seen=datetime('now') WHERE uid=?").run(wsUid);
@@ -279,7 +285,6 @@ export function startServer(bot?: any) {
       if (wsUid) {
         agents.delete(wsUid);
         db.prepare("UPDATE pc_agents SET status='offline' WHERE uid=?").run(wsUid);
-        console.log(`[ws] disconnected uid=${wsUid}`);
       }
     });
   });
@@ -295,27 +300,17 @@ export function startServer(bot?: any) {
     });
   };
 
-  (app as any).linkAgent = (code: string, uid: number): boolean => {
-    const entry = linkCodes.get(code.toUpperCase());
-    if (!entry) return false;
-    entry.ws.send(JSON.stringify({ type: 'linked', uid }));
-    agents.set(uid, entry.ws);
-    linkCodes.delete(code.toUpperCase());
-    return true;
-  };
-
   (app as any).isAgentOnline = (uid: number): boolean => {
     const ws = agents.get(uid);
     return !!ws && ws.readyState === WebSocket.OPEN;
   };
 
   const port = config.port;
-  httpServer.listen(port, '0.0.0.0', () => console.log(`[server] ✅ NEXUM v12 on :${port}`));
+  httpServer.listen(port, '0.0.0.0', () => console.log(`[server] NEXUM v14 on :${port}`));
   return app;
 }
 
-// ── Approval system (OpenClaw-style) ──────────────────────────────────────────
-// Pending approvals map: id → { resolve, command, uid }
+// ── Approval system ───────────────────────────────────────────────────────────
 export const pendingApprovals = new Map<string, {
   resolve: (approved: boolean) => void;
   command: string;
@@ -329,39 +324,19 @@ export async function requestApproval(params: {
   command: string;
   type: 'dangerous' | 'system' | 'delete';
 }): Promise<boolean> {
-  const id  = crypto.randomUUID().slice(0, 8);
-  const adminIds = (await import('../core/config')).config.adminIds;
-
+  const id = crypto.randomUUID().slice(0, 8);
   return new Promise((resolve) => {
-    pendingApprovals.set(id, {
-      resolve,
-      command: params.command,
-      uid: params.uid,
-      createdAt: Date.now(),
-    });
+    pendingApprovals.set(id, { resolve, command: params.command, uid: params.uid, createdAt: Date.now() });
+    setTimeout(() => { if (pendingApprovals.has(id)) { pendingApprovals.delete(id); resolve(false); } }, 60000);
 
-    // Auto-deny after 60 seconds
-    setTimeout(() => {
-      if (pendingApprovals.has(id)) {
-        pendingApprovals.delete(id);
-        resolve(false);
-      }
-    }, 60000);
-
-    // Send approval request to all admins
-    const icon = params.type === 'delete' ? '🗑' : params.type === 'system' ? '⚙️' : '⚠️';
-    const msg  = `${icon} <b>Требуется подтверждение</b>\n\n` +
-                 `👤 Пользователь: <code>${params.uid}</code>\n` +
-                 `💻 Команда:\n<pre>${params.command.slice(0, 500)}</pre>\n\n` +
-                 `ID: <code>${id}</code>`;
-
-    for (const adminId of adminIds) {
+    const icon = params.type === 'delete' ? 'DEL' : params.type === 'system' ? 'SYS' : 'WARN';
+    const msg  = `[${icon}] Approval needed\n\nUser: ${params.uid}\nCommand:\n${params.command.slice(0, 500)}\n\nID: ${id}`;
+    for (const adminId of config.adminIds) {
       params.bot.api.sendMessage(adminId, msg, {
-        parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [[
-            { text: '✅ Разрешить', callback_data: `approve_${id}` },
-            { text: '❌ Отклонить', callback_data: `deny_${id}` },
+            { text: 'Approve', callback_data: `approve_${id}` },
+            { text: 'Deny', callback_data: `deny_${id}` },
           ]]
         }
       }).catch(() => {});

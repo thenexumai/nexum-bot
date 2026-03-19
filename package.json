@@ -1,7 +1,7 @@
 {
   "name": "nexum",
-  "version": "11.0.0",
-  "description": "NEXUM — Autonomous AI Agent Platform",
+  "version": "14.0.0",
+  "description": "NEXUM — Autonomous AI Agent Platform for Telegram",
   "private": true,
   "engines": { "node": ">=20" },
   "scripts": {
@@ -10,18 +10,18 @@
     "build": "tsc"
   },
   "dependencies": {
-    "grammy":           "^1.30.0",
-    "better-sqlite3":   "^9.6.0",
-    "dotenv":           "^16.4.5",
-    "node-cron":        "^3.0.3",
-    "node-fetch":       "^2.7.0",
-    "form-data":        "^4.0.0",
-    "ws":               "^8.18.0",
-    "express":          "^4.19.0",
-    "ts-node":          "^10.9.2",
-    "typescript":       "^5.5.0",
-    "playwright":       "^1.40.0",
-    "@anthropic-ai/sdk":"^0.27.0"
+    "grammy":            "^1.30.0",
+    "better-sqlite3":    "^9.6.0",
+    "dotenv":            "^16.4.5",
+    "node-cron":         "^3.0.3",
+    "node-fetch":        "^2.7.0",
+    "form-data":         "^4.0.0",
+    "ws":                "^8.18.0",
+    "express":           "^4.19.0",
+    "ts-node":           "^10.9.2",
+    "typescript":        "^5.5.0",
+    "playwright":        "^1.40.0",
+    "@anthropic-ai/sdk": "^0.27.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.10",
