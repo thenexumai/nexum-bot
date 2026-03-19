@@ -205,18 +205,18 @@ export async function chatStreaming(
     }
   }
 
-  // Fallback — получаем полный ответ, отдаём через draft с правильными паузами
+  // Fallback — full response, deliver paragraph by paragraph at natural pace
   const result = await chat(uid, messages, system);
-  
-  // Разбиваем на параграфы и отдаём с паузами между ними — как реальный стриминг
   const paragraphs = result.split(/\n\n+/);
   let acc = '';
   for (let i = 0; i < paragraphs.length; i++) {
-    acc += (i > 0 ? '\n\n' : '') + paragraphs[i];
+    if (i > 0) acc += '\n\n';
+    acc += paragraphs[i];
     onToken(acc);
-    // Пауза между параграфами как будто AI печатает
     if (i < paragraphs.length - 1) {
-      await new Promise(r => setTimeout(r, 300 + paragraphs[i].length * 8));
+      // Natural typing pace: longer paragraphs take longer
+      const delay = Math.min(1200, 200 + paragraphs[i].length * 6);
+      await new Promise(r => setTimeout(r, delay));
     }
   }
   return result;

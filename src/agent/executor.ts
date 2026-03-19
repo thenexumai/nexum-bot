@@ -1,5 +1,5 @@
-// NEXUM Agent Executor — полный аналог OpenClaw агента
-// Цикл инструментов: AI → tool call → результат → AI продолжает (до 8 итераций)
+// NEXUM Agent — OpenClaw architecture
+// Tool loop: AI → XML tool call → execute → result → AI continues (up to 8 rounds)
 
 import { chat } from './router';
 import { getMemories, getHistory, saveMessage, autoExtract, saveMemory } from './memory';
@@ -7,317 +7,359 @@ import { config } from '../core/config';
 import { db } from '../core/db';
 import { webSearch } from '../tools/search';
 
+// ── Tools ─────────────────────────────────────────────────────────────────────
+
 interface Tool {
   name: string;
-  description: string;
-  params: string;
+  summary: string;
   handler: (uid: number, args: Record<string, string>) => Promise<string>;
 }
 
 export const TOOLS: Tool[] = [
   {
     name: 'web_search',
-    description: 'Поиск в интернете',
-    params: 'query: строка запроса',
-    handler: async (_uid, args) => webSearch(args.query || ''),
+    summary: 'Search the web',
+    handler: async (_uid, args) => {
+      const q = args.query || args.q || '';
+      if (!q) return 'Error: provide query';
+      return webSearch(q);
+    },
   },
   {
     name: 'web_fetch',
-    description: 'Загрузить и прочитать URL',
-    params: 'url: адрес страницы',
+    summary: 'Fetch and extract readable content from a URL',
     handler: async (_uid, args) => {
+      const url = args.url || '';
+      if (!url) return 'Error: provide url';
       try {
-        const r = await fetch(args.url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(10000) });
+        const r = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NexumBot/1.0)' },
+          signal: AbortSignal.timeout(12000),
+        });
         const html = await r.text();
-        const text = html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<[^>]+>/g,' ').replace(/\s{3,}/g,'\n\n').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim().slice(0,4000);
-        return `Содержимое ${args.url}:\n\n${text}`;
-      } catch (e: any) { return `Ошибка загрузки: ${e.message}`; }
+        const text = html
+          .replace(/<script[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[\s\S]*?<\/style>/gi, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s{2,}/g, ' ')
+          .replace(/\n{3,}/g, '\n\n')
+          .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+          .trim().slice(0, 5000);
+        return text || 'Empty page';
+      } catch (e: any) {
+        return `Fetch error: ${e.message}`;
+      }
     },
   },
   {
     name: 'finance_add',
-    description: 'Записать доход или расход в Finance',
-    params: 'type: income|expense, amount: сумма числом, category: категория, note: описание',
+    summary: 'Record income or expense',
     handler: async (uid, args) => {
-      const amount = parseFloat(args.amount);
-      if (isNaN(amount)) return 'Ошибка: неверная сумма';
-      db.prepare('INSERT INTO finance (uid, type, amount, category, note) VALUES (?,?,?,?,?)').run(uid, args.type||'expense', amount, args.category||'other', args.note||'');
-      return `${args.type==='income'?'Доход':'Расход'} ${amount.toLocaleString()} записан (${args.category||'other'})`;
+      const amount = parseFloat(args.amount || '0');
+      if (!amount || isNaN(amount)) return 'Error: invalid amount';
+      const type = args.type === 'income' ? 'income' : 'expense';
+      const category = (args.category || 'other').toLowerCase();
+      const note = args.note || '';
+      db.prepare('INSERT INTO finance (uid,type,amount,category,note) VALUES (?,?,?,?,?)')
+        .run(uid, type, amount, category, note);
+      const label = type === 'income' ? 'Income' : 'Expense';
+      return `${label} recorded: ${amount.toLocaleString()} (${category})${note ? ' — ' + note : ''}`;
     },
   },
   {
-    name: 'finance_balance',
-    description: 'Показать баланс и статистику',
-    params: 'period: month|week|today|all',
+    name: 'finance_summary',
+    summary: 'Show balance and recent transactions',
     handler: async (uid, args) => {
-      const period = args.period||'month';
+      const period = args.period || 'month';
       const now = new Date();
       let since = '';
-      if (period==='today') since=now.toISOString().split('T')[0];
-      else if (period==='week') { const d=new Date(now); d.setDate(d.getDate()-7); since=d.toISOString().split('T')[0]; }
-      else if (period==='month') since=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
-      const where = since ? `AND date(created_at)>='${since}'` : '';
-      const rows = db.prepare(`SELECT type, SUM(amount) as total FROM finance WHERE uid=? ${where} GROUP BY type`).all(uid) as any[];
-      const income = rows.find(r=>r.type==='income')?.total||0;
-      const expense = rows.find(r=>r.type==='expense')?.total||0;
-      const recent = db.prepare(`SELECT type,amount,category,note FROM finance WHERE uid=? ${where} ORDER BY id DESC LIMIT 5`).all(uid) as any[];
-      const list = recent.map(r=>`• ${r.type==='income'?'+':'-'}${r.amount} ${r.category}${r.note?' ('+r.note+')':''}`).join('\n');
-      return `Финансы (${period}):\nДоходы: ${income.toLocaleString()}\nРасходы: ${expense.toLocaleString()}\nБаланс: ${(income-expense).toLocaleString()}\n\nПоследние:\n${list||'нет'}`;
+      if (period === 'today') since = now.toISOString().split('T')[0];
+      else if (period === 'week') { const d = new Date(now); d.setDate(d.getDate()-7); since = d.toISOString().split('T')[0]; }
+      else if (period === 'month') since = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+      const w = since ? `AND date(created_at)>='${since}'` : '';
+      const rows = db.prepare(`SELECT type,SUM(amount) as t FROM finance WHERE uid=? ${w} GROUP BY type`).all(uid) as any[];
+      const inc = rows.find(r => r.type==='income')?.t || 0;
+      const exp = rows.find(r => r.type==='expense')?.t || 0;
+      const recent = db.prepare(`SELECT type,amount,category,note FROM finance WHERE uid=? ${w} ORDER BY id DESC LIMIT 5`).all(uid) as any[];
+      const lines = recent.map(r => `• ${r.type==='income'?'+':'-'}${r.amount} ${r.category}${r.note?' ('+r.note+')':''}`);
+      return `Balance (${period}): ${(inc-exp).toLocaleString()}\nIncome: ${inc.toLocaleString()} | Expenses: ${exp.toLocaleString()}\n${lines.length ? '\nRecent:\n' + lines.join('\n') : ''}`.trim();
     },
   },
   {
     name: 'task_create',
-    description: 'Создать задачу в Tasks',
-    params: 'title: название, priority: high|medium|low, project: проект (необязательно)',
+    summary: 'Create a task',
     handler: async (uid, args) => {
-      if (!args.title) return 'Ошибка: нужно название';
-      const p = ['high','medium','low','critical'].includes(args.priority) ? args.priority : 'medium';
-      db.prepare('INSERT INTO tasks (uid,title,priority,project) VALUES (?,?,?,?)').run(uid, args.title, p, args.project||'General');
-      return `Задача создана: "${args.title}" [${p}]`;
+      const title = args.title || args.name || '';
+      if (!title) return 'Error: provide title';
+      const priority = ['high','medium','low','critical'].includes(args.priority||'') ? args.priority : 'medium';
+      const project = args.project || 'General';
+      db.prepare('INSERT INTO tasks (uid,title,priority,project) VALUES (?,?,?,?)').run(uid, title, priority, project);
+      return `Task created: "${title}" [${priority}]`;
     },
   },
   {
     name: 'task_list',
-    description: 'Список задач',
-    params: 'status: open|done|all',
+    summary: 'List tasks',
     handler: async (uid, args) => {
-      const where = args.status==='done' ? "status='done'" : args.status==='all' ? '1=1' : "status!='done'";
-      const tasks = db.prepare(`SELECT title,priority,project FROM tasks WHERE uid=? AND ${where} ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END LIMIT 15`).all(uid) as any[];
-      if (!tasks.length) return 'Задач нет';
-      return tasks.map(t=>`• [${t.priority[0].toUpperCase()}] ${t.title}${t.project!=='General'?' ('+t.project+')':''}`).join('\n');
+      const filter = args.status || 'open';
+      const w = filter === 'done' ? "status='done'" : filter === 'all' ? '1=1' : "status!='done'";
+      const rows = db.prepare(`SELECT title,priority,project,status FROM tasks WHERE uid=? AND ${w} ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,id DESC LIMIT 15`).all(uid) as any[];
+      if (!rows.length) return 'No tasks';
+      return rows.map(t => `• [${t.priority[0].toUpperCase()}] ${t.title}${t.project!=='General'?' ('+t.project+')':''}`).join('\n');
     },
   },
   {
     name: 'note_save',
-    description: 'Сохранить заметку в Notes',
-    params: 'title: заголовок, content: текст заметки',
+    summary: 'Save a note',
     handler: async (uid, args) => {
-      if (!args.content) return 'Ошибка: нужен текст';
-      db.prepare('INSERT INTO notes (uid,title,content) VALUES (?,?,?)').run(uid, args.title||'', args.content);
-      return `Заметка сохранена: "${args.title||'Без названия'}"`;
+      const content = args.content || args.text || '';
+      if (!content) return 'Error: provide content';
+      const title = args.title || '';
+      db.prepare('INSERT INTO notes (uid,title,content) VALUES (?,?,?)').run(uid, title, content);
+      return `Note saved: "${title || 'Untitled'}"`;
     },
   },
   {
     name: 'note_list',
-    description: 'Список заметок',
-    params: 'search: поиск (необязательно)',
+    summary: 'List or search notes',
     handler: async (uid, args) => {
-      const notes = args.search
-        ? db.prepare('SELECT title,substr(content,1,80) as p FROM notes WHERE uid=? AND (title LIKE ? OR content LIKE ?) ORDER BY updated_at DESC LIMIT 8').all(uid,`%${args.search}%`,`%${args.search}%`) as any[]
-        : db.prepare('SELECT title,substr(content,1,80) as p FROM notes WHERE uid=? ORDER BY pinned DESC,updated_at DESC LIMIT 8').all(uid) as any[];
-      if (!notes.length) return 'Заметок нет';
-      return notes.map(n=>`• ${n.title||'Без названия'}: ${n.p}...`).join('\n');
+      const q = args.query || args.search || '';
+      const rows = q
+        ? db.prepare('SELECT title,substr(content,1,100) as p FROM notes WHERE uid=? AND (title LIKE ? OR content LIKE ?) ORDER BY updated_at DESC LIMIT 8').all(uid,`%${q}%`,`%${q}%`) as any[]
+        : db.prepare('SELECT title,substr(content,1,100) as p FROM notes WHERE uid=? ORDER BY pinned DESC,updated_at DESC LIMIT 8').all(uid) as any[];
+      if (!rows.length) return 'No notes';
+      return rows.map(n => `• ${n.title||'Untitled'}: ${n.p}…`).join('\n');
     },
   },
   {
-    name: 'habit_check',
-    description: 'Показать привычки с прогрессом',
-    params: '',
+    name: 'habit_status',
+    summary: 'Show habits with streaks',
     handler: async (uid, _args) => {
       const today = new Date().toISOString().split('T')[0];
       const habits = db.prepare('SELECT * FROM habits WHERE uid=? ORDER BY id').all(uid) as any[];
-      if (!habits.length) return 'Привычек нет. Создай через /habits';
+      if (!habits.length) return 'No habits. Create via /habits app.';
       return habits.map(h => {
-        const done = db.prepare('SELECT id FROM habit_logs WHERE habit_id=? AND date(done_at)=?').get(h.id,today);
-        return `${done?'✓':'○'} ${h.name} — серия: ${h.streak}д`;
+        const done = db.prepare('SELECT id FROM habit_logs WHERE habit_id=? AND date(done_at)=?').get(h.id, today);
+        return `${done ? '✓' : '○'} ${h.name} — streak: ${h.streak} days`;
       }).join('\n');
     },
   },
   {
     name: 'memory_save',
-    description: 'Запомнить факт о пользователе',
-    params: 'key: ключ, value: значение',
+    summary: 'Remember a fact about the user',
     handler: async (uid, args) => {
-      if (!args.key||!args.value) return 'Ошибка: нужны key и value';
-      saveMemory(uid, args.key, args.value);
-      return `Запомнил: ${args.key} = ${args.value}`;
+      const key = args.key || '';
+      const value = args.value || '';
+      if (!key || !value) return 'Error: provide key and value';
+      saveMemory(uid, key, value);
+      return `Remembered: ${key} = ${value}`;
     },
   },
   {
-    name: 'memory_get',
-    description: 'Всё что знаю о пользователе',
-    params: '',
+    name: 'memory_recall',
+    summary: 'Recall stored facts about the user',
     handler: async (uid, _args) => {
       const mems = getMemories(uid);
-      return mems.length ? mems.map(m=>`${m.key}: ${m.value}`).join('\n') : 'Память пуста';
+      return mems.length ? mems.map(m => `${m.key}: ${m.value}`).join('\n') : 'No memories stored';
     },
   },
   {
     name: 'reminder_set',
-    description: 'Поставить напоминание',
-    params: 'text: текст, minutes: через сколько минут',
+    summary: 'Set a reminder (use for time-based requests)',
     handler: async (uid, args) => {
-      const mins = parseInt(args.minutes)||30;
-      const fireAt = new Date(Date.now()+mins*60000).toISOString();
-      db.prepare('INSERT INTO reminders (uid,chat_id,text,fire_at) VALUES (?,?,?,?)').run(uid,uid,args.text||'Напоминание',fireAt);
-      const label = mins>=60 ? `${Math.floor(mins/60)}ч ${mins%60}м` : `${mins}м`;
-      return `Напоминание через ${label}: "${args.text}"`;
+      const text = args.text || args.message || '';
+      if (!text) return 'Error: provide reminder text';
+      const mins = parseInt(args.minutes || args.mins || '30') || 30;
+      const fireAt = new Date(Date.now() + mins * 60000).toISOString();
+      db.prepare('INSERT INTO reminders (uid,chat_id,text,fire_at) VALUES (?,?,?,?)').run(uid, uid, text, fireAt);
+      const label = mins >= 60 ? `${Math.floor(mins/60)}h ${mins%60>0?mins%60+'m':''}` : `${mins}m`;
+      return `Reminder set for ${label.trim()}: "${text}"`;
     },
   },
   {
-    name: 'stats',
-    description: 'Статистика пользователя',
-    params: '',
+    name: 'user_stats',
+    summary: 'Show user activity statistics',
     handler: async (uid, _args) => {
-      const msgs = (db.prepare('SELECT COUNT(*) as c FROM conversations WHERE uid=?').get(uid) as any)?.c||0;
-      const notes = (db.prepare('SELECT COUNT(*) as c FROM notes WHERE uid=?').get(uid) as any)?.c||0;
-      const tasks = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE uid=? AND status!='done'").get(uid) as any)?.c||0;
-      const finance = (db.prepare('SELECT COUNT(*) as c FROM finance WHERE uid=?').get(uid) as any)?.c||0;
-      return `Сообщений: ${msgs}\nЗаметок: ${notes}\nАктивных задач: ${tasks}\nФинансовых записей: ${finance}`;
+      const msgs = (db.prepare('SELECT COUNT(*) as c FROM conversations WHERE uid=?').get(uid) as any)?.c || 0;
+      const notes = (db.prepare('SELECT COUNT(*) as c FROM notes WHERE uid=?').get(uid) as any)?.c || 0;
+      const openTasks = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE uid=? AND status!='done'").get(uid) as any)?.c || 0;
+      const txCount = (db.prepare('SELECT COUNT(*) as c FROM finance WHERE uid=?').get(uid) as any)?.c || 0;
+      return `Messages: ${msgs} | Notes: ${notes} | Open tasks: ${openTasks} | Finance entries: ${txCount}`;
     },
   },
 ];
 
-// ── Парсер вызовов инструментов ───────────────────────────────────────────────
+// ── Tool call parser ───────────────────────────────────────────────────────────
 
-interface ToolCall { tool: string; args: Record<string, string>; }
+interface ToolCall { name: string; args: Record<string, string>; }
 
 function parseToolCalls(text: string): ToolCall[] {
   const calls: ToolCall[] = [];
-  // XML-style: <tool name="web_search" query="запрос" />
-  const xmlRe = /<tool\s+name="([^"]+)"([^\/]*)\s*\/>/g;
-  let m;
-  while ((m = xmlRe.exec(text)) !== null) {
-    const args: Record<string,string> = {};
-    const attrRe = /(\w+)="([^"]*)"/g; let a;
-    while ((a = attrRe.exec(m[2])) !== null) args[a[1]] = a[2];
-    calls.push({ tool: m[1], args });
-  }
-  // Pipe-style fallback: [TOOL:name|key=val]
-  const pipeRe = /\[TOOL:([^\]|]+)\|?([^\]]*)\]/g;
-  while ((m = pipeRe.exec(text)) !== null) {
-    const name = m[1].trim();
-    const args: Record<string,string> = {};
-    if (m[2]) {
-      if (m[2].includes('=')) { m[2].split('|').forEach(p=>{ const [k,...v]=p.split('='); if(k) args[k.trim()]=v.join('=').trim(); }); }
-      else { const tool=TOOLS.find(t=>t.name===name); args[tool?.params.split(':')[0]?.trim()||'query']=m[2].split('|')[0]?.trim()||''; }
-    }
-    if (!calls.find(c=>c.tool===name)) calls.push({ tool: name, args });
+  // Primary format: <tool name="x" key="val" />
+  const re = /<tool\s+name="([^"]+)"([^>]*?)\/>/gs;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const args: Record<string, string> = {};
+    const ar = /(\w+)="([^"]*)"/g;
+    let a: RegExpExecArray | null;
+    while ((a = ar.exec(m[2])) !== null) args[a[1]] = a[2];
+    calls.push({ name: m[1].trim(), args });
   }
   return calls;
 }
 
-function stripToolCalls(text: string): string {
-  return text.replace(/<tool\s+name="[^"]+"\s*[^\/]*\/>/g,'').replace(/\[TOOL:[^\]]+\]/g,'').replace(/\n{3,}/g,'\n\n').trim();
+// Strip ALL tool XML from text — user must never see it
+function stripToolXML(text: string): string {
+  return text
+    .replace(/<tool\s+name="[^"]*"[^>]*?\/>/gs, '')
+    .replace(/<tool\s+name="[^"]*"[^>]*?>[\s\S]*?<\/tool>/gs, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
-// ── Системный промпт ───────────────────────────────────────────────────────────
+// ── System prompt — OpenClaw style ────────────────────────────────────────────
 
 export function buildSystemPrompt(uid: number): string {
-  const memories = getMemories(uid).filter(m=>!['voice_mode','voice_lang','voice_idx'].includes(m.key));
+  const memories = getMemories(uid).filter(m => !['voice_mode','voice_lang','voice_idx'].includes(m.key));
   const isAdmin = config.adminIds.includes(uid);
-  const timeStr = new Date().toLocaleString('ru-RU',{ timeZone:'Asia/Tashkent', dateStyle:'short', timeStyle:'short' });
-  const toolList = TOOLS.map(t=>`- ${t.name}: ${t.description} | ${t.params}`).join('\n');
 
-  let prompt = `Ты NEXUM — личный AI-ассистент.
+  const toolLines = TOOLS.map(t => `- ${t.name}: ${t.summary}`).join('\n');
 
-Стиль:
-- Отвечай на языке пользователя
-- Пиши как умный человек: короткие чёткие фразы, абзацы по смыслу
-- Не используй жирный текст без причины — только для важных слов
-- Не начинай с "Конечно", "Отлично", "Я могу"
-- Код в блоках, списки когда реально список
-- Один вопрос в конце если нужен, не несколько
+  const lines = [
+    'You are a personal assistant running inside NEXUM.',
+    '',
+    '## Tooling',
+    'Tool names are case-sensitive. Call tools exactly as listed.',
+    toolLines,
+    '',
+    '## Tool Call Style',
+    'Do not narrate routine tool calls — just call the tool.',
+    'Call tools only when actually needed. Do not call tools for simple conversational replies.',
+    'When you record a finance entry, task, or note — confirm it briefly in natural language.',
+    'NEVER show XML tool syntax to the user. It is internal only.',
+    '',
+    '## Reply Style',
+    'You are a personal assistant — be helpful, direct, and natural.',
+    'Match the user\'s language (auto-detect Russian, English, Uzbek, etc.).',
+    'Keep responses concise. Use short paragraphs. Use lists only when listing things.',
+    'Do not start replies with "Of course", "Sure", "Great", "Certainly", "I can help".',
+    'Do not pepper replies with multiple questions — ask one if needed.',
+    'For greetings, respond naturally and briefly.',
+    '',
+  ];
 
-Время: ${timeStr} (UTC+5)`;
+  if (isAdmin) {
+    lines.push('## Role', 'You are talking to the system admin. Full access to all features.', '');
+  }
 
-  if (isAdmin) prompt += `\n\nАдмин: полный доступ к системе.`;
-  if (memories.length>0) prompt += `\n\nЗнаю о тебе:\n${memories.map(m=>`${m.key}: ${m.value}`).join('\n')}`;
+  if (memories.length > 0) {
+    lines.push('## About this user', memories.map(m => `- ${m.key}: ${m.value}`).join('\n'), '');
+  }
 
-  prompt += `\n\nИнструменты — вызывай XML синтаксисом:
-<tool name="название" параметр="значение" />
+  const now = new Date();
+  const timeStr = now.toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent', hour: '2-digit', minute: '2-digit', weekday: 'short' });
+  const dateStr = now.toLocaleDateString('ru-RU', { timeZone: 'Asia/Tashkent', day: 'numeric', month: 'long', year: 'numeric' });
+  lines.push('## Current Time', `${dateStr}, ${timeStr} (Tashkent, UTC+5)`, '');
 
-${toolList}
+  lines.push(
+    '## Finance recording',
+    'When user mentions receiving money, a salary, income → call finance_add with type="income".',
+    'When user mentions spending money, a purchase, expense → call finance_add with type="expense".',
+    'Parse amounts intelligently: "5 тысяч" = 5000, "миллион" = 1000000, "$50" = amount=50 currency=USD.',
+    '',
+    '## Reminders',
+    'When user asks to be reminded about something → call reminder_set.',
+    'Use cron tool hints: write the reminder text naturally as it will appear when it fires.',
+    '',
+  );
 
-Правила:
-- Деньги/расход/доход → сразу finance_add, не спрашивай
-- Задача/дело → сразу task_create
-- Запомнить → note_save или memory_save
-- Актуальный вопрос → web_search
-- Сначала напиши ответ, потом в конце вызови инструмент (если нужен)
-- Не упоминай названия инструментов пользователю`;
-
-  return prompt;
+  return lines.join('\n');
 }
 
-// ── Главная функция — цикл инструментов ──────────────────────────────────────
+// ── Main execute — full tool loop ─────────────────────────────────────────────
 
 export async function execute(uid: number, input: string, hasImage = false): Promise<string> {
   autoExtract(uid, input);
+
   const systemPrompt = buildSystemPrompt(uid);
   const history = getHistory(uid, 20);
-  let messages: Array<{role:'user'|'assistant'|'system'; content:string}> = [
-    ...history.map(h=>({ role:h.role as 'user'|'assistant', content:h.content })),
-    { role:'user', content:input },
+
+  const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+    ...history.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
+    { role: 'user', content: input },
   ];
 
-  let finalResponse = '';
-  let toolsWereUsed = false;
+  let finalText = '';
+  let toolsExecuted = false;
 
-  for (let iter=0; iter<8; iter++) {
+  for (let round = 0; round < 8; round++) {
     let response: string;
-    try { response = await chat(uid, messages, systemPrompt, hasImage); }
-    catch (e:any) { return `Ошибка AI: ${e.message}`; }
+    try {
+      response = await chat(uid, messages, systemPrompt, hasImage);
+    } catch (e: any) {
+      return `AI error: ${e.message}`;
+    }
 
-    const toolCalls = parseToolCalls(response);
+    const calls = parseToolCalls(response);
 
-    if (toolCalls.length===0) {
-      // Нет инструментов — финальный ответ
-      finalResponse = response;
+    if (calls.length === 0) {
+      // No tools — this is the final answer
+      finalText = response;
       break;
     }
 
-    // Есть инструменты — выполняем
-    toolsWereUsed = true;
-    const toolResults: string[] = [];
-    for (const call of toolCalls) {
-      const tool = TOOLS.find(t=>t.name===call.tool);
-      if (!tool) { toolResults.push(`[${call.tool}]: не найден`); continue; }
+    // Execute all tool calls
+    toolsExecuted = true;
+    const results: string[] = [];
+
+    for (const call of calls) {
+      const tool = TOOLS.find(t => t.name === call.name);
+      if (!tool) { results.push(`[${call.name}]: unknown tool`); continue; }
       try {
-        console.log(`[tool] ${call.tool}`, call.args);
-        const result = await tool.handler(uid, call.args);
-        toolResults.push(`[${call.tool}]: ${result}`);
-      } catch (e:any) { toolResults.push(`[${call.tool}]: ошибка — ${e.message}`); }
+        console.log(`[tool] ${call.name}`, JSON.stringify(call.args).slice(0, 100));
+        const out = await tool.handler(uid, call.args);
+        results.push(`[${call.name}]: ${out}`);
+      } catch (e: any) {
+        results.push(`[${call.name}]: error — ${e.message}`);
+      }
     }
 
-    // Текст ответа без XML тегов
-    const textBeforeTool = stripToolCalls(response);
+    // Add to conversation
+    messages.push({ role: 'assistant', content: response });
+    messages.push({
+      role: 'user',
+      content: `Tool results:\n${results.join('\n')}\n\nNow give the user a natural reply based on these results. Do not show XML or tool names.`,
+    });
 
-    // Добавляем в историю диалога
-    messages.push({ role:'assistant', content: response });
-    messages.push({ role:'user', content: `Результаты инструментов:\n${toolResults.join('\n')}\n\nПродолжи ответ пользователю на основе этих результатов. Не упоминай названия инструментов.` });
-
-    // Если у AI был текст до тега — сохраняем как черновик
-    if (textBeforeTool) finalResponse = textBeforeTool;
+    // Store clean text as partial result
+    const clean = stripToolXML(response);
+    if (clean.length > 5) finalText = clean;
   }
 
-  // Если инструменты были использованы и у нас нет чистого финального ответа
-  // — генерируем финальный ответ
-  if (toolsWereUsed && (!finalResponse || finalResponse === stripToolCalls(finalResponse) && finalResponse.length < 10)) {
-    try {
-      finalResponse = await chat(uid, messages, systemPrompt);
-    } catch { /* use what we have */ }
-  }
+  // Always strip any leaked XML from final answer
+  const result = stripToolXML(finalText).trim() || finalText.trim();
 
-  // ВСЕГДА чистим XML теги из финального ответа
-  const result = stripToolCalls(finalResponse).trim() || finalResponse.trim();
   saveMessage(uid, 'user', input);
   saveMessage(uid, 'assistant', result);
   return result;
 }
 
+// ── Subagent ──────────────────────────────────────────────────────────────────
+
 export async function runSubagent(uid: number, task: string, bot: any): Promise<string> {
-  const runId = require('crypto').randomUUID().slice(0,8);
-  db.prepare(`INSERT INTO subagent_runs (id,uid,task,status) VALUES (?,?,?,'running')`).run(runId,uid,task);
-  try { await bot.api.sendMessage(uid,`Запущена задача [${runId}]:\n${task.slice(0,100)}`); } catch {}
-  (async()=>{
+  const { randomUUID } = require('crypto');
+  const runId = randomUUID().slice(0, 8);
+  db.prepare(`INSERT INTO subagent_runs (id,uid,task,status) VALUES (?,?,?,'running')`).run(runId, uid, task);
+  try { await bot.api.sendMessage(uid, `Background task started [${runId}]:\n${task.slice(0, 100)}`); } catch {}
+  (async () => {
     try {
       const result = await execute(uid, task);
-      db.prepare(`UPDATE subagent_runs SET status='done',result=?,finished_at=datetime('now') WHERE id=?`).run(result.slice(0,2000),runId);
-      await bot.api.sendMessage(uid,`Задача [${runId}] выполнена:\n\n${result.slice(0,3000)}`);
-    } catch(e:any) {
-      db.prepare(`UPDATE subagent_runs SET status='error',error=?,finished_at=datetime('now') WHERE id=?`).run(e.message,runId);
-      await bot.api.sendMessage(uid,`Задача [${runId}] упала: ${e.message}`).catch(()=>{});
+      db.prepare(`UPDATE subagent_runs SET status='done',result=?,finished_at=datetime('now') WHERE id=?`).run(result.slice(0, 2000), runId);
+      await bot.api.sendMessage(uid, `Task [${runId}] done:\n\n${result.slice(0, 3000)}`);
+    } catch (e: any) {
+      db.prepare(`UPDATE subagent_runs SET status='error',error=?,finished_at=datetime('now') WHERE id=?`).run(e.message, runId);
+      await bot.api.sendMessage(uid, `Task [${runId}] failed: ${e.message}`).catch(() => {});
     }
   })();
   return runId;

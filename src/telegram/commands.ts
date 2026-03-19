@@ -36,16 +36,32 @@ export function setupCommands(bot: Bot): void {
   // ── /help ─────────────────────────────────────────────────────────────────
   bot.command('help', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
-    const adminSection = isAdmin(uid) ? `\n*Admin:*\n/admin\\_stats — all users\n/broadcast — message all\n/admin\\_keys — key pool status\n/admin\\_db — db stats\n/admin\\_clear\\_user — clear user data\n/approve — approve pending commands` : '';
+    const adminSection = isAdmin(uid)
+      ? '\n\nAdmin:\n/admin\\_stats /broadcast /admin\\_keys /admin\\_db /approve'
+      : '';
 
     await ctx.reply(
-      `*NEXUM — Commands*\n\n` +
-      `*Chat:*\n/clear — clear history\n/memory — what I know about you\n/forget — clear memory\n/status — system status\n\n` +
-      `*AI:*\n/setkey \\[provider\\] \\[key\\] — add your API key\n/mykeys — view your keys\n/model \\[provider\\] — switch model\n\n` +
-      `*Apps:*\n/apps — open mini apps\n/notes — notes list\n/tasks — tasks list\n/habits — habits tracker\n/finance — finance tracker\n\n` +
-      `*Tools:*\n/search \\[query\\] — web search\n/remind \\[text\\] \\[min\\] — set reminder\n/voice — toggle voice mode\n/voices — change voice\n\n` +
-      `*PC Agent:*\n/link — pair your computer\n/devices — paired devices\n/pc — agent status\n/run \\[cmd\\] — run command\n/screenshot — take screenshot\n/bgrun \\[cmd\\] — background task\n/bglist — background tasks\n/sysinfo — system info\n/ps — running processes\n/kill \\[name\\] — kill process\n/files \\[op\\] \\[path\\] — file system\n/clipboard — get clipboard\n/notify \\[msg\\] — send notification\n/window \\[op\\] — window control\n/mouse \\[action\\] \\[x\\] \\[y\\] — mouse\n/keyboard \\[text\\] — type text\n/hotkey \\[combo\\] — hotkey\n/network — network info\n/browser \\[url\\] — open browser\n/openapp \\[name\\] — open application\n/http \\[method\\] \\[url\\] — HTTP request\n\n` +
-      `*Content:*\n/website \\[desc\\] — generate website\n/newtool \\[desc\\] — create custom tool\n/tools — my tools${adminSection}`,
+      `Commands:\n\n` +
+      `/clear — clear chat history\n` +
+      `/memory — what I remember about you\n` +
+      `/forget — clear my memory\n` +
+      `/status — system status\n` +
+      `/mystats — your activity stats\n\n` +
+      `/setkey [provider] [key] — add your API key\n` +
+      `/mykeys — view saved keys\n\n` +
+      `/apps — open mini apps\n` +
+      `/finance — finance tracker\n` +
+      `/tasks — task manager\n` +
+      `/notes — notes\n` +
+      `/habits — habit tracker\n\n` +
+      `/search [query] — web search\n` +
+      `/remind [text] [minutes] — set reminder\n` +
+      `/voice — toggle voice mode\n\n` +
+      `/link — pair your computer\n` +
+      `/devices — paired devices\n` +
+      `/pc — agent status\n` +
+      `/bgrun [task] — background AI task\n` +
+      `/bglist — background tasks${adminSection}`,
       { parse_mode: 'Markdown' }
     );
   });

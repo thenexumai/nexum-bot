@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Notes — NEXUM</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#000;--bg2:#0a0a0a;--bg3:#1c1c1e;--bg4:#2c2c2e;--bg5:#3a3a3c;
+  --fg:#fff;--fg2:rgba(255,255,255,0.6);--fg3:rgba(255,255,255,0.3);--sep:rgba(255,255,255,0.08);
+  --blue:#0a84ff;--orange:#ff9f0a;
+  --r:16px;--font:-apple-system,"SF Pro Display",system-ui,sans-serif;
+}
+html,body{height:100%;background:var(--bg);color:var(--fg);font-family:var(--font);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+::-webkit-scrollbar{display:none}
+
+.header{padding:16px 20px 12px;display:flex;align-items:center;justify-content:space-between}
+.back{width:32px;height:32px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;color:var(--fg2)}
+.back svg,.add-btn svg{width:18px;height:18px;fill:currentColor}
+.title{font-size:17px;font-weight:600}
+.add-btn{width:32px;height:32px;border-radius:50%;background:var(--orange);display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;color:#fff}
+
+.search-wrap{padding:0 20px 12px}
+.search{width:100%;background:var(--bg3);border:none;border-radius:12px;padding:11px 14px;color:var(--fg);font-family:var(--font);font-size:15px;outline:none}
+.search::placeholder{color:var(--fg3)}
+
+.notes-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 20px 24px}
+.note-card{background:var(--bg3);border-radius:14px;padding:16px;cursor:pointer;transition:transform 0.15s,opacity 0.15s;position:relative;min-height:100px}
+.note-card:active{transform:scale(0.96);opacity:0.85}
+.note-card.pinned::before{content:'';position:absolute;top:10px;right:10px;width:6px;height:6px;border-radius:50%;background:var(--orange)}
+.note-title{font-size:14px;font-weight:600;margin-bottom:6px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical}
+.note-preview{font-size:12px;color:var(--fg2);overflow:hidden;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;line-height:1.5}
+.note-date{font-size:11px;color:var(--fg3);margin-top:8px}
+.empty{padding:48px 20px;text-align:center;color:var(--fg2);font-size:14px}
+
+/* Editor */
+.editor{position:fixed;inset:0;background:var(--bg);z-index:20;display:none;flex-direction:column;transform:translateX(100%);transition:transform 0.3s cubic-bezier(0.32,0.72,0,1)}
+.editor.show{display:flex;transform:translateX(0)}
+.editor-header{padding:16px 20px;display:flex;align-items:center;gap:12px;border-bottom:0.5px solid var(--sep)}
+.ed-back{width:32px;height:32px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;color:var(--fg2);flex-shrink:0}
+.ed-back svg{width:18px;height:18px;fill:currentColor}
+.ed-title-input{flex:1;background:transparent;border:none;color:var(--fg);font-family:var(--font);font-size:17px;font-weight:600;outline:none}
+.ed-title-input::placeholder{color:var(--fg3)}
+.ed-save{padding:8px 16px;background:var(--blue);border:none;border-radius:10px;color:#fff;font-family:var(--font);font-size:14px;font-weight:500;cursor:pointer;flex-shrink:0}
+.ed-body{flex:1;padding:16px 20px;overflow-y:auto}
+.ed-content{width:100%;min-height:200px;background:transparent;border:none;color:var(--fg);font-family:var(--font);font-size:15px;outline:none;resize:none;line-height:1.6}
+.ed-content::placeholder{color:var(--fg3)}
+.ed-meta{padding:0 20px 16px;font-size:12px;color:var(--fg3)}
+.ed-actions{display:flex;gap:8px;padding:0 20px 8px}
+.ed-action{padding:8px 14px;background:var(--bg3);border:none;border-radius:10px;color:var(--fg2);font-family:var(--font);font-size:13px;cursor:pointer}
+.ed-action.pin{color:var(--orange)}
+.ed-action.del{color:var(--red, #ff453a)}
+.pb{height:env(safe-area-inset-bottom,20px)}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.notes-grid{animation:fadeUp 0.3s ease both}
+</style>
+</head>
+<body>
+<div class="header">
+  <button class="back" onclick="history.back()">
+    <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+  </button>
+  <span class="title">Notes</span>
+  <button class="add-btn" onclick="openNew()">
+    <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+  </button>
+</div>
+
+<div class="search-wrap">
+  <input class="search" placeholder="Search notes..." id="search" oninput="filterNotes(this.value)">
+</div>
+
+<div class="notes-grid" id="notes-grid"><div class="empty" style="grid-column:1/-1">Loading...</div></div>
+<div class="pb"></div>
+
+<!-- Editor -->
+<div class="editor" id="editor">
+  <div class="editor-header">
+    <button class="ed-back" onclick="closeEditor()">
+      <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+    </button>
+    <input class="ed-title-input" id="ed-title" placeholder="Title">
+    <button class="ed-save" onclick="saveNote()">Save</button>
+  </div>
+  <div class="ed-body">
+    <textarea class="ed-content" id="ed-content" placeholder="Start writing..."></textarea>
+  </div>
+  <div class="ed-meta" id="ed-meta"></div>
+  <div class="ed-actions" id="ed-actions" style="display:none">
+    <button class="ed-action pin" id="pin-btn" onclick="togglePin()">Pin</button>
+    <button class="ed-action del" onclick="deleteNote()">Delete</button>
+  </div>
+  <div class="pb"></div>
+</div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+
+const BASE = window.location.origin;
+const _params = new URLSearchParams(window.location.search);
+const initData = tg?.initData || _params.get('initData') || '';
+const uid = (() => {
+  if (initData) { try { const p=new URLSearchParams(initData); const u=JSON.parse(p.get('user')||'{}'); if(u.id) return u.id; } catch {} }
+  return _params.get('uid') || null;
+})();
+
+function apiUrl(path) {
+  const q = initData ? 'initData='+encodeURIComponent(initData) : (uid ? 'uid='+uid : '');
+  return BASE + path + (q ? '?' + q : '');
+}
+
+let notes = [];
+let editId = null;
+let editPinned = false;
+
+async function load() {
+  try {
+    const r = await fetch(apiUrl('/api/notes'));
+    const d = await r.json();
+    if (!d.ok) return;
+    notes = d.data;
+    render(notes);
+    if (params.get('new')) setTimeout(openNew, 300);
+  } catch { document.getElementById('notes-grid').innerHTML = '<div class="empty" style="grid-column:1/-1">Failed to load</div>'; }
+}
+
+function fmtDate(d) {
+  const date = new Date(d);
+  const now = new Date();
+  const diff = now - date;
+  if (diff < 86400000) return 'Today';
+  if (diff < 172800000) return 'Yesterday';
+  return date.toLocaleDateString('en', { month: 'short', day: 'numeric' });
+}
+
+function render(list) {
+  const grid = document.getElementById('notes-grid');
+  if (!list.length) { grid.innerHTML = '<div class="empty" style="grid-column:1/-1">No notes yet</div>'; return; }
+  grid.innerHTML = list.map(n => `
+    <div class="note-card${n.pinned ? ' pinned' : ''}" onclick="openNote(${n.id})">
+      ${n.title ? `<div class="note-title">${esc(n.title)}</div>` : ''}
+      <div class="note-preview">${esc(n.content)}</div>
+      <div class="note-date">${fmtDate(n.updated_at || n.created_at)}</div>
+    </div>
+  `).join('');
+}
+
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function filterNotes(q) {
+  const qL = q.toLowerCase();
+  render(notes.filter(n => (n.title||'').toLowerCase().includes(qL) || (n.content||'').toLowerCase().includes(qL)));
+}
+
+function openNew() {
+  editId = null; editPinned = false;
+  document.getElementById('ed-title').value = '';
+  document.getElementById('ed-content').value = '';
+  document.getElementById('ed-meta').textContent = '';
+  document.getElementById('ed-actions').style.display = 'none';
+  document.getElementById('editor').classList.add('show');
+  setTimeout(() => document.getElementById('ed-title').focus(), 350);
+}
+
+function openNote(id) {
+  const n = notes.find(x => x.id === id);
+  if (!n) return;
+  editId = id; editPinned = !!n.pinned;
+  document.getElementById('ed-title').value = n.title || '';
+  document.getElementById('ed-content').value = n.content || '';
+  document.getElementById('ed-meta').textContent = 'Edited ' + fmtDate(n.updated_at || n.created_at);
+  document.getElementById('ed-actions').style.display = 'flex';
+  document.getElementById('pin-btn').textContent = editPinned ? 'Unpin' : 'Pin';
+  document.getElementById('editor').classList.add('show');
+  setTimeout(() => document.getElementById('ed-content').focus(), 350);
+}
+
+function closeEditor() {
+  document.getElementById('editor').classList.remove('show');
+  load();
+}
+
+async function saveNote() {
+  const title = document.getElementById('ed-title').value.trim();
+  const content = document.getElementById('ed-content').value.trim();
+  if (!content) return;
+  try {
+    if (editId) {
+      await fetch(BASE + '/api/notes/' + editId, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content, pinned: editPinned, initData, uid }),
+      });
+    } else {
+      await fetch(BASE + '/api/notes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content, initData, uid }),
+      });
+    }
+    if (tg) tg.HapticFeedback?.notificationOccurred('success');
+    closeEditor();
+  } catch { alert('Failed to save'); }
+}
+
+async function deleteNote() {
+  if (!editId) return;
+  if (!confirm('Delete this note?')) return;
+  await fetch(BASE + '/api/notes/' + editId, { method: 'DELETE' });
+  if (tg) tg.HapticFeedback?.notificationOccurred('warning');
+  closeEditor();
+}
+
+async function togglePin() {
+  if (!editId) return;
+  editPinned = !editPinned;
+  document.getElementById('pin-btn').textContent = editPinned ? 'Unpin' : 'Pin';
+  const title = document.getElementById('ed-title').value.trim();
+  const content = document.getElementById('ed-content').value.trim();
+  await fetch(BASE + '/api/notes/' + editId, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, content, pinned: editPinned, initData, uid }),
+  });
+}
+
+load();
+</script>
+</body>
+</html>
