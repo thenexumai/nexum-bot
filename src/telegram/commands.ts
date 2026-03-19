@@ -5,7 +5,7 @@ import { Bot, Context } from "grammy";
 import { createUser, getUser, updatePlan } from "../db/user-db";
 import { generatePairingCode, verifyPairingCode, getPairedAgents } from "../agent/pairing";
 import { selectProvider } from "../core/ai-router";
-import { getUserSoul, addToContext, clearContext, buildSystemPrompt } from "../soul";
+import { getUserSoul, addToContext, clearContext, buildSystemPrompt, isAdmin } from "../soul";
 import handleMessage from "./handler";
 
 export const setupCommands = (bot: Bot) => {
@@ -262,5 +262,63 @@ export const setupCommands = (bot: Bot) => {
   bot.command("clear", async (ctx: Context) => {
     clearContext(ctx.from?.id || 0);
     await ctx.reply("История очищена.");
+  });
+
+  // ADMIN: Get all users stats
+  bot.command("admin_stats", async (ctx: Context) => {
+    const userId = ctx.from?.id || 0;
+    if (!isAdmin(userId)) {
+      await ctx.reply("❌ Доступ только для админа");
+      return;
+    }
+    
+    const { getAllUsersStats } = await import("../soul");
+    const users = getAllUsersStats();
+    
+    if (users.length === 0) {
+      await ctx.reply("📊 Нет пользователей");
+      return;
+    }
+    
+    const list = users.slice(0, 10).map((u, i) => 
+      `${i + 1}. ID: ${u.userId}\n   Сообщений: ${u.messages}\n   Активность: ${new Date(u.lastActive).toLocaleString()}`
+    ).join("\n\n");
+    
+    await ctx.reply(`📊 *Статистика пользователей (топ 10):*\n\n${list}`, { parse_mode: "Markdown" });
+  });
+
+  // ADMIN: Broadcast message
+  bot.command("broadcast", async (ctx: Context) => {
+    const userId = ctx.from?.id || 0;
+    if (!isAdmin(userId)) {
+      await ctx.reply("❌ Доступ только для админа");
+      return;
+    }
+    
+    const msg = ctx.message?.text.replace("/broadcast ", "");
+    if (!msg) {
+      await ctx.reply("Использование: /broadcast ТЕКСТ");
+      return;
+    }
+    
+    await ctx.reply(`📢 Сообщение будет отправлено всем пользователям:\n\n${msg}`);
+  });
+
+  // USER: My stats
+  bot.command("mystats", async (ctx: Context) => {
+    const userId = ctx.from?.id || 0;
+    const { getUserStats } = await import("../soul");
+    const stats = getUserStats(userId);
+    
+    await ctx.reply(
+      `📊 *Твоя статистика:*\n\n` +
+      `Сообщений в контексте: ${stats.totalMessages}\n` +
+      `Интересов: ${stats.interests}\n` +
+      `Проектов: ${stats.projects}\n` +
+      `Заметок: ${stats.notes}\n` +
+      `С: ${new Date(stats.activeSince).toLocaleDateString()}\n\n` +
+      `${stats.isAdmin ? "⚠️ Ты админ" : "👤 Обычный пользователь"}`,
+      { parse_mode: "Markdown" }
+    );
   });
 };

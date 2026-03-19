@@ -1,5 +1,7 @@
-// NEXUM Soul System - Per-user personalization and memory
+// NEXUM Soul System - Per-user personalization with admin support
 // Each user gets their own personalized AI experience
+
+import { config } from "../core/config";
 
 interface UserMemory {
   name?: string;
@@ -7,6 +9,7 @@ interface UserMemory {
   projects: string[];
   preferences: Record<string, string>;
   notes: string[];
+  apiKeys: Record<string, string>;
 }
 
 interface UserSoul {
@@ -17,9 +20,15 @@ interface UserSoul {
   lastActive: number;
 }
 
-// In-memory user souls (replace with DB for production)
+// In-memory user souls - ISOLATED per user
 const userSouls = new Map<number, UserSoul>();
 
+// Check if user is admin
+export const isAdmin = (userId: number): boolean => {
+  return config.adminIds.includes(userId);
+};
+
+// Get user's personalized soul - ISOLATED
 export const getUserSoul = (userId: number): UserSoul => {
   if (!userSouls.has(userId)) {
     userSouls.set(userId, {
@@ -29,6 +38,7 @@ export const getUserSoul = (userId: number): UserSoul => {
         projects: [],
         preferences: {},
         notes: [],
+        apiKeys: {},
       },
       sessionContext: [],
       createdAt: Date.now(),
@@ -40,21 +50,24 @@ export const getUserSoul = (userId: number): UserSoul => {
   return soul;
 };
 
+// Add to user's isolated memory
 export const addToMemory = (
   userId: number,
   category: keyof UserMemory,
   value: string
 ) => {
   const soul = getUserSoul(userId);
+  if (category === "apiKeys") return; // Don't add API keys to memory
+  
   if (Array.isArray(soul.memory[category])) {
     (soul.memory[category] as string[]).push(value);
-    // Keep last 50 items per category
     if ((soul.memory[category] as string[]).length > 50) {
       (soul.memory[category] as string[]).shift();
     }
   }
 };
 
+// Add to user's isolated session context
 export const addToContext = (
   userId: number,
   role: string,
@@ -63,30 +76,40 @@ export const addToContext = (
   const soul = getUserSoul(userId);
   soul.sessionContext.push({ role, content });
   
-  // Keep last 30 messages for context
   if (soul.sessionContext.length > 30) {
     soul.sessionContext = soul.sessionContext.slice(-30);
   }
 };
 
+// Clear user's own context only
 export const clearContext = (userId: number) => {
   const soul = getUserSoul(userId);
   soul.sessionContext = [];
 };
 
+// Build personalized system prompt for THIS user only
 export const buildSystemPrompt = (userId: number): string => {
   const soul = getUserSoul(userId);
   const { memory } = soul;
+  const admin = isAdmin(userId);
   
   let prompt = `Ты NEXUM — персональный AI ассистент.
 
 Твоя задача:
-- Помогать пользователю с любыми задачами
+- Помогать ТОЛЬКО этому пользователю
+- Никогда не раскрывать информацию других пользователей
 - Отвечать кратко и по делу (2-3 предложения)
 - Писать код когда нужно
-- Не тратить токены на пустые ответы
-- Работать через одного бота для всех пользователей
-- Быть персонализированным под каждого юзера`;
+- Персонализирован под каждого юзера отдельно`;
+
+  if (admin) {
+    prompt += `
+
+⚠️ ТЫ АДМИН! Имеешь доступ к:
+- Управлению системой
+- Просмотру статистики
+- Модерации контента`;
+  }
 
   if (memory.name) {
     prompt += `\n\nПользователя зовут: ${memory.name}`;
@@ -104,11 +127,14 @@ export const buildSystemPrompt = (userId: number): string => {
 - Дружелюбно, но без лишних эмоций
 - По делу, без воды
 - С эмодзи в начале сообщения (🤖💬✨🎯💡⚡🚀)
-- Текст появляется постепенно (эффект печати)`;
+- Текст появляется постепенно (эффект печати)
+
+🔒 ВАЖНО: Ты работаешь только с этим пользователем. Никогда не упоминай и не раскрывай данные других юзеров!`;
 
   return prompt;
 };
 
+// Get user stats - ADMIN only can see all
 export const getUserStats = (userId: number) => {
   const soul = getUserSoul(userId);
   return {
@@ -117,7 +143,33 @@ export const getUserStats = (userId: number) => {
     projects: soul.memory.projects.length,
     notes: soul.memory.notes.length,
     activeSince: new Date(soul.createdAt).toISOString(),
+    isAdmin: isAdmin(userId),
   };
+};
+
+// ADMIN: Get all users stats
+export const getAllUsersStats = (): Array<{userId: number, messages: number, lastActive: number}> => {
+  const stats: Array<{userId: number, messages: number, lastActive: number}> = [];
+  for (const [userId, soul] of userSouls) {
+    stats.push({
+      userId,
+      messages: soul.sessionContext.length,
+      lastActive: soul.lastActive,
+    });
+  }
+  return stats.sort((a, b) => b.lastActive - a.lastActive);
+};
+
+// Save user's API key - ISOLATED
+export const saveUserApiKey = (userId: number, provider: string, key: string) => {
+  const soul = getUserSoul(userId);
+  soul.memory.apiKeys[provider] = key;
+};
+
+// Get user's API keys - ISOLATED
+export const getUserApiKeys = (userId: number): Record<string, string> => {
+  const soul = getUserSoul(userId);
+  return { ...soul.memory.apiKeys };
 };
 
 export default getUserSoul;
