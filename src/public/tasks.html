@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Tasks — NEXUM</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#000;--bg2:#0a0a0a;--bg3:#1c1c1e;--bg4:#2c2c2e;--bg5:#3a3a3c;
+  --fg:#fff;--fg2:rgba(255,255,255,0.6);--fg3:rgba(255,255,255,0.3);--sep:rgba(255,255,255,0.08);
+  --blue:#0a84ff;--green:#30d158;--orange:#ff9f0a;--red:#ff453a;--purple:#bf5af2;
+  --r:16px;--font:-apple-system,"SF Pro Display",system-ui,sans-serif;
+}
+html,body{height:100%;background:var(--bg);color:var(--fg);font-family:var(--font);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+::-webkit-scrollbar{display:none}
+
+.header{padding:16px 20px 12px;display:flex;align-items:center;justify-content:space-between}
+.back{width:32px;height:32px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;color:var(--fg2)}
+.back svg,.add-btn svg{width:18px;height:18px;fill:currentColor}
+.title{font-size:17px;font-weight:600}
+.add-btn{width:32px;height:32px;border-radius:50%;background:var(--orange);display:flex;align-items:center;justify-content:center;cursor:pointer;border:none;color:#fff}
+
+.filter-bar{display:flex;gap:8px;padding:0 20px 16px;overflow-x:auto;scrollbar-width:none}
+.filter-btn{padding:7px 14px;border-radius:20px;border:none;font-family:var(--font);font-size:13px;font-weight:500;cursor:pointer;background:var(--bg3);color:var(--fg2);white-space:nowrap;transition:all 0.15s;flex-shrink:0}
+.filter-btn.act{background:var(--fg);color:var(--bg)}
+
+.sec{font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--fg3);padding:0 20px 8px}
+.list{margin:0 20px 20px;background:var(--bg3);border-radius:var(--r);overflow:hidden}
+.task-row{display:flex;align-items:flex-start;padding:14px 16px;border-bottom:0.5px solid var(--sep);gap:12px;cursor:pointer;transition:background 0.1s}
+.task-row:last-child{border:none}
+.task-row:active{background:var(--bg4)}
+.task-row.done{opacity:0.45}
+.check{width:22px;height:22px;border-radius:50%;border:2px solid;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;transition:all 0.2s}
+.check svg{width:12px;height:12px;fill:#fff;display:none}
+.task-row.done .check{background:var(--green);border-color:var(--green)}
+.task-row.done .check svg{display:block}
+.check.critical{border-color:var(--red)}
+.check.high{border-color:var(--orange)}
+.check.medium{border-color:var(--blue)}
+.check.low{border-color:var(--fg3)}
+.task-body{flex:1;min-width:0}
+.task-title{font-size:14px;font-weight:500;line-height:1.4}
+.task-row.done .task-title{text-decoration:line-through}
+.task-meta{display:flex;gap:8px;margin-top:4px;align-items:center;flex-wrap:wrap}
+.task-project{font-size:11px;color:var(--fg2);background:var(--bg4);padding:2px 8px;border-radius:6px}
+.task-due{font-size:11px;color:var(--fg3)}
+.priority-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.empty{padding:32px 20px;text-align:center;color:var(--fg2);font-size:14px}
+.pb{height:env(safe-area-inset-bottom,24px)}
+
+/* Sheet */
+.sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10;display:none;backdrop-filter:blur(4px)}
+.sheet-bg.show{display:block}
+.sheet{position:fixed;bottom:0;left:0;right:0;background:var(--bg2);border-radius:24px 24px 0 0;z-index:11;padding:12px 20px 40px;transform:translateY(100%);transition:transform 0.35s cubic-bezier(0.32,0.72,0,1)}
+.sheet.show{transform:translateY(0)}
+.sheet-handle{width:36px;height:4px;background:var(--bg5);border-radius:2px;margin:0 auto 20px}
+.sheet-title{font-size:17px;font-weight:600;margin-bottom:20px;text-align:center}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12px;color:var(--fg2);font-weight:500;margin-bottom:6px}
+.field input,.field select{width:100%;background:var(--bg3);border:1.5px solid transparent;border-radius:10px;padding:13px 14px;color:var(--fg);font-family:var(--font);font-size:15px;outline:none;transition:border-color 0.15s;appearance:none;-webkit-appearance:none}
+.field input:focus,.field select:focus{border-color:var(--orange)}
+.field input::placeholder{color:var(--fg3)}
+.save-btn{width:100%;padding:16px;background:var(--orange);border:none;border-radius:14px;color:#fff;font-family:var(--font);font-size:16px;font-weight:600;cursor:pointer;transition:opacity 0.15s;margin-top:4px}
+.save-btn:active{opacity:0.8}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.list{animation:fadeUp 0.3s ease both}
+</style>
+</head>
+<body>
+<div class="header">
+  <button class="back" onclick="history.back()">
+    <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+  </button>
+  <span class="title">Tasks</span>
+  <button class="add-btn" onclick="openSheet()">
+    <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+  </button>
+</div>
+
+<div class="filter-bar">
+  <button class="filter-btn act" onclick="setFilter('open',this)">Open</button>
+  <button class="filter-btn" onclick="setFilter('all',this)">All</button>
+  <button class="filter-btn" onclick="setFilter('done',this)">Done</button>
+  <button class="filter-btn" onclick="setFilter('high',this)">High</button>
+</div>
+
+<div class="sec">TASKS</div>
+<div class="list" id="task-list"><div class="empty">Loading...</div></div>
+<div class="pb"></div>
+
+<div class="sheet-bg" id="sheet-bg" onclick="closeSheet()"></div>
+<div class="sheet" id="sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title">New Task</div>
+  <div class="field"><label>Task</label><input type="text" id="f-title" placeholder="What needs to be done?"></div>
+  <div class="field">
+    <label>Priority</label>
+    <select id="f-priority">
+      <option value="critical">Critical</option>
+      <option value="high">High</option>
+      <option value="medium" selected>Medium</option>
+      <option value="low">Low</option>
+    </select>
+  </div>
+  <div class="field"><label>Project</label><input type="text" id="f-project" placeholder="General"></div>
+  <div class="field"><label>Due date (optional)</label><input type="date" id="f-due"></div>
+  <button class="save-btn" onclick="saveTask()">Add Task</button>
+</div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+
+const BASE = window.location.origin;
+const params = new URLSearchParams(window.location.search);
+const initData = params.get('initData') || (tg?.initData || '');
+
+let tasks = [];
+let filterMode = 'open';
+
+async function load() {
+  try {
+    const url = BASE + '/api/tasks' + (initData ? '?initData=' + encodeURIComponent(initData) : '');
+    const r = await fetch(url);
+    const d = await r.json();
+    if (!d.ok) return;
+    tasks = d.data;
+    render();
+    if (params.get('new')) setTimeout(openSheet, 300);
+  } catch { document.getElementById('task-list').innerHTML = '<div class="empty">Failed to load</div>'; }
+}
+
+const PCOLOR = { critical: 'var(--red)', high: 'var(--orange)', medium: 'var(--blue)', low: 'var(--fg3)' };
+
+function render() {
+  let list = [...tasks];
+  if (filterMode === 'open')   list = list.filter(t => t.status !== 'done');
+  if (filterMode === 'done')   list = list.filter(t => t.status === 'done');
+  if (filterMode === 'high')   list = list.filter(t => ['high','critical'].includes(t.priority));
+  const el = document.getElementById('task-list');
+  if (!list.length) { el.innerHTML = '<div class="empty">No tasks</div>'; return; }
+  el.innerHTML = list.map(t => `
+    <div class="task-row${t.status==='done'?' done':''}" onclick="toggleTask(${t.id},this)">
+      <div class="check ${t.priority}" style="border-color:${PCOLOR[t.priority]}">
+        <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+      </div>
+      <div class="task-body">
+        <div class="task-title">${esc(t.title)}</div>
+        <div class="task-meta">
+          ${t.project && t.project !== 'General' ? `<span class="task-project">${esc(t.project)}</span>` : ''}
+          ${t.due_date ? `<span class="task-due">${t.due_date}</span>` : ''}
+          <div class="priority-dot" style="background:${PCOLOR[t.priority]}"></div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function setFilter(f, btn) {
+  filterMode = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('act'));
+  btn.classList.add('act');
+  render();
+}
+
+async function toggleTask(id, row) {
+  const task = tasks.find(t => t.id === id);
+  if (!task) return;
+  const newStatus = task.status === 'done' ? 'todo' : 'done';
+  task.status = newStatus;
+  render();
+  if (tg && newStatus === 'done') tg.HapticFeedback?.notificationOccurred('success');
+  await fetch(BASE + '/api/tasks/' + id, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: newStatus, initData }),
+  });
+}
+
+function openSheet() {
+  document.getElementById('sheet-bg').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+  setTimeout(() => document.getElementById('f-title').focus(), 350);
+}
+function closeSheet() {
+  document.getElementById('sheet-bg').classList.remove('show');
+  document.getElementById('sheet').classList.remove('show');
+}
+
+async function saveTask() {
+  const title = document.getElementById('f-title').value.trim();
+  if (!title) { document.getElementById('f-title').focus(); return; }
+  const priority = document.getElementById('f-priority').value;
+  const project = document.getElementById('f-project').value.trim() || 'General';
+  const due_date = document.getElementById('f-due').value || null;
+  await fetch(BASE + '/api/tasks', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, priority, project, due_date, initData }),
+  });
+  document.getElementById('f-title').value = '';
+  if (tg) tg.HapticFeedback?.notificationOccurred('success');
+  closeSheet();
+  load();
+}
+
+load();
+</script>
+</body>
+</html>
