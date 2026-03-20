@@ -1,0 +1,218 @@
+# NEXUM Bot — Full Development Brief for OpenClaw Agent
+
+## Project overview
+
+NEXUM is a production Telegram bot (TypeScript + grammy) deployed on Railway.
+It is a personal AI assistant with mini web apps, PC agent, and all OpenClaw capabilities adapted for Telegram.
+
+Repository: https://github.com/thenexumai/nexum-bot (branch: main)
+Live URL: https://nexum-bot-production-ae70.up.railway.app
+Bot: @ainexum_bot
+
+## Tech stack
+
+- Runtime: Node.js 20, TypeScript, ts-node
+- Bot framework: grammy
+- Database: SQLite via better-sqlite3
+- Server: Express + WebSocket (ws)
+- Scheduler: node-cron
+- Browser automation: Playwright (chromium)
+- PDF: pdf-parse
+- TTS: edge-tts (Python CLI)
+- STT: Groq Whisper API
+- Deployment: Railway via Dockerfile, auto-deploy on push to main
+
+## Project structure
+
+```
+src/
+  index.ts                  — entry point, bot setup, cron
+  core/
+    config.ts               — env vars, key rotation
+    db.ts                   — SQLite schema + migrations
+  agent/
+    executor.ts             — tool loop, system prompt, ALL tools
+    router.ts               — multi-provider AI with SSE streaming
+    memory.ts               — conversation history, long-term memory
+    pairing.ts              — PC agent pairing codes
+  telegram/
+    handler.ts              — message handlers, streaming reply
+    commands.ts             — all slash commands, DM vs Group menus
+    draft-stream.ts         — OpenClaw-style throttled streaming
+  tools/
+    search.ts               — Serper web search
+    stt.ts                  — Groq Whisper transcription
+    tts.ts                  — edge-tts text to speech
+  apps/
+    server.ts               — Express REST API + WebSocket server
+  public/
+    hub.html                — main mini app hub
+    finance.html            — finance tracker
+    notes.html              — notes app
+    tasks.html              — task manager
+    habits.html             — habit tracker
+nexum_agent.py              — Python PC agent (WebSocket client)
+Dockerfile                  — Railway deployment
+```
+
+## What already works
+
+- Multi-provider AI router: Cerebras → Groq → Gemini → Grok → SambaNova → Together → OpenRouter → DeepSeek → Claude
+- Round-robin key rotation (up to 7 keys per provider: CB1-CB7, GR1-GR7, G1-G7, GK1-GK7, SN1-SN5, TO1-TO7, OR1-OR7, DS1-DS6, CL1)
+- SSE streaming via Groq/Cerebras → OpenClaw draft-stream (throttle 1000ms, editMessageText)
+- Tool loop: AI → XML tool call → execute → result → AI continues (up to 10 rounds)
+- XML tool syntax: `<tool name="web_search" query="..." />`
+- Tools implemented: web_search, web_fetch, exec, process, read, write, ls, grep, find, browser (Playwright), image_analyze, pdf_read, finance_add, finance_summary, task_create, task_update, task_list, note_save, note_get, habit_status, memory_save, memory_get, memory_search, cron, sessions_spawn, subagents, session_status, http_request, user_stats
+- Slash commands: /start, /help, /clear, /memory, /forget, /status, /mystats, /setkey, /mykeys, /apps, /finance, /notes, /note_add, /tasks, /task_add, /habits, /search, /remind, /voice, /voices, /setvoice, /link, /devices, /pc, /run, /screenshot, /sysinfo, /ps, /kill, /files, /clipboard, /notify, /window, /mouse, /keyboard, /hotkey, /network, /browser, /openapp, /http, /bgrun, /bglist, /website, /tools, /newtool, /admin_stats, /admin_keys, /admin_db, /admin_clear_user, /broadcast, /approve
+- DM vs Group command menus (different setMyCommands per scope)
+- Group chat: only respond when @mentioned or replied to
+- No message reactions ever
+- Mini apps (Telegram WebApp): Finance, Notes, Tasks, Habits, Hub
+- REST API for mini apps with Telegram initData validation
+- PC Agent via WebSocket: screenshot, run command, sysinfo, processes, files, clipboard, notifications, mouse, keyboard, hotkey, browser, apps, HTTP, network, windows
+- Reminder cron (every minute)
+- Voice messages: Groq Whisper transcription → AI response → optional TTS reply
+- Photo messages: Gemini vision analysis
+- Exec approval flow: non-admin users need admin to approve shell commands
+- Admin commands with real DB data
+
+## What needs to be fixed / completed
+
+### 1. CRITICAL: Language detection is broken
+The bot often replies in the wrong language. It MUST always reply in the exact language the user wrote in.
+- Russian input → Russian reply
+- English input → English reply  
+- Uzbek input → Uzbek reply
+- Mixed → match the dominant language
+This should be enforced in the system prompt AND as a post-processing check.
+
+### 2. Personality still sounds robotic
+The bot should sound exactly like Claude — warm, direct, intellectually curious, with real opinions.
+When asked "what can you do" it should NOT list capabilities. It should answer naturally.
+When greeted, respond naturally in 1-2 sentences, not a paragraph.
+The system prompt identity section needs to produce Claude-quality responses.
+
+### 3. Mini apps not syncing with bot
+When the bot records a finance entry via tool, the mini app Finance page should show it.
+The issue: uid resolution in mini apps. The Telegram WebApp sends initData which contains user.id.
+The server's validateInitData() must correctly extract uid from initData.
+All mini app HTML files use `tg.initData` but the server sometimes rejects valid signatures.
+Fix: make getUid() accept uid from query param OR body as fallback (for development), but in production use the real initData validation.
+
+### 4. Browser tool screenshots not sent to user
+When browser tool returns `SCREENSHOT_BASE64:...`, the execute() function should send it as a photo to the user via bot.api.sendPhoto(). Currently this is wired but may not work because bot reference is not always available.
+Fix: ensure the `bot` reference is passed through opts properly.
+
+### 5. PC Agent commands are stubs
+/run, /screenshot, /sysinfo, /ps, /kill etc. currently just say "requested from agent" without actually relaying to the PC agent WebSocket.
+The server.ts has a `sendToAgent()` function. The commands.ts needs to import and call it.
+Fix: in commands.ts, import the server app reference and relay commands properly.
+
+### 6. Streaming is sometimes choppy or double-sends
+The draft-stream throttle works but sometimes sends the final message twice (once from stop() and once from the handler fallback).
+Fix: in handler.ts, only send fallback if `draft.messageId() == null` AND no error occurred.
+
+### 7. /help command not clean
+/help shows English text even for Russian users. Should detect language.
+Also the command list is too long for the Telegram message limit in some cases.
+
+### 8. Missing: /model command to switch AI provider preference
+Users should be able to type `/model groq` to prefer Groq, etc.
+Save preference to memory/user_api_keys table and use it in router.ts.
+
+### 9. Missing: proper /status with real provider health check
+/status should actually ping providers to check which ones respond.
+Show latency for each available provider.
+
+### 10. Missing: conversation context in groups
+In group chats, the bot only has 1 conversation history per uid, not per group.
+Should store conversations per (uid, chat_id) pair so group context is separate from DM context.
+
+## Environment variables (set on Railway, never hardcode)
+
+```
+BOT_TOKEN=           # Telegram bot token
+WEBAPP_URL=https://nexum-bot-production-ae70.up.railway.app
+ADMIN_IDS=387182659
+DB_PATH=./nexum.db
+NODE_PORT=18790
+PUBLIC_BOT=true
+
+# AI provider keys (round-robin rotation)
+CB1= CB2= CB3= CB4= CB5= CB6= CB7=   # Cerebras
+GR1= GR2= GR3= GR4= GR5= GR6= GR7=  # Groq
+G1=  G2=  G3=  G4=  G5=  G6=  G7=   # Google Gemini
+GK1= GK2= GK3=                        # Grok (xAI)
+SN1= SN2= SN3= SN4= SN5=             # SambaNova
+TO1= TO2= TO3= TO4= TO5= TO6= TO7=   # Together AI
+OR1= OR2= OR3= OR4= OR5= OR6= OR7=   # OpenRouter
+DS1= DS2= DS3= DS4= DS5= DS6=        # DeepSeek
+CL1=                                   # Anthropic Claude
+SERPER_KEY= SERPER_KEY2= SERPER_KEY3= # Web search
+EDGE_TTS_PATH=edge-tts
+EDGE_PYTHON_PATH=/opt/edge-tts-env/bin/python3
+```
+
+## Priority order for fixes
+
+1. Language detection (critical UX issue)
+2. Personality / response quality
+3. Mini apps ↔ bot sync (uid in initData)
+4. PC agent command relay
+5. Browser screenshot delivery
+6. Group conversation context
+7. /model command
+8. Streaming double-send fix
+9. /status health check
+10. /help language detection
+
+## Instructions for the agent
+
+1. Clone or access the repository
+2. Read ALL files in src/ carefully before changing anything
+3. Fix issues in priority order
+4. For each fix: make the change, verify TypeScript compiles, commit with clear message
+5. Push to main branch — Railway will auto-deploy
+6. After each deploy, test the specific fix before moving to the next
+
+## Key files to focus on
+
+- `src/agent/executor.ts` — system prompt, tool loop, all tools
+- `src/telegram/handler.ts` — streaming, language detection
+- `src/telegram/commands.ts` — all slash commands
+- `src/apps/server.ts` — validateInitData, getUid, API endpoints
+- `src/public/*.html` — mini app uid resolution
+
+## Notes on streaming (OpenClaw draft-stream pattern)
+
+The streaming works like this:
+1. Show typing indicator immediately
+2. Create draft stream (throttle: 1000ms, minInitialChars: 60)
+3. AI streams tokens via SSE (Groq/Cerebras) → draft.update(accumulated)
+4. Every 1000ms → editMessageText with current accumulated text
+5. On completion → draft.stop() → final flush
+6. Keep typing indicator alive every 4500ms during generation
+
+This is the exact same mechanism as OpenClaw's createTelegramDraftStream.
+Do not change this — it works correctly.
+
+## Notes on tool syntax
+
+Tools are called by the AI using XML:
+```xml
+<tool name="finance_add" type="income" amount="5000" category="salary" note="March salary" />
+```
+
+The executor parses these with regex, executes the handlers, injects results back as a user message, and the AI continues. This loop runs up to 10 times per message.
+
+The tool XML must NEVER be shown to the user. executor.ts has stripToolXML() that cleans the final response.
+
+## Notes on mini apps
+
+Mini apps are Telegram WebApps. They open in the Telegram client and communicate with the Express server via REST API.
+
+When opened, `window.Telegram.WebApp.initData` contains a signed string with user.id.
+The server validates this with HMAC-SHA256 using the bot token.
+After validation, getUid() returns the user's Telegram ID which is used to query SQLite.
+
+The fix needed: make sure the uid extracted from initData matches the uid used by the bot to store data.

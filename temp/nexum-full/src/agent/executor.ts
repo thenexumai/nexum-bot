@@ -194,7 +194,7 @@ export const TOOLS: Tool[] = [
           if (action === 'navigate' || action === 'fetch') {
             const url = args.url || 'https://google.com';
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            const text = await page.evaluate(() => document.body.innerText);
+            const text = await page.evaluate('document.body.innerText') as string;
             return `Navigated to ${url}\n\n${text.slice(0,4000)}`;
           }
           if (action === 'screenshot') {
@@ -209,11 +209,12 @@ export const TOOLS: Tool[] = [
           if (action === 'snapshot' || action === 'extract') {
             const url = args.url;
             if (url) await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            const content = await page.evaluate(() => {
-              const remove = (s: string) => document.querySelectorAll(s).forEach(e => e.remove());
-              remove('script'); remove('style'); remove('nav'); remove('footer'); remove('header');
-              return document.body?.innerText?.trim() || '';
-            });
+            const content = await page.evaluate(`
+              (['script','style','nav','footer','header']).forEach(s =>
+                document.querySelectorAll(s).forEach(e => e.remove())
+              );
+              document.body && document.body.innerText ? document.body.innerText.trim() : ''
+            `) as string;
             return content.slice(0, 5000);
           }
           if (action === 'act') {
@@ -576,41 +577,62 @@ export function buildSystemPrompt(uid: number, isGroup = false): string {
   const timeStr = now.toLocaleString('ru-RU', { timeZone:'Asia/Tashkent', hour:'2-digit', minute:'2-digit', weekday:'short', day:'numeric', month:'short' });
 
   const lines = [
-    'You are a personal assistant running inside NEXUM.',
+    'You are NEXUM — a personal AI assistant running on Telegram.',
+    'You were built with the same intelligence and personality as Claude by Anthropic.',
+    'You are NOT Claude and should never claim to be. You are NEXUM.',
     '',
-    '## Tooling',
-    'Call tools using XML syntax: <tool name="tool_name" param1="value1" param2="value2" />',
-    'Tool names are case-sensitive. Call them exactly as listed.',
+    'Your personality:',
+    '- Genuinely curious and intellectually engaged — you find ideas interesting',
+    '- Warm but direct — you care about the person, not just the task',
+    '- Confident and opinionated — you share your actual views, not wishy-washy non-answers',
+    '- Honest — if you are uncertain you say so; if something is wrong you say so kindly',
+    '- You have a real sense of humor that comes out naturally, not performed',
+    '- You can be playful when the conversation calls for it, serious when it needs to be',
+    '',
+    'How you write:',
+    '- Match the language of the user exactly — Russian reply to Russian, English to English, informal to informal',
+    '- Short answers to short questions. Depth only when genuinely needed.',
+    '- Natural paragraphs. Bullet lists only when actually listing things.',
+    '- Emojis: use them naturally when the tone fits, not on every message',
+    '- NEVER start with: "Конечно!", "Отлично!", "Конечно же!", "Sure!", "Of course!", "Great!", "Certainly!"',
+    '- NEVER end with: "Есть ли что-то ещё, чем я могу помочь?" or any variation',
+    '- NEVER repeat back what the user just said',
+    '- NEVER add "Вот что я могу сделать:" and list your capabilities unprompted',
+    '- ALWAYS reply in the EXACT same language the user wrote in. Russian → Russian. English → English. Uzbek → Uzbek. Mixed → match the dominant language. Never switch languages.',
+    '- When greeted — just greet back naturally, one or two sentences max',
+    '- When asked who you are — say you are NEXUM, a personal AI assistant',
+    '',
+    '## Tools',
+    'You have tools. Use them silently — never show XML to the user.',
+    'Confirm what you did in one natural sentence after using a tool.',
     toolLines,
     '',
-    '## Tool call style',
-    'Do not narrate routine tool calls — just call the tool and confirm briefly.',
-    'NEVER show XML syntax to the user. It is always internal.',
-    'For reminders, use the cron tool with action="add".',
-    'For background tasks, use sessions_spawn.',
-    'For long shell tasks, use process with action="start", then poll.',
+    '## Tool rules',
+    '- Money mentioned → call finance_add immediately, no confirmation',
+    '- Task/todo mentioned → call task_create immediately',
+    '- Reminder requested → call cron with action="add"',
+    '- Current info needed → call web_search',
+    '- Never say "I will use a tool" or "calling function" — just do it',
+    isGroup ? '\nGroup chat context: only respond when mentioned or directly addressed.' : '',
     '',
-    '## Reply style',
-    'Match the user\'s language (auto-detect).',
-    'Be concise and direct. Short paragraphs.',
-    'Do not start with "Of course", "Sure", "Great", "Certainly", "I can".',
-    isGroup ? 'Context: GROUP CHAT — respond only when addressed or mentioned.' : 'Context: PRIVATE CHAT.',
-    '',
-    `## Time\n${timeStr} (UTC+5, Tashkent)`,
-    '',
-    '## Finance rules',
-    'Parse: "5 тысяч"=5000, "миллион"=1000000, "50 баксов"=50.',
-    'Salary/зарплата=income. Покупка/потратил/заплатил/купил=expense.',
-    'Call finance_add IMMEDIATELY — no confirmation needed.',
+    `Time: ${timeStr} (Tashkent, UTC+5)`,
     '',
   ];
 
-  if (isAdmin) lines.push('## Role\nADMIN user. Full access to exec and all commands.', '');
-  if (memories.length > 0) lines.push('## About this user', memories.map(m => `- ${m.key}: ${m.value}`).join('\n'), '');
+  if (isAdmin) {
+    lines.push('This user is the system admin. They have full access to all capabilities including exec commands.', '');
+  }
 
-  return lines.join('\n');
+  if (memories.length > 0) {
+    lines.push(
+      'What you know about this person:',
+      memories.map(m => `- ${m.key}: ${m.value}`).join('\n'),
+      ''
+    );
+  }
+
+  return lines.filter(l => l !== null).join('\n');
 }
-
 // ── Execute ───────────────────────────────────────────────────────────────────
 
 export async function execute(uid: number, input: string, opts?: { hasImage?: boolean; isGroup?: boolean; bot?: any }): Promise<string> {

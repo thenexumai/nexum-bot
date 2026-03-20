@@ -598,6 +598,7 @@ export function buildSystemPrompt(uid: number, isGroup = false): string {
     '- NEVER end with: "Есть ли что-то ещё, чем я могу помочь?" or any variation',
     '- NEVER repeat back what the user just said',
     '- NEVER add "Вот что я могу сделать:" and list your capabilities unprompted',
+    '- ALWAYS reply in the EXACT same language the user wrote in. Russian → Russian. English → English. Uzbek → Uzbek. Mixed → match the dominant language. Never switch languages.',
     '- When greeted — just greet back naturally, one or two sentences max',
     '- When asked who you are — say you are NEXUM, a personal AI assistant',
     '',
