@@ -194,7 +194,7 @@ export const TOOLS: Tool[] = [
           if (action === 'navigate' || action === 'fetch') {
             const url = args.url || 'https://google.com';
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            const text = await page.evaluate(() => (window as any).document.body.innerText);
+            const text = await page.evaluate('document.body.innerText') as string;
             return `Navigated to ${url}\n\n${text.slice(0,4000)}`;
           }
           if (action === 'screenshot') {
@@ -209,12 +209,12 @@ export const TOOLS: Tool[] = [
           if (action === 'snapshot' || action === 'extract') {
             const url = args.url;
             if (url) await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            const content = await page.evaluate(() => {
-              const d = (window as any).document;
-              const remove = (s: string) => d.querySelectorAll(s).forEach((e: any) => e.remove());
-              remove('script'); remove('style'); remove('nav'); remove('footer'); remove('header');
-              return d.body?.innerText?.trim() || '';
-            });
+            const content = await page.evaluate(`
+              (['script','style','nav','footer','header']).forEach(s =>
+                document.querySelectorAll(s).forEach(e => e.remove())
+              );
+              document.body && document.body.innerText ? document.body.innerText.trim() : ''
+            `) as string;
             return content.slice(0, 5000);
           }
           if (action === 'act') {
