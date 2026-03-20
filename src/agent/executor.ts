@@ -194,7 +194,7 @@ export const TOOLS: Tool[] = [
           if (action === 'navigate' || action === 'fetch') {
             const url = args.url || 'https://google.com';
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            const text = await page.evaluate(() => document.body.innerText);
+            const text = await page.evaluate(() => (window as any).document.body.innerText);
             return `Navigated to ${url}\n\n${text.slice(0,4000)}`;
           }
           if (action === 'screenshot') {
@@ -210,9 +210,10 @@ export const TOOLS: Tool[] = [
             const url = args.url;
             if (url) await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
             const content = await page.evaluate(() => {
-              const remove = (s: string) => document.querySelectorAll(s).forEach(e => e.remove());
+              const d = (window as any).document;
+              const remove = (s: string) => d.querySelectorAll(s).forEach((e: any) => e.remove());
               remove('script'); remove('style'); remove('nav'); remove('footer'); remove('header');
-              return document.body?.innerText?.trim() || '';
+              return d.body?.innerText?.trim() || '';
             });
             return content.slice(0, 5000);
           }
