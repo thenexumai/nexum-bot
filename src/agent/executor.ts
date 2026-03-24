@@ -6,6 +6,7 @@ import { getMemories, getHistory, saveMessage, autoExtract, saveMemory } from '.
 import { config } from '../core/config';
 import { db } from '../core/db';
 import { webSearch } from '../tools/search';
+import { detectLanguage, getSystemPromptPrefix, Language } from './language';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs/promises';

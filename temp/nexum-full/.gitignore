@@ -1,8 +1,0 @@
-node_modules/
-dist/
-.env
-data/
-*.db
-*.db-wal
-*.db-shm
-.nexum_agent.json

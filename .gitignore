@@ -6,3 +6,5 @@ data/
 *.db-wal
 *.db-shm
 .nexum_agent.json
+OPENCLAW_BRIEF*.txt
+*.txt
