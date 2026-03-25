@@ -19,8 +19,10 @@
 1. **Language Detection** — Авто-определение языка (RU/EN/UZ)
 2. **Personality** — Системный промпт уровня Claude
 3. **Mini Apps Sync** — uid из Telegram initData
-4. **PC Agent Relay** — WebSocket контроль ПК
+4. **PC Agent Relay** — WebSocket контроль ПК (Pro only)
 5. **20+ Инструментов** — Поиск, браузер, файлы, код, TTS, STT
+6. **Tariff System** — Free/Middle/Pro с лимитами
+7. **BYOK** — Bring Your Own Key (Pro)
 
 ### 📱 Мини-апы (7 шт):
 
@@ -102,8 +104,30 @@ NEXUM-v1-beta/
 
 **Локально:**
 ```bash
+npm install
+npm run build
 npm start
 ```
+
+---
+
+## 💰 Тарифы
+
+| План | Цена | Сообщения | Memory | Mini Apps | BYOK | PC Agent |
+|------|------|-----------|--------|-----------|------|----------|
+| **Free** | $0/мес | 70/день | ❌ | ❌ | ❌ | ❌ |
+| **Middle** | $9/мес | 300/день | ✅ | ✅ | ❌ | ❌ |
+| **Pro** | $15/мес | ∞ | ✅ | ✅ | ✅ | ✅ |
+
+**PC Agent (Pro only):**
+- Управление ПК через Telegram
+- Команды: `/run`, `/screenshot`, `/link`, `/devices`
+- Привязка к User ID + Device ID
+
+**BYOK (Pro only):**
+- `/setkey [provider] [key]` — добавить ключ
+- `/mykeys` — просмотр ключей
+- Приоритет: user keys → system fallback
 
 ---
 
