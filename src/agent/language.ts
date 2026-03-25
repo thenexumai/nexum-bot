@@ -21,7 +21,7 @@ const LANG_PATTERNS: Record<Language, RegExp[]> = {
   uz: [
     /[a-z]{3,}/i,
     /(salom|alaykum|xayr|rahmat|iltimos|ha|yoq|yaxshi|nima|qanday|qayerda|qachon|nega|kim|uchun)/i,
-    /(sen|siz|sening|seni|senga|sendan)|bilan|uchun|haqida)/i,
+    /(sen|siz|sening|seni|senga|sendan|bilan|uchun|haqida)/i,
     /(men|meni|menga|mendan|men bilan)/i,
     /(emas|yoq|hech|hech narsa|hech kim)/i,
   ],

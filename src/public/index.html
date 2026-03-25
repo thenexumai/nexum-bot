@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NEXUM Hub — Все мини-апы</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { color: white; text-align: center; margin-bottom: 30px; font-size: 2.5rem; }
+    .apps-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+    .app-card { background: white; border-radius: 16px; padding: 30px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.2); transition: transform 0.3s; }
+    .app-card:hover { transform: translateY(-5px); }
+    .app-icon { font-size: 3rem; margin-bottom: 15px; }
+    .app-name { font-size: 1.5rem; font-weight: bold; color: #333; margin-bottom: 10px; }
+    .app-desc { color: #666; margin-bottom: 20px; }
+    .app-btn { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 30px; border-radius: 8px; text-decoration: none; font-weight: bold; transition: opacity 0.3s; }
+    .app-btn:hover { opacity: 0.9; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 NEXUM Hub</h1>
+    <div class="apps-grid">
+      <div class="app-card">
+        <div class="app-icon">💰</div>
+        <div class="app-name">Финансы</div>
+        <div class="app-desc">Учёт доходов и расходов</div>
+        <a href="finance.html" class="app-btn">Открыть</a>
+      </div>
+      <div class="app-card">
+        <div class="app-icon">✅</div>
+        <div class="app-name">Задачи</div>
+        <div class="app-desc">Список дел и проекты</div>
+        <a href="tasks.html" class="app-btn">Открыть</a>
+      </div>
+      <div class="app-card">
+        <div class="app-icon">📝</div>
+        <div class="app-name">Заметки</div>
+        <div class="app-desc">Быстрые заметки и идеи</div>
+        <a href="notes.html" class="app-btn">Открыть</a>
+      </div>
+      <div class="app-card">
+        <div class="app-icon">🎯</div>
+        <div class="app-name">Привычки</div>
+        <div class="app-desc">Трекер привычек</div>
+        <a href="habits.html" class="app-btn">Открыть</a>
+      </div>
+      <div class="app-card">
+        <div class="app-icon">📅</div>
+        <div class="app-name">Календарь</div>
+        <div class="app-desc">События и напоминания</div>
+        <a href="calendar.html" class="app-btn">Открыть</a>
+      </div>
+      <div class="app-card">
+        <div class="app-icon">👥</div>
+        <div class="app-name">Контакты</div>
+        <div class="app-desc">База контактов</div>
+        <a href="contacts.html" class="app-btn">Открыть</a>
+      </div>
+      <div class="app-card">
+        <div class="app-icon">🤖</div>
+        <div class="app-name">NEXUM Agent</div>
+        <div class="app-desc">AI помощник</div>
+        <a href="agent.html" class="app-btn">Открыть</a>
+      </div>
+    </div>
+  </div>
+  <script>
+    // Get user ID from Telegram initData
+    const urlParams = new URLSearchParams(window.location.search);
+    const initData = urlParams.get('tgWebAppData');
+    if (initData) {
+      const params = new URLSearchParams(initData);
+      const user = JSON.parse(params.get('user') || '{}');
+      console.log('User ID:', user.id);
+    }
+  </script>
+</body>
+</html>

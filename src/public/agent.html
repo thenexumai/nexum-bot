@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NEXUM Agent — AI</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; padding: 20px; }
+    .container { max-width: 800px; margin: 0 auto; }
+    h1 { color: #333; margin-bottom: 20px; }
+    .chat-container { background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
+    .chat-messages { height: 400px; overflow-y: auto; padding: 20px; }
+    .message { margin-bottom: 15px; }
+    .message.user { text-align: right; }
+    .message.assistant { text-align: left; }
+    .message-bubble { display: inline-block; padding: 12px 18px; border-radius: 16px; max-width: 80%; }
+    .user .message-bubble { background: #667eea; color: white; }
+    .assistant .message-bubble { background: #e0e0e0; color: #333; }
+    .chat-input { display: flex; border-top: 1px solid #e0e0e0; }
+    .chat-input input { flex: 1; padding: 15px; border: none; font-size: 1rem; }
+    .chat-input button { background: #667eea; color: white; border: none; padding: 15px 30px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🤖 NEXUM Agent</h1>
+    <div class="chat-container">
+      <div class="chat-messages" id="chatMessages">
+        <div class="message assistant">
+          <div class="message-bubble">Привет! Я Гидеон, твой AI помощник. Чем могу помочь?</div>
+        </div>
+      </div>
+      <div class="chat-input">
+        <input type="text" id="messageInput" placeholder="Введите сообщение..." onkeypress="if(event.key==='Enter')sendMessage()">
+        <button onclick="sendMessage()">Отправить</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    function sendMessage() {
+      const input = document.getElementById('messageInput');
+      const text = input.value.trim();
+      if (!text) return;
+      const messages = document.getElementById('chatMessages');
+      const userMsg = document.createElement('div');
+      userMsg.className = 'message user';
+      userMsg.innerHTML = `<div class="message-bubble">${text}</div>`;
+      messages.appendChild(userMsg);
+      input.value = '';
+      setTimeout(() => {
+        const assistantMsg = document.createElement('div');
+        assistantMsg.className = 'message assistant';
+        assistantMsg.innerHTML = `<div class="message-bubble">Сообщение отправлено! (демо)</div>`;
+        messages.appendChild(assistantMsg);
+        messages.scrollTop = messages.scrollHeight;
+      }, 500);
+      messages.scrollTop = messages.scrollHeight;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Календарь — NEXUM</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; padding: 20px; }
+    .container { max-width: 800px; margin: 0 auto; }
+    h1 { color: #333; margin-bottom: 20px; }
+    .calendar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: white; padding: 20px; border-radius: 8px; }
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; background: white; padding: 20px; border-radius: 8px; }
+    .calendar-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 8px; cursor: pointer; }
+    .calendar-day:hover { background: #f0f0f0; }
+    .calendar-day.today { background: #667eea; color: white; }
+    .calendar-day.has-event { border: 2px solid #667eea; }
+    .events { margin-top: 20px; background: white; padding: 20px; border-radius: 8px; }
+    .event-item { padding: 15px; border-bottom: 1px solid #e0e0e0; }
+    .event-item:last-child { border-bottom: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📅 Календарь</h1>
+    <div class="calendar-header">
+      <button onclick="prevMonth()">←</button>
+      <h2 id="monthYear">Март 2026</h2>
+      <button onclick="nextMonth()">→</button>
+    </div>
+    <div class="calendar-grid" id="calendarGrid"></div>
+    <div class="events" id="events"></div>
+  </div>
+  <script>
+    const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+    let currentMonth = new Date().getMonth();
+    let currentYear = new Date().getFullYear();
+    function renderCalendar() {
+      document.getElementById('monthYear').textContent = `${months[currentMonth]} ${currentYear}`;
+      const grid = document.getElementById('calendarGrid');
+      grid.innerHTML = '';
+      const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+      for (let i = 1; i <= daysInMonth; i++) {
+        const day = document.createElement('div');
+        day.className = 'calendar-day';
+        if (i === new Date().getDate() && currentMonth === new Date().getMonth()) day.classList.add('today');
+        day.textContent = i;
+        grid.appendChild(day);
+      }
+    }
+    function prevMonth() { currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; } renderCalendar(); }
+    function nextMonth() { currentMonth++; if (currentMonth > 11) { currentMonth = 0; currentYear--; } renderCalendar(); }
+    renderCalendar();
+  </script>
+</body>
+</html>
