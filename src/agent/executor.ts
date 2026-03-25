@@ -7,6 +7,7 @@ import { config } from '../core/config';
 import { db } from '../core/db';
 import { webSearch } from '../tools/search';
 import { detectLanguage, getSystemPromptPrefix, Language } from './language';
+import { getSystemPrompt } from './personality';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs/promises';
