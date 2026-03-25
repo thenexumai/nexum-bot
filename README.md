@@ -110,7 +110,7 @@ npm start
 ## 📞 Контакты
 
 - **Создатель:** Тимур (@exyysdof)
-- **Telegram:** @gi_deon_bot
+- **Telegram:** @ainexum_bot
 - **GitHub:** https://github.com/thenexumai/nexum-bot
 
 ---
