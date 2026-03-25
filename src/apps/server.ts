@@ -63,8 +63,13 @@ export function startServer(bot?: any) {
   }
   app.get('/hub', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'hub.html')));
 
-  // ── Health check ─────────────────────────────────────────────────────────
-  app.get('/health', (_req, res) => res.json({ ok: true, version: '14.0.0', uptime: process.uptime() }));
+  // ── Health check endpoints ───────────────────────────────────────────────
+  app.get('/', (_req, res) => {
+    res.status(200).send('NEXUM OK');
+  });
+  app.get('/health', (_req, res) => {
+    res.status(200).json({ ok: true, version: '15.0.0', uptime: process.uptime(), timestamp: new Date().toISOString() });
+  });
 
   // ── Site viewer ──────────────────────────────────────────────────────────
   app.get('/site/:id', (req, res) => {
