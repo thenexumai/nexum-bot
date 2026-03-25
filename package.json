@@ -7,9 +7,10 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "build": "tsc"
+    "heroku-postbuild": "npm run build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.0",
@@ -26,22 +27,6 @@
     "typescript": "^5.5.0",
     "ws": "^8.18.0"
   },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.10",
-    "@types/express": "^4.17.21",
-    "@types/node": "^20.0.0",
-    "@types/node-cron": "^3.0.11",
-    "@types/node-fetch": "^2.6.11",
-    "@types/pdf-parse": "^1.1.4",
-    "@types/ws": "^8.5.12"
-  },
-  "scripts": {
-    "build": "tsc && node scripts/install-better-sqlite3.js",
-    "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
-    "heroku-postbuild": "npm run build"
-  }
-}
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.10",
     "@types/express": "^4.17.21",

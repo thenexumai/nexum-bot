@@ -1,18 +1,16 @@
-import sqlite3 = require('sqlite3');
-import path = require('path');
-import fs = require('fs');
+import Database = require('better-sqlite3');
+import path from 'path';
+import fs from 'fs';
 
 const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'data', 'nexum.db');
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
-export const db = new sqlite3.Database(DB_PATH);
+export const db = new Database(DB_PATH);
 
 // Enable pragmas
-db.serialize(() => {
-  db.run('PRAGMA journal_mode = WAL');
-  db.run('PRAGMA foreign_keys = ON');
-  db.run('PRAGMA synchronous = NORMAL');
-});
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+db.pragma('synchronous = NORMAL');
 
 // ── Core schema ──────────────────────────────────────────────────────────────
 db.exec(`
@@ -214,14 +212,24 @@ for (const sql of migrations) {
 }
 
 export function ensureUser(uid: number, username?: string, firstName?: string) {
-  db.run(`INSERT OR REPLACE INTO users (uid, username, first_name, updated_at) VALUES (?, ?, ?, datetime('now'))`, [uid, username || null, firstName || null]);
+  db.prepare(`
+    INSERT INTO users (uid, username, first_name)
+    VALUES (?, ?, ?)
+    ON CONFLICT(uid) DO UPDATE SET
+      username=excluded.username,
+      first_name=excluded.first_name,
+      updated_at=datetime('now')
+  `).run(uid, username || null, firstName || null);
 }
 
 export function getUserApiKey(uid: number, provider: string): string | null {
-  // Will be converted to async in files that use it
-  return null;
+  const row = db.prepare('SELECT api_key FROM user_api_keys WHERE uid=? AND provider=?').get(uid, provider) as any;
+  return row?.api_key || null;
 }
 
 export function setUserApiKey(uid: number, provider: string, key: string) {
-  db.run(`INSERT OR REPLACE INTO user_api_keys (uid, provider, api_key) VALUES (?,?,?)`, [uid, provider, key]);
+  db.prepare(`
+    INSERT INTO user_api_keys (uid, provider, api_key) VALUES (?,?,?)
+    ON CONFLICT(uid,provider) DO UPDATE SET api_key=excluded.api_key
+  `).run(uid, provider, key);
 }

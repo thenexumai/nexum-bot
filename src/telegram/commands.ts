@@ -316,7 +316,8 @@ export function setupCommands(bot: Bot): void {
     const result = await relayToAgent(uid, { type:'screenshot' });
     if (result.includes('SCREENSHOT_BASE64:')) {
       const imgBuf = Buffer.from(result.replace('SCREENSHOT_BASE64:',''), 'base64');
-      await ctx.replyWithPhoto({ source: imgBuf });
+      const { InputFile } = await import('grammy');
+      await ctx.replyWithPhoto(new InputFile(imgBuf, 'screenshot.jpg'));
     } else {
       await ctx.reply(result);
     }
