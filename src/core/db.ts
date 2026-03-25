@@ -1,14 +1,18 @@
-import Database = require('better-sqlite3');
+import sqlite3 = require('sqlite3');
 import path = require('path');
-import fs   = require('fs');
+import fs = require('fs');
 
 const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'data', 'nexum.db');
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
-export const db: any = new (Database as any)(DB_PATH);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
-db.pragma('synchronous = NORMAL');
+export const db = new sqlite3.Database(DB_PATH);
+
+// Enable pragmas
+db.serialize(() => {
+  db.run('PRAGMA journal_mode = WAL');
+  db.run('PRAGMA foreign_keys = ON');
+  db.run('PRAGMA synchronous = NORMAL');
+});
 
 // ── Core schema ──────────────────────────────────────────────────────────────
 db.exec(`
