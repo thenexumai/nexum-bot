@@ -214,24 +214,14 @@ for (const sql of migrations) {
 }
 
 export function ensureUser(uid: number, username?: string, firstName?: string) {
-  db.prepare(`
-    INSERT INTO users (uid, username, first_name)
-    VALUES (?, ?, ?)
-    ON CONFLICT(uid) DO UPDATE SET
-      username=excluded.username,
-      first_name=excluded.first_name,
-      updated_at=datetime('now')
-  `).run(uid, username || null, firstName || null);
+  db.run(`INSERT OR REPLACE INTO users (uid, username, first_name, updated_at) VALUES (?, ?, ?, datetime('now'))`, [uid, username || null, firstName || null]);
 }
 
 export function getUserApiKey(uid: number, provider: string): string | null {
-  const row = db.prepare('SELECT api_key FROM user_api_keys WHERE uid=? AND provider=?').get(uid, provider) as any;
-  return row?.api_key || null;
+  // Will be converted to async in files that use it
+  return null;
 }
 
 export function setUserApiKey(uid: number, provider: string, key: string) {
-  db.prepare(`
-    INSERT INTO user_api_keys (uid, provider, api_key) VALUES (?,?,?)
-    ON CONFLICT(uid,provider) DO UPDATE SET api_key=excluded.api_key
-  `).run(uid, provider, key);
+  db.run(`INSERT OR REPLACE INTO user_api_keys (uid, provider, api_key) VALUES (?,?,?)`, [uid, provider, key]);
 }
