@@ -19,6 +19,7 @@ db.exec(`
     username   TEXT,
     first_name TEXT,
     lang       TEXT DEFAULT 'auto',
+    tariff     TEXT DEFAULT 'free',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );

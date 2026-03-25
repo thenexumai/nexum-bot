@@ -5,6 +5,7 @@ import { chat } from './router';
 import { getMemories, getHistory, saveMessage, autoExtract, saveMemory } from './memory';
 import { config } from '../core/config';
 import { db } from '../core/db';
+import { canSendMessage, hasFeature, getPcAgentAccess } from '../core/billing';
 import { webSearch } from '../tools/search';
 import { detectLanguage, getSystemPromptPrefix, Language } from './language';
 import { getSystemPrompt } from './personality';
@@ -658,6 +659,12 @@ export function buildSystemPrompt(uid: number, isGroup = false): string {
 // ── Execute ───────────────────────────────────────────────────────────────────
 
 export async function execute(uid: number, input: string, opts?: { hasImage?: boolean; isGroup?: boolean; bot?: any }): Promise<string> {
+  // Check message limit
+  const canSend = canSendMessage(uid);
+  if (!canSend.ok) {
+    return `⚠️ ${canSend.reason}`;
+  }
+  
   autoExtract(uid, input);
   const systemPrompt = buildSystemPrompt(uid, opts?.isGroup || false);
   const history = getHistory(uid, 20);

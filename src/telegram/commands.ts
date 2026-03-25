@@ -3,6 +3,7 @@
 import { Bot, Context, InlineKeyboard } from 'grammy';
 import { config } from '../core/config';
 import { db, ensureUser, setUserApiKey } from '../core/db';
+import { getTariffConfig, getUpgradeMessage, hasFeature, getPcAgentAccess } from '../core/billing';
 import { clearHistory, getMemories, clearMemory, saveMemory } from '../agent/memory';
 import { execute, runSubagent } from '../agent/executor';
 import { webSearch } from '../tools/search';
@@ -32,6 +33,7 @@ const DM_COMMANDS = [
   { command: 'voice',     description: 'Toggle voice mode' },
   { command: 'setkey',    description: 'Add API key' },
   { command: 'mykeys',    description: 'My API keys' },
+  { command: 'tariffs',   description: 'Tariff plans (Free/Middle/Pro)' },
   { command: 'link',      description: 'Pair your computer' },
   { command: 'devices',   description: 'Paired devices' },
   { command: 'pc',        description: 'PC agent status' },
@@ -155,6 +157,31 @@ export function setupCommands(bot: Bot): void {
     const keys = db.prepare('SELECT provider, substr(api_key,1,8)||"…" as k FROM user_api_keys WHERE uid=?').all(uid) as any[];
     if (!keys.length) { await ctx.reply('No personal keys. Use /setkey to add one.'); return; }
     await ctx.reply(keys.map(k => `*${k.provider}:* ${k.k}`).join('\n'), { parse_mode:'Markdown' });
+  });
+
+  // ── /tariffs ───────────────────────────────────────────────────────────────
+  bot.command('tariffs', async (ctx: Context) => {
+    const uid = ctx.from?.id || 0;
+    const tariff = getTariffConfig(uid);
+    const upgradeMsg = getUpgradeMessage(tariff.plan);
+    
+    const kb = new InlineKeyboard()
+      .url('💳 Upgrade (Middle $9)', 'https://t.me/gi_deon_bot?start=upgrade_middle')
+      .url('🚀 Upgrade (Pro $15)', 'https://t.me/gi_deon_bot?start=upgrade_pro')
+      .row()
+      .url('ℹ️ More info', 'https://nexum-bot.com/tariffs');
+    
+    await ctx.reply(
+      `📊 *Your Tariff: ${tariff.plan.toUpperCase()}*\n\n` +
+      `• Price: $${tariff.priceUsd}/мес\n` +
+      `• Messages: ${tariff.dailyMessageLimit || '∞'}/день\n` +
+      `• Memory: ${tariff.hasMemory ? '✅' : '❌'}\n` +
+      `• Mini Apps: ${tariff.hasMiniApps ? '✅' : '❌'}\n` +
+      `• BYOK: ${tariff.hasBYOK ? '✅' : '❌'}\n` +
+      `• PC Agent: ${tariff.hasPcAgent ? '✅' : '❌'}\n\n` +
+      upgradeMsg,
+      { parse_mode: 'Markdown', reply_markup: kb }
+    );
   });
 
   // ── /apps ──────────────────────────────────────────────────────────────────
@@ -303,6 +330,12 @@ export function setupCommands(bot: Bot): void {
 
   bot.command('run', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
+    // Check PC Agent access
+    const pcAccess = getPcAgentAccess(uid);
+    if (!pcAccess.ok) {
+      await ctx.reply(`⚠️ ${pcAccess.reason}`);
+      return;
+    }
     const cmd = ctx.message?.text.replace('/run','').trim();
     if (!cmd) { await ctx.reply('Usage: `/run [command]`', { parse_mode:'Markdown' }); return; }
     await ctx.replyWithChatAction('typing');
@@ -312,6 +345,12 @@ export function setupCommands(bot: Bot): void {
 
   bot.command('screenshot', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
+    // Check PC Agent access
+    const pcAccess = getPcAgentAccess(uid);
+    if (!pcAccess.ok) {
+      await ctx.reply(`⚠️ ${pcAccess.reason}`);
+      return;
+    }
     await ctx.replyWithChatAction('upload_photo');
     const result = await relayToAgent(uid, { type:'screenshot' });
     if (result.includes('SCREENSHOT_BASE64:')) {
