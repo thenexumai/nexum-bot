@@ -317,7 +317,11 @@ export function startServer(bot?: any) {
   };
 
   const port = config.port;
-  httpServer.listen(port, '0.0.0.0', () => console.log(`[server] NEXUM v14 on :${port}`));
+  httpServer.listen(port, '0.0.0.0', () => {
+    console.log(`[server] NEXUM v14 on :${port}`);
+    // Set global reference for PC agent relay
+    (global as any).__nexumApp = app;
+  });
   return app;
 }
 
@@ -355,7 +359,5 @@ export async function requestApproval(params: {
   });
 }
 
-// Module-level app reference for PC agent relay (used by commands.ts)
-let _appRef: any = null;
-export const app = { get sendToAgent() { return _appRef?.sendToAgent; }, get isOnline() { return _appRef?.isAgentOnline; } };
-export const _setAppRef = (a: any) => { _appRef = a; };
+// Global app reference for PC agent relay (used by commands.ts via global.__nexumApp)
+// Set automatically when server starts

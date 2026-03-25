@@ -290,8 +290,10 @@ export function setupCommands(bot: Bot): void {
     await ctx.reply(`*PC Agent*\n\nDevice: ${agent.device_name||'?'}\nPlatform: ${agent.platform||'?'}\nStatus: ${online?'online':'offline'}\nLast seen: ${agent.last_seen||'never'}`, { parse_mode:'Markdown' });
   });
 
-  // Generic PC command relay
-  async function relayToAgent(uid: number, cmd: object, ctx: Context, serverApp: any): Promise<string> {
+  // Generic PC command relay via WebSocket
+  async function relayToAgent(uid: number, cmd: object): Promise<string> {
+    const serverApp = (global as any).__nexumApp;
+    if (!serverApp?.sendToAgent) return 'PC agent relay not initialized.';
     if (!isAgentOnline(uid)) return 'PC agent is offline. Run nexum_agent.py on your computer.';
     try {
       const result = await serverApp.sendToAgent(uid, cmd);
@@ -304,110 +306,125 @@ export function setupCommands(bot: Bot): void {
     const cmd = ctx.message?.text.replace('/run','').trim();
     if (!cmd) { await ctx.reply('Usage: `/run [command]`', { parse_mode:'Markdown' }); return; }
     await ctx.replyWithChatAction('typing');
-    const { app } = await import('../apps/server').catch(() => ({ app: null }));
-    const result = await relayToAgent(uid, { type:'run', command:cmd }, ctx, app);
+    const result = await relayToAgent(uid, { type:'run', command:cmd });
     await ctx.reply(`\`\`\`\n${result}\n\`\`\``, { parse_mode:'Markdown' });
   });
 
   bot.command('screenshot', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
     await ctx.replyWithChatAction('upload_photo');
-    if (!isAgentOnline(uid)) { await ctx.reply('PC agent offline.'); return; }
-    await ctx.reply('Screenshot requested. Waiting for agent response…');
+    const result = await relayToAgent(uid, { type:'screenshot' });
+    if (result.includes('SCREENSHOT_BASE64:')) {
+      const imgBuf = Buffer.from(result.replace('SCREENSHOT_BASE64:',''), 'base64');
+      await ctx.replyWithPhoto({ source: imgBuf });
+    } else {
+      await ctx.reply(result);
+    }
   });
 
   bot.command('sysinfo', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
     await ctx.replyWithChatAction('typing');
-    if (!isAgentOnline(uid)) { await ctx.reply('PC agent offline.'); return; }
-    await ctx.reply('System info requested from agent.');
+    const result = await relayToAgent(uid, { type:'sysinfo' });
+    await ctx.reply(result);
   });
 
   bot.command('ps', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
-    if (!isAgentOnline(uid)) { await ctx.reply('PC agent offline.'); return; }
-    await ctx.reply('Process list requested from agent.');
+    const result = await relayToAgent(uid, { type:'ps' });
+    await ctx.reply(`\`\`\`\n${result}\n\`\`\``, { parse_mode:'Markdown' });
   });
 
   bot.command('kill', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
     const target = ctx.message?.text.replace('/kill','').trim();
     if (!target) { await ctx.reply('Usage: `/kill [name or PID]`', { parse_mode:'Markdown' }); return; }
-    if (!isAgentOnline(uid)) { await ctx.reply('PC agent offline.'); return; }
-    await ctx.reply(`Kill requested: ${target}`);
+    const result = await relayToAgent(uid, { type:'kill', target });
+    await ctx.reply(result);
   });
 
   bot.command('files', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
-    const args = ctx.message?.text.replace('/files','').trim();
-    if (!isAgentOnline(uid)) { await ctx.reply('PC agent offline.'); return; }
-    await ctx.reply(`File op: ${args||'list ~'}`);
+    const args = ctx.message?.text.replace('/files','').trim() || 'list ~';
+    const [op, ...rest] = args.split(' ');
+    const result = await relayToAgent(uid, { type:'files', operation: op, path: rest.join(' ') || '~' });
+    await ctx.reply(`\`\`\`\n${result}\n\`\`\``, { parse_mode:'Markdown' });
   });
 
   bot.command('clipboard', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
-    if (!isAgentOnline(uid)) { await ctx.reply('PC agent offline.'); return; }
-    await ctx.reply('Clipboard requested from agent.');
+    const result = await relayToAgent(uid, { type:'clipboard' });
+    await ctx.reply(result);
   });
 
   bot.command('notify', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
     const msg = ctx.message?.text.replace('/notify','').trim();
-    if (!isAgentOnline(uid)) { await ctx.reply('PC agent offline.'); return; }
-    await ctx.reply(`Notification sent: ${msg}`);
+    if (!msg) { await ctx.reply('Usage: `/notify [message]`', { parse_mode:'Markdown' }); return; }
+    const result = await relayToAgent(uid, { type:'notify', message: msg });
+    await ctx.reply(result);
   });
 
   bot.command('window', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
-    if (!isAgentOnline(uid)) { await ctx.reply('PC agent offline.'); return; }
-    await ctx.reply('Window op sent to agent.');
+    const args = ctx.message?.text.replace('/window','').trim();
+    const [op, ...rest] = args.split(' ');
+    const result = await relayToAgent(uid, { type:'window', operation: op, params: rest.join(' ') });
+    await ctx.reply(result);
   });
 
   bot.command('mouse', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
-    if (!isAgentOnline(uid)) { await ctx.reply('PC agent offline.'); return; }
-    await ctx.reply('Mouse command sent to agent.');
+    const args = ctx.message?.text.replace('/mouse','').trim();
+    const [action, x, y] = args.split(' ');
+    const result = await relayToAgent(uid, { type:'mouse', action, x: parseInt(x)||0, y: parseInt(y)||0 });
+    await ctx.reply(result);
   });
 
   bot.command('keyboard', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
     const text = ctx.message?.text.replace('/keyboard','').trim();
-    if (!isAgentOnline(uid)) { await ctx.reply('PC agent offline.'); return; }
-    await ctx.reply(`Keyboard input sent: ${text}`);
+    if (!text) { await ctx.reply('Usage: `/keyboard [text]`', { parse_mode:'Markdown' }); return; }
+    const result = await relayToAgent(uid, { type:'keyboard', text });
+    await ctx.reply(result);
   });
 
   bot.command('hotkey', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
     const combo = ctx.message?.text.replace('/hotkey','').trim();
-    if (!isAgentOnline(uid)) { await ctx.reply('PC agent offline.'); return; }
-    await ctx.reply(`Hotkey sent: ${combo}`);
+    if (!combo) { await ctx.reply('Usage: `/hotkey [Ctrl+Shift+K]`', { parse_mode:'Markdown' }); return; }
+    const result = await relayToAgent(uid, { type:'hotkey', combo });
+    await ctx.reply(result);
   });
 
   bot.command('network', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
-    if (!isAgentOnline(uid)) { await ctx.reply('PC agent offline.'); return; }
-    await ctx.reply('Network info requested from agent.');
+    const result = await relayToAgent(uid, { type:'network' });
+    await ctx.reply(`\`\`\`\n${result}\n\`\`\``, { parse_mode:'Markdown' });
   });
 
   bot.command('browser', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
     const url = ctx.message?.text.replace('/browser','').trim();
-    if (!isAgentOnline(uid)) { await ctx.reply('PC agent offline.'); return; }
-    await ctx.reply(`Opening browser: ${url}`);
+    if (!url) { await ctx.reply('Usage: `/browser [url]`', { parse_mode:'Markdown' }); return; }
+    const result = await relayToAgent(uid, { type:'browser', url });
+    await ctx.reply(result);
   });
 
   bot.command('openapp', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
     const name = ctx.message?.text.replace('/openapp','').trim();
-    if (!isAgentOnline(uid)) { await ctx.reply('PC agent offline.'); return; }
-    await ctx.reply(`Opening app: ${name}`);
+    if (!name) { await ctx.reply('Usage: `/openapp [app name]`', { parse_mode:'Markdown' }); return; }
+    const result = await relayToAgent(uid, { type:'openapp', name });
+    await ctx.reply(result);
   });
 
   bot.command('http', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
     const args = ctx.message?.text.replace('/http','').trim();
-    if (!isAgentOnline(uid)) { await ctx.reply('PC agent offline.'); return; }
-    await ctx.reply(`HTTP request: ${args}`);
+    const [method, url, ...bodyParts] = args.split(' ');
+    const result = await relayToAgent(uid, { type:'http', method: method||'GET', url: url||'', body: bodyParts.join(' ') });
+    await ctx.reply(`\`\`\`\n${result}\n\`\`\``, { parse_mode:'Markdown' });
   });
 
   // ── Background tasks ────────────────────────────────────────────────────────
