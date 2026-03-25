@@ -43,9 +43,49 @@
     <div class="transactions" id="transactions"></div>
   </div>
   <script>
-    function addTransaction() {
-      alert('Функция добавления в разработке!');
+    // Get Telegram user ID from initData
+    const urlParams = new URLSearchParams(window.location.search);
+    const initData = urlParams.get('tgWebAppData') || '';
+    const headers = { 'x-tg-authorization': initData };
+
+    // Load balance and transactions
+    async function loadFinance() {
+      try {
+        const balanceRes = await fetch('/api/finance/balance', { headers });
+        const balance = await balanceRes.json();
+        document.querySelector('.balance-amount').textContent = `$${balance.balance.toLocaleString()}`;
+        document.querySelector('.stat-value.income').textContent = `$${balance.income.toLocaleString()}`;
+        document.querySelector('.stat-value.expense').textContent = `$${balance.expense.toLocaleString()}`;
+
+        const transRes = await fetch('/api/finance/transactions', { headers });
+        const data = await transRes.json();
+        const container = document.getElementById('transactions');
+        container.innerHTML = data.transactions.map(t => `
+          <div class="transaction-item">
+            <span>${t.category || t.description}</span>
+            <span class="${t.type === 'income' ? 'income' : 'expense'}">
+              ${t.type === 'income' ? '+' : '-'}$${t.amount.toLocaleString()}
+            </span>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error('Error loading finance:', e);
+      }
     }
+
+    function addTransaction() {
+      const amount = prompt('Сумма:');
+      if (!amount) return;
+      const type = confirm('Доход? OK=Да, Отмена=Расход') ? 'income' : 'expense';
+      const category = prompt('Категория:') || '';
+      fetch('/api/finance/transactions', {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, amount: parseFloat(amount), category })
+      }).then(() => loadFinance());
+    }
+
+    loadFinance();
   </script>
 </body>
 </html>

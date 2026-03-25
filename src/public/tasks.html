@@ -29,19 +29,49 @@
     <ul class="task-list" id="taskList"></ul>
   </div>
   <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const initData = urlParams.get('tgWebAppData') || '';
+    const headers = { 'x-tg-authorization': initData };
+
+    async function loadTasks() {
+      try {
+        const res = await fetch('/api/tasks', { headers });
+        const data = await res.json();
+        const list = document.getElementById('taskList');
+        list.innerHTML = data.tasks.map(t => `
+          <li class="task-item ${t.completed ? 'completed' : ''}">
+            <input type="checkbox" class="task-checkbox" 
+              ${t.completed ? 'checked' : ''} 
+              onchange="toggleTask(${t.id}, this)">
+            <span class="task-text">${t.text}</span>
+          </li>
+        `).join('');
+      } catch (e) {
+        console.error('Error loading tasks:', e);
+      }
+    }
+
     function addTask() {
       const input = document.getElementById('taskInput');
       const text = input.value.trim();
       if (!text) return;
-      const li = document.createElement('li');
-      li.className = 'task-item';
-      li.innerHTML = `<input type="checkbox" class="task-checkbox" onchange="toggleTask(this)"><span class="task-text">${text}</span>`;
-      document.getElementById('taskList').appendChild(li);
-      input.value = '';
+      fetch('/api/tasks', {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      }).then(() => { input.value = ''; loadTasks(); });
     }
-    function toggleTask(checkbox) {
-      checkbox.closest('.task-item').classList.toggle('completed');
+
+    function toggleTask(id, checkbox) {
+      const completed = checkbox.checked;
+      fetch(`/api/tasks/${id}`, {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed })
+      }).then(() => loadTasks());
     }
+
+    loadTasks();
   </script>
 </body>
 </html>
