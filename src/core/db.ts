@@ -1,16 +1,18 @@
-import Database = require('better-sqlite3');
+import sqlite3 = require('sqlite3');
 import path from 'path';
 import fs from 'fs';
 
 const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'data', 'nexum.db');
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
-export const db = new Database(DB_PATH);
+export const db = new sqlite3.Database(DB_PATH);
 
 // Enable pragmas
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
-db.pragma('synchronous = NORMAL');
+db.serialize(() => {
+  db.run('PRAGMA journal_mode = WAL');
+  db.run('PRAGMA foreign_keys = ON');
+  db.run('PRAGMA synchronous = NORMAL');
+});
 
 // ── Core schema ──────────────────────────────────────────────────────────────
 db.exec(`
@@ -207,30 +209,65 @@ const migrations = [
   `ALTER TABLE tasks     ADD COLUMN description TEXT DEFAULT ''`,
   `ALTER TABLE reminders ADD COLUMN repeat TEXT DEFAULT 'none'`,
   `ALTER TABLE users     ADD COLUMN lang TEXT DEFAULT 'auto'`,
+  `ALTER TABLE users     ADD COLUMN tariff TEXT DEFAULT 'free'`,
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch { /* already exists */ }
 }
 
+// ── Helper functions (better-sqlite3 compatible sync API wrapper) ────────────
+
 export function ensureUser(uid: number, username?: string, firstName?: string) {
-  db.prepare(`
-    INSERT INTO users (uid, username, first_name)
-    VALUES (?, ?, ?)
-    ON CONFLICT(uid) DO UPDATE SET
-      username=excluded.username,
-      first_name=excluded.first_name,
-      updated_at=datetime('now')
-  `).run(uid, username || null, firstName || null);
+  db.run(`INSERT OR REPLACE INTO users (uid, username, first_name, updated_at) VALUES (?, ?, ?, datetime('now'))`, [uid, username || null, firstName || null]);
 }
 
 export function getUserApiKey(uid: number, provider: string): string | null {
-  const row = db.prepare('SELECT api_key FROM user_api_keys WHERE uid=? AND provider=?').get(uid, provider) as any;
-  return row?.api_key || null;
+  let result: string | null = null;
+  const stmt = db.prepare('SELECT api_key FROM user_api_keys WHERE uid=? AND provider=?');
+  stmt.get([uid, provider], function(err: Error | null, row: any) {
+    if (!err && row) result = row.api_key;
+  });
+  return result;
 }
 
 export function setUserApiKey(uid: number, provider: string, key: string) {
-  db.prepare(`
-    INSERT INTO user_api_keys (uid, provider, api_key) VALUES (?,?,?)
-    ON CONFLICT(uid,provider) DO UPDATE SET api_key=excluded.api_key
-  `).run(uid, provider, key);
+  db.run(`INSERT OR REPLACE INTO user_api_keys (uid, provider, api_key) VALUES (?,?,?)`, [uid, provider, key]);
+}
+
+// ── Async helpers for sqlite3 ────────────────────────────────────────────────
+
+export function dbRun(sql: string, params: any[] = []): Promise<{ lastID: number | string }> {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function(err) {
+      if (err) reject(err);
+      else resolve({ lastID: this.lastID });
+    });
+  });
+}
+
+export function dbGet(sql: string, params: any[] = []): Promise<any> {
+  return new Promise((resolve) => {
+    db.get(sql, params, (err, row) => {
+      if (err) resolve(null);
+      else resolve(row);
+    });
+  });
+}
+
+export function dbAll(sql: string, params: any[] = []): Promise<any[]> {
+  return new Promise((resolve) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) resolve([]);
+      else resolve(rows || []);
+    });
+  });
+}
+
+export function dbExec(sql: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    db.exec(sql, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
 }

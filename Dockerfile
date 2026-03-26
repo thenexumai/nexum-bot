@@ -2,19 +2,13 @@ FROM node:20-slim
 
 WORKDIR /app
 
-# Install system deps ONLY for better-sqlite3 (native module)
-RUN apt-get update && apt-get install -y \
-    python3 \
-    make \
-    g++ \
-    build-essential \
-    libsqlite3-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Install Python (needed for some npm packages)
+RUN apt-get update && apt-get install -y python3 && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
 COPY package*.json ./
 
-# Install ONLY production dependencies (no devDependencies)
+# Install dependencies (sqlite3 has prebuilt binaries - no compilation needed)
 RUN npm ci --only=production
 
 # Copy source code
