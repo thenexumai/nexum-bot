@@ -17,7 +17,7 @@ ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 
 # Copy package files and install dependencies
 COPY package*.json ./
-RUN npm install
+RUN npm install --loglevel verbose 2>&1 | tee /tmp/npm-install.log
 
 # Build TypeScript
 COPY . .

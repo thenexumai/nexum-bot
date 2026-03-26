@@ -1,0 +1,31 @@
+# ALTERNATIVE Dockerfile — БЕЗ Playwright (если он ломает сборку)
+# Playwright нужен только для browser automation, не для базового бота
+
+FROM node:20-slim
+
+WORKDIR /app
+
+# Install system deps for native modules ONLY (better-sqlite3)
+# NO Playwright, NO chromium — экономим время и уменьшаем ошибки
+RUN apt-get update && apt-get install -y \
+    python3 python3-pip \
+    make g++ build-essential \
+    libsqlite3-dev \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Copy package files and install ONLY production dependencies
+COPY package*.json ./
+RUN npm ci --only=production
+
+# Copy source code
+COPY . .
+
+# Build TypeScript
+RUN npm run build
+
+ENV NODE_ENV=production
+
+EXPOSE 3000
+
+# Use compiled JavaScript
+CMD ["node", "dist/index.js"]
