@@ -41,8 +41,56 @@
 ```bash
 cd C:\Users\Timur\NEXUM-v1-beta
 npm install
+npm run build
 npm start
 ```
+
+---
+
+## ⚙️ Настройка Railway
+
+**1. Variables (Railway → nexum-bot → Variables):**
+
+```bash
+BOT_TOKEN=your_telegram_bot_token
+ADMIN_IDS=387182659
+PORT=3000
+WEBAPP_URL=https://nexum-bot-production-ae70.up.railway.app
+PUBLIC_BOT=true
+DB_PATH=./nexum.db
+
+# AI Keys (fallback ротация)
+CB1=...
+GR1=...
+G1=...
+```
+
+**2. Admin доступ:**
+
+Твой Telegram ID: `387182659`
+
+Админ команды:
+- `/admin_stats` — статистика пользователей
+- `/broadcast [msg]` — рассылка всем
+- `/admin_keys` — пулы API ключей
+- `/admin_db` — статистика БД
+- `/approve [id] [approve|deny]` — одобрение команд
+
+---
+
+## 📱 Мини-апы
+
+**URL:** `https://nexum-bot-production-ae70.up.railway.app`
+
+| Мини-ап | URL |
+|---------|-----|
+| Hub | `/` или `/hub` |
+| Финансы | `/finance` |
+| Задачи | `/tasks` |
+| Заметки | `/notes` |
+| Привычки | `/habits` |
+
+**В боте:** `/apps` — открыть меню мини-апов
 
 ---
 

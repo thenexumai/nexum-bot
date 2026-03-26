@@ -545,6 +545,20 @@ export function setupCommands(bot: Bot): void {
     await ctx.reply(`*DB Stats:*\n\n${counts}`, { parse_mode:'Markdown' });
   });
 
+  bot.command('broadcast', async (ctx: Context) => {
+    const uid = ctx.from?.id || 0;
+    if (!isAdmin(uid)) { await ctx.reply('Access denied.'); return; }
+    const text = ctx.message?.text.replace('/broadcast','').trim();
+    if (!text) { await ctx.reply('Usage: `/broadcast [message]`', { parse_mode:'Markdown' }); return; }
+    const users = db.prepare('SELECT uid FROM users').all() as any[];
+    let sent = 0, failed = 0;
+    for (const u of users) {
+      try { await bot.api.sendMessage(u.uid, `📢 Broadcast:\n\n${text}`); sent++; }
+      catch { failed++; }
+    }
+    await ctx.reply(`Broadcast sent: ${sent} users, ${failed} failed.`);
+  });
+
   bot.command('admin_clear_user', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
     if (!isAdmin(uid)) { await ctx.reply('Access denied.'); return; }

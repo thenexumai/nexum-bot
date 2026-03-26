@@ -23,6 +23,9 @@ COPY . .
 # Build TypeScript
 RUN npm run build
 
+# Copy public folder to dist (for mini-apps)
+RUN cp -r src/public dist/public
+
 ENV NODE_ENV=production
 
 EXPOSE 3000
