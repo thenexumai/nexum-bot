@@ -183,62 +183,8 @@ export const TOOLS: Tool[] = [
     },
   },
 
-  // ── BROWSER (Playwright, like OpenClaw browser tool) ───────────────────────
-  {
-    name: 'browser',
-    summary: 'Control web browser: navigate, screenshot, click, extract. Actions: navigate, screenshot, snapshot, act, status',
-    handler: async (uid, args) => {
-      const action = args.action || 'screenshot';
-      try {
-        const { chromium } = await import('playwright');
-        const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
-        const page = await browser.newPage();
-        try {
-          if (action === 'navigate' || action === 'fetch') {
-            const url = args.url || 'https://google.com';
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            const text = await page.evaluate('document.body.innerText') as string;
-            return `Navigated to ${url}\n\n${text.slice(0,4000)}`;
-          }
-          if (action === 'screenshot') {
-            const url = args.url;
-            if (url) await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            const tmpFile = path.join(os.tmpdir(), `nx_browser_${Date.now()}.png`);
-            await page.screenshot({ path: tmpFile, fullPage: args.full === 'true' });
-            const buf = await fs.readFile(tmpFile);
-            await fs.unlink(tmpFile).catch(() => {});
-            return `SCREENSHOT_BASE64:${buf.toString('base64')}`;
-          }
-          if (action === 'snapshot' || action === 'extract') {
-            const url = args.url;
-            if (url) await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            const content = await page.evaluate(`
-              (['script','style','nav','footer','header']).forEach(s =>
-                document.querySelectorAll(s).forEach(e => e.remove())
-              );
-              document.body && document.body.innerText ? document.body.innerText.trim() : ''
-            `) as string;
-            return content.slice(0, 5000);
-          }
-          if (action === 'act') {
-            const url = args.url;
-            if (url) await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            const kind = args.kind || 'click';
-            if (kind === 'click') { await page.click(args.selector || args.ref || 'body'); return 'Clicked'; }
-            if (kind === 'type') { await page.fill(args.selector || args.ref || 'input', args.text || ''); return 'Typed'; }
-            if (kind === 'press') { await page.keyboard.press(args.key || 'Enter'); return 'Pressed'; }
-            if (kind === 'fill') { await page.fill(args.selector || 'input', args.text || ''); return 'Filled'; }
-            if (kind === 'evaluate') { const r = await page.evaluate(args.script || 'document.title'); return String(r); }
-            return `Unknown act kind: ${kind}`;
-          }
-          return 'Actions: navigate, screenshot, snapshot, act';
-        } finally { await browser.close(); }
-      } catch (e: any) {
-        if (e.message?.includes('playwright')) return 'Browser not available. Install: npm install playwright && npx playwright install chromium';
-        return `Browser error: ${e.message}`;
-      }
-    },
-  },
+  // ── BROWSER — DISABLED (Playwright removed for production) ─────────────────
+  // Browser functionality moved to separate service
 
   // ── IMAGE ANALYZE (like OpenClaw image tool) ──────────────────────────────
   {
