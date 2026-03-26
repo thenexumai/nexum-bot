@@ -215,59 +215,67 @@ for (const sql of migrations) {
   try { db.exec(sql); } catch { /* already exists */ }
 }
 
-// ── Helper functions (better-sqlite3 compatible sync API wrapper) ────────────
+// ── Statement wrapper (better-sqlite3 compatible sync API) ───────────────────
+
+export interface RunResult {
+  lastInsertRowid: number | string;
+  changes: number;
+}
+
+export class Statement {
+  private sql: string;
+  
+  constructor(sql: string) {
+    this.sql = sql;
+  }
+  
+  run(...params: any[]): RunResult {
+    let result: RunResult | null = null;
+    let error: Error | null = null;
+    db.run(this.sql, params, function(err) {
+      if (err) error = err;
+      else result = { lastInsertRowid: this.lastID, changes: this.changes };
+    });
+    if (error) throw error!;
+    return result!;
+  }
+  
+  get(...params: any[]): any {
+    let row: any = null;
+    db.get(this.sql, params, (err, r) => { if (!err) row = r; });
+    return row;
+  }
+  
+  all(...params: any[]): any[] {
+    let rows: any[] = [];
+    db.all(this.sql, params, (err, r) => { if (!err) rows = r || []; });
+    return rows;
+  }
+}
+
+// Add prepare to Database interface
+declare module 'sqlite3' {
+  interface Database {
+    prepare(sql: string): Statement;
+  }
+}
+
+// Extend db with prepare method
+(db as any).prepare = function(sql: string): Statement {
+  return new Statement(sql);
+};
+
+// ── Helper functions ─────────────────────────────────────────────────────────
 
 export function ensureUser(uid: number, username?: string, firstName?: string) {
-  db.run(`INSERT OR REPLACE INTO users (uid, username, first_name, updated_at) VALUES (?, ?, ?, datetime('now'))`, [uid, username || null, firstName || null]);
+  db.prepare(`INSERT OR REPLACE INTO users (uid, username, first_name, updated_at) VALUES (?, ?, ?, datetime('now'))`).run(uid, username || null, firstName || null);
 }
 
 export function getUserApiKey(uid: number, provider: string): string | null {
-  let result: string | null = null;
-  const stmt = db.prepare('SELECT api_key FROM user_api_keys WHERE uid=? AND provider=?');
-  stmt.get([uid, provider], function(err: Error | null, row: any) {
-    if (!err && row) result = row.api_key;
-  });
-  return result;
+  const row: any = db.prepare('SELECT api_key FROM user_api_keys WHERE uid=? AND provider=?').get(uid, provider);
+  return row?.api_key || null;
 }
 
 export function setUserApiKey(uid: number, provider: string, key: string) {
-  db.run(`INSERT OR REPLACE INTO user_api_keys (uid, provider, api_key) VALUES (?,?,?)`, [uid, provider, key]);
-}
-
-// ── Async helpers for sqlite3 ────────────────────────────────────────────────
-
-export function dbRun(sql: string, params: any[] = []): Promise<{ lastID: number | string }> {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function(err) {
-      if (err) reject(err);
-      else resolve({ lastID: this.lastID });
-    });
-  });
-}
-
-export function dbGet(sql: string, params: any[] = []): Promise<any> {
-  return new Promise((resolve) => {
-    db.get(sql, params, (err, row) => {
-      if (err) resolve(null);
-      else resolve(row);
-    });
-  });
-}
-
-export function dbAll(sql: string, params: any[] = []): Promise<any[]> {
-  return new Promise((resolve) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) resolve([]);
-      else resolve(rows || []);
-    });
-  });
-}
-
-export function dbExec(sql: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    db.exec(sql, (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
+  db.prepare(`INSERT OR REPLACE INTO user_api_keys (uid, provider, api_key) VALUES (?,?,?)`).run(uid, provider, key);
 }

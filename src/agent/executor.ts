@@ -318,10 +318,10 @@ export const TOOLS: Tool[] = [
       else if (period === 'week') { const d = new Date(now); d.setDate(d.getDate()-7); since = d.toISOString().split('T')[0]; }
       else if (period === 'month') since = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
       const w = since ? `AND date(created_at)>='${since}'` : '';
-      const rows = db.prepare(`SELECT type,SUM(amount) as t FROM finance WHERE uid=? ${w} GROUP BY type`).all(uid) as any[];
+      const rows = db.prepare(`SELECT type,SUM(amount) as t FROM finance WHERE uid=? ${w} GROUP BY type`).all(uid) as unknown as any[];
       const inc = rows.find(r => r.type === 'income')?.t || 0;
       const exp = rows.find(r => r.type === 'expense')?.t || 0;
-      const recent = db.prepare(`SELECT type,amount,category,note FROM finance WHERE uid=? ${w} ORDER BY id DESC LIMIT 5`).all(uid) as any[];
+      const recent = db.prepare(`SELECT type,amount,category,note FROM finance WHERE uid=? ${w} ORDER BY id DESC LIMIT 5`).all(uid) as unknown as any[];
       const lines = recent.map(r => `• ${r.type==='income'?'+':'-'}${r.amount} ${r.category}${r.note?' ('+r.note+')':''}`);
       return `Balance (${period}): ${(inc-exp).toLocaleString()}\nIncome: ${inc.toLocaleString()} | Expenses: ${exp.toLocaleString()}${lines.length?'\n\nRecent:\n'+lines.join('\n'):''}`;
     },
@@ -355,7 +355,7 @@ export const TOOLS: Tool[] = [
     summary: 'List tasks',
     handler: async (uid, args) => {
       const w = args.status === 'done' ? "status='done'" : args.status === 'all' ? '1=1' : "status!='done'";
-      const rows = db.prepare(`SELECT title,priority,project,status FROM tasks WHERE uid=? AND ${w} ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,id DESC LIMIT 20`).all(uid) as any[];
+      const rows = db.prepare(`SELECT title,priority,project,status FROM tasks WHERE uid=? AND ${w} ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,id DESC LIMIT 20`).all(uid) as unknown as any[];
       return rows.length ? rows.map(t => `• [${t.priority[0].toUpperCase()}] ${t.title}${t.project!=='General'?' ('+t.project+')':''} ${t.status==='done'?'✓':''}`).join('\n') : 'No tasks';
     },
   },
@@ -376,8 +376,8 @@ export const TOOLS: Tool[] = [
     handler: async (uid, args) => {
       const q = args.query || args.search || '';
       const rows = q
-        ? db.prepare('SELECT title,content FROM notes WHERE uid=? AND (title LIKE ? OR content LIKE ?) ORDER BY updated_at DESC LIMIT 5').all(uid,`%${q}%`,`%${q}%`) as any[]
-        : db.prepare('SELECT title,content FROM notes WHERE uid=? ORDER BY pinned DESC,updated_at DESC LIMIT 5').all(uid) as any[];
+        ? db.prepare('SELECT title,content FROM notes WHERE uid=? AND (title LIKE ? OR content LIKE ?) ORDER BY updated_at DESC LIMIT 5').all(uid,`%${q}%`,`%${q}%`) as unknown as any[]
+        : db.prepare('SELECT title,content FROM notes WHERE uid=? ORDER BY pinned DESC,updated_at DESC LIMIT 5').all(uid) as unknown as any[];
       return rows.length ? rows.map(n => `**${n.title||'Untitled'}**\n${n.content.slice(0,200)}`).join('\n\n') : 'No notes';
     },
   },
@@ -388,7 +388,7 @@ export const TOOLS: Tool[] = [
     summary: 'Show habits with streaks',
     handler: async (uid, _args) => {
       const today = new Date().toISOString().split('T')[0];
-      const habits = db.prepare('SELECT * FROM habits WHERE uid=? ORDER BY id').all(uid) as any[];
+      const habits = db.prepare('SELECT * FROM habits WHERE uid=? ORDER BY id').all(uid) as unknown as any[];
       if (!habits.length) return 'No habits. Create them in the Habits app.';
       return habits.map(h => {
         const done = db.prepare('SELECT id FROM habit_logs WHERE habit_id=? AND date(done_at)=?').get(h.id, today);
@@ -420,7 +420,7 @@ export const TOOLS: Tool[] = [
     summary: 'Search stored memories for a keyword',
     handler: async (uid, args) => {
       const q = args.query || ''; if (!q) return 'Error: provide query';
-      const rows = db.prepare('SELECT key,value FROM memory WHERE uid=? AND (key LIKE ? OR value LIKE ?) ORDER BY id DESC LIMIT 10').all(uid,`%${q}%`,`%${q}%`) as any[];
+      const rows = db.prepare('SELECT key,value FROM memory WHERE uid=? AND (key LIKE ? OR value LIKE ?) ORDER BY id DESC LIMIT 10').all(uid,`%${q}%`,`%${q}%`) as unknown as any[];
       return rows.length ? rows.map(m => `${m.key}: ${m.value}`).join('\n') : `No memories matching "${q}"`;
     },
   },
@@ -440,7 +440,7 @@ export const TOOLS: Tool[] = [
         return `Reminder set for ${diff}m: "${text}"`;
       }
       if (action === 'list') {
-        const rows = db.prepare("SELECT id,text,fire_at FROM reminders WHERE uid=? AND done=0 ORDER BY fire_at LIMIT 10").all(uid) as any[];
+        const rows = db.prepare("SELECT id,text,fire_at FROM reminders WHERE uid=? AND done=0 ORDER BY fire_at LIMIT 10").all(uid) as unknown as any[];
         return rows.length ? rows.map(r => `[${r.id}] ${r.fire_at.slice(11,16)} — ${r.text}`).join('\n') : 'No reminders set';
       }
       if (action === 'remove' || action === 'delete') {
@@ -486,7 +486,7 @@ export const TOOLS: Tool[] = [
     handler: async (uid, args) => {
       const action = args.action || 'list';
       if (action === 'list') {
-        const rows = db.prepare('SELECT id,task,status,started_at FROM subagent_runs WHERE uid=? ORDER BY started_at DESC LIMIT 10').all(uid) as any[];
+        const rows = db.prepare('SELECT id,task,status,started_at FROM subagent_runs WHERE uid=? ORDER BY started_at DESC LIMIT 10').all(uid) as unknown as any[];
         return rows.length ? rows.map(r => `[${r.id}] ${r.status} — ${r.task.slice(0,40)}`).join('\n') : 'No sub-agents';
       }
       if (action === 'log') {

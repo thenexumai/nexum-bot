@@ -33,8 +33,8 @@ bot.catch((err) => console.error('[bot]', err.message));
 // Reminder cron — every minute
 cron.schedule('* * * * *', async () => {
   try {
-    const due = db.prepare(`SELECT * FROM reminders WHERE done=0 AND fire_at<=datetime('now')`).all();
-    if (!due) return;
+    const due = db.prepare(`SELECT * FROM reminders WHERE done=0 AND fire_at<=datetime('now')`).all() as unknown as any[];
+    if (!due || !due.length) return;
     due.forEach((r: any) => {
       bot.api.sendMessage(r.chat_id, `Reminder: ${r.text}`).catch(() => {});
       db.prepare('UPDATE reminders SET done=1 WHERE id=?').run(r.id);

@@ -154,7 +154,7 @@ export function setupCommands(bot: Bot): void {
   // ── /mykeys ────────────────────────────────────────────────────────────────
   bot.command('mykeys', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
-    const keys = db.prepare('SELECT provider, substr(api_key,1,8)||"…" as k FROM user_api_keys WHERE uid=?').all(uid) as any[];
+    const keys = db.prepare('SELECT provider, substr(api_key,1,8)||"…" as k FROM user_api_keys WHERE uid=?').all(uid) as unknown as any[];
     if (!keys.length) { await ctx.reply('No personal keys. Use /setkey to add one.'); return; }
     await ctx.reply(keys.map(k => `*${k.provider}:* ${k.k}`).join('\n'), { parse_mode:'Markdown' });
   });
@@ -197,7 +197,7 @@ export function setupCommands(bot: Bot): void {
   // ── /finance ───────────────────────────────────────────────────────────────
   bot.command('finance', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
-    const rows = db.prepare('SELECT type,SUM(amount) as t FROM finance WHERE uid=? GROUP BY type').all(uid) as any[];
+    const rows = db.prepare('SELECT type,SUM(amount) as t FROM finance WHERE uid=? GROUP BY type').all(uid) as unknown as any[];
     const inc = rows.find(r => r.type==='income')?.t||0;
     const exp = rows.find(r => r.type==='expense')?.t||0;
     const kb = config.webappUrl ? new InlineKeyboard().webApp('Open Finance', `${config.webappUrl}/finance`) : undefined;
@@ -207,7 +207,7 @@ export function setupCommands(bot: Bot): void {
   // ── /notes ─────────────────────────────────────────────────────────────────
   bot.command('notes', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
-    const notes = db.prepare('SELECT title,substr(content,1,60) as p FROM notes WHERE uid=? ORDER BY pinned DESC,updated_at DESC LIMIT 6').all(uid) as any[];
+    const notes = db.prepare('SELECT title,substr(content,1,60) as p FROM notes WHERE uid=? ORDER BY pinned DESC,updated_at DESC LIMIT 6').all(uid) as unknown as any[];
     const kb = config.webappUrl ? new InlineKeyboard().webApp('Open Notes', `${config.webappUrl}/notes`) : undefined;
     if (!notes.length) { await ctx.reply('No notes yet.', { reply_markup: kb }); return; }
     await ctx.reply(notes.map(n => `*${n.title||'Untitled'}*\n${n.p}…`).join('\n\n'), { parse_mode:'Markdown', reply_markup: kb });
@@ -225,7 +225,7 @@ export function setupCommands(bot: Bot): void {
   // ── /tasks ─────────────────────────────────────────────────────────────────
   bot.command('tasks', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
-    const tasks = db.prepare("SELECT title,priority FROM tasks WHERE uid=? AND status!='done' ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END LIMIT 10").all(uid) as any[];
+    const tasks = db.prepare("SELECT title,priority FROM tasks WHERE uid=? AND status!='done' ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END LIMIT 10").all(uid) as unknown as any[];
     const kb = config.webappUrl ? new InlineKeyboard().webApp('Open Tasks', `${config.webappUrl}/tasks`) : undefined;
     if (!tasks.length) { await ctx.reply('No open tasks.', { reply_markup: kb }); return; }
     await ctx.reply(tasks.map(t => `• [${t.priority[0].toUpperCase()}] ${t.title}`).join('\n'), { reply_markup: kb });
@@ -479,7 +479,7 @@ export function setupCommands(bot: Bot): void {
 
   bot.command('bglist', async (ctx: Context) => {
     const uid = ctx.from?.id || 0;
-    const runs = db.prepare('SELECT id,task,status FROM subagent_runs WHERE uid=? ORDER BY started_at DESC LIMIT 10').all(uid) as any[];
+    const runs = db.prepare('SELECT id,task,status FROM subagent_runs WHERE uid=? ORDER BY started_at DESC LIMIT 10').all(uid) as unknown as any[];
     if (!runs.length) { await ctx.reply('No background tasks.'); return; }
     await ctx.reply(runs.map(r => `[${r.id}] ${r.status} — ${r.task.slice(0,40)}`).join('\n'));
   });
@@ -495,7 +495,7 @@ export function setupCommands(bot: Bot): void {
       const response = await execute(uid, `Generate a complete single-file HTML website for: ${desc}. Return ONLY the HTML.`);
       const html = response.match(/```html\n?([\s\S]+?)\n?```/)?.[1] || response;
       const r = db.prepare('INSERT INTO websites (uid,name,html) VALUES (?,?,?)').run(uid, desc.slice(0,30), html);
-      const url = `${config.webappUrl}/site/${r.lastInsertRowid}`;
+      const url = `${config.webappUrl}/site/${(r as any).lastInsertRowid}`;
       await ctx.reply(`Website generated: ${url}`, { reply_markup: new InlineKeyboard().url('Open', url) });
     } catch (e: any) { await ctx.reply(`Failed: ${e.message}`); }
   });
@@ -522,7 +522,7 @@ export function setupCommands(bot: Bot): void {
     if (!isAdmin(uid)) { await ctx.reply('Access denied.'); return; }
     const userCount = (db.prepare('SELECT COUNT(*) as c FROM users').get() as any)?.c||0;
     const msgCount = (db.prepare('SELECT COUNT(*) as c FROM conversations').get() as any)?.c||0;
-    const top = db.prepare('SELECT u.uid,u.first_name,u.username,COUNT(c.id) as msgs FROM users u LEFT JOIN conversations c ON c.uid=u.uid GROUP BY u.uid ORDER BY msgs DESC LIMIT 10').all() as any[];
+    const top = db.prepare('SELECT u.uid,u.first_name,u.username,COUNT(c.id) as msgs FROM users u LEFT JOIN conversations c ON c.uid=u.uid GROUP BY u.uid ORDER BY msgs DESC LIMIT 10').all() as unknown as any[];
     const list = top.map((u,i) => `${i+1}. ${u.first_name||u.username||u.uid} — ${u.msgs} msg`).join('\n');
     await ctx.reply(`*Admin Stats*\n\nUsers: ${userCount}\nMessages: ${msgCount}\n\n*Top 10:*\n${list}`, { parse_mode:'Markdown' });
   });
@@ -550,7 +550,7 @@ export function setupCommands(bot: Bot): void {
     if (!isAdmin(uid)) { await ctx.reply('Access denied.'); return; }
     const text = ctx.message?.text.replace('/broadcast','').trim();
     if (!text) { await ctx.reply('Usage: `/broadcast [message]`', { parse_mode:'Markdown' }); return; }
-    const users = db.prepare('SELECT uid FROM users').all() as any[];
+    const users = db.prepare('SELECT uid FROM users').all() as unknown as any[];
     let sent = 0, failed = 0;
     for (const u of users) {
       try { await bot.api.sendMessage(u.uid, `📢 Broadcast:\n\n${text}`); sent++; }
@@ -574,7 +574,7 @@ export function setupCommands(bot: Bot): void {
     if (!isAdmin(uid)) { await ctx.reply('Access denied.'); return; }
     const msg = ctx.message?.text.replace('/broadcast','').trim();
     if (!msg) { await ctx.reply('Usage: `/broadcast [message]`', { parse_mode:'Markdown' }); return; }
-    const users = db.prepare('SELECT DISTINCT uid FROM conversations').all() as any[];
+    const users = db.prepare('SELECT DISTINCT uid FROM conversations').all() as unknown as any[];
     let sent = 0, failed = 0;
     for (const user of users) {
       try { await bot.api.sendMessage(user.uid, msg); sent++; await new Promise(r => setTimeout(r, 50)); }

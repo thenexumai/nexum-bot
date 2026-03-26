@@ -8,7 +8,7 @@ export function generatePairingCode(uid: number): string {
 }
 
 export function getPairedAgents(uid: number): string[] {
-  const agents = db.prepare("SELECT device_name,platform,status,last_seen FROM pc_agents WHERE uid=? ORDER BY last_seen DESC").all(uid) as any[];
+  const agents = db.prepare("SELECT device_name,platform,status,last_seen FROM pc_agents WHERE uid=? ORDER BY last_seen DESC").all(uid) as unknown as any[];
   return agents.map(a => `${a.device_name||'Device'} (${a.platform||'Unknown'}) — ${a.status}`);
 }
 

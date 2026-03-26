@@ -82,10 +82,10 @@ export function startServer(bot?: any) {
   // ── API: Accounts ────────────────────────────────────────────────────────
   app.get('/api/accounts', (req, res) => {
     const uid = getUid(req); if (!uid) return res.status(400).json({ ok:false, error:'No uid' });
-    let acc = db.prepare('SELECT * FROM accounts WHERE uid=? ORDER BY id').all(uid) as any[];
+    let acc = db.prepare('SELECT * FROM accounts WHERE uid=? ORDER BY id').all(uid) as unknown as any[];
     if (!acc.length) {
       db.prepare('INSERT INTO accounts (uid,name,currency,balance,icon) VALUES (?,?,?,?,?)').run(uid,'Cash','UZS',0,'$');
-      acc = db.prepare('SELECT * FROM accounts WHERE uid=? ORDER BY id').all(uid) as any[];
+      acc = db.prepare('SELECT * FROM accounts WHERE uid=? ORDER BY id').all(uid) as unknown as any[];
     }
     res.json({ ok:true, data:acc });
   });
@@ -93,7 +93,7 @@ export function startServer(bot?: any) {
     const uid = getUid(req); const { name, currency, balance, icon } = req.body;
     if (!uid || !name) return res.status(400).json({ ok:false, error:'Missing' });
     const r = db.prepare('INSERT INTO accounts (uid,name,currency,balance,icon) VALUES (?,?,?,?,?)').run(uid,name,currency||'UZS',balance||0,icon||'$');
-    res.json({ ok:true, id:r.lastInsertRowid });
+    res.json({ ok:true, id:(r as any).lastInsertRowid });
   });
   app.delete('/api/accounts/:id', (req, res) => { db.prepare('DELETE FROM accounts WHERE id=?').run(parseInt(req.params.id)); res.json({ ok:true }); });
 
@@ -115,7 +115,7 @@ export function startServer(bot?: any) {
     if (!uid || !type || !amount) return res.status(400).json({ ok:false, error:'Missing' });
     const r = db.prepare('INSERT INTO finance (uid,type,amount,category,note,account_id,currency) VALUES (?,?,?,?,?,?,?)').run(uid,type,parseFloat(amount),category||'other',note||'',account_id||null,currency||'UZS');
     if (account_id) db.prepare('UPDATE accounts SET balance=balance+? WHERE id=?').run(type==='expense'?-parseFloat(amount):parseFloat(amount), account_id);
-    res.json({ ok:true, id:r.lastInsertRowid });
+    res.json({ ok:true, id:(r as any).lastInsertRowid });
   });
   app.delete('/api/finance/:id', (req, res) => { db.prepare('DELETE FROM finance WHERE id=?').run(parseInt(req.params.id)); res.json({ ok:true }); });
 
@@ -128,7 +128,7 @@ export function startServer(bot?: any) {
     const uid = getUid(req); const { title, content, pinned } = req.body;
     if (!uid || !content) return res.status(400).json({ ok:false, error:'Missing' });
     const r = db.prepare('INSERT INTO notes (uid,title,content,pinned) VALUES (?,?,?,?)').run(uid,title||'',content,pinned?1:0);
-    res.json({ ok:true, id:r.lastInsertRowid });
+    res.json({ ok:true, id:(r as any).lastInsertRowid });
   });
   app.put('/api/notes/:id', (req, res) => {
     const { title, content, pinned } = req.body;
@@ -146,7 +146,7 @@ export function startServer(bot?: any) {
     const uid = getUid(req); const { title, description, project, priority, due_date } = req.body;
     if (!uid || !title) return res.status(400).json({ ok:false, error:'Missing' });
     const r = db.prepare('INSERT INTO tasks (uid,title,description,project,priority,due_date) VALUES (?,?,?,?,?,?)').run(uid,title,description||'',project||'General',priority||'medium',due_date||null);
-    res.json({ ok:true, id:r.lastInsertRowid });
+    res.json({ ok:true, id:(r as any).lastInsertRowid });
   });
   app.put('/api/tasks/:id', (req, res) => {
     const { title, status, priority, project, due_date } = req.body;
@@ -159,8 +159,8 @@ export function startServer(bot?: any) {
   app.get('/api/habits', (req, res) => {
     const uid = getUid(req); if (!uid) return res.status(400).json({ ok:false, error:'No uid' });
     const today = new Date().toISOString().split('T')[0];
-    const habits = (db.prepare('SELECT * FROM habits WHERE uid=? ORDER BY id').all(uid) as any[]).map(h => {
-      const logs = (db.prepare(`SELECT date(done_at) as d FROM habit_logs WHERE habit_id=? AND done_at>=date('now','-30 days') GROUP BY date(done_at)`).all(h.id) as any[]).map(r => r.d);
+    const habits = (db.prepare('SELECT * FROM habits WHERE uid=? ORDER BY id').all(uid) as unknown as any[]).map(h => {
+      const logs = (db.prepare(`SELECT date(done_at) as d FROM habit_logs WHERE habit_id=? AND done_at>=date('now','-30 days') GROUP BY date(done_at)`).all(h.id) as unknown as any[]).map(r => r.d);
       return { ...h, logs, done_today: logs.includes(today) };
     });
     res.json({ ok:true, data:habits });
@@ -169,7 +169,7 @@ export function startServer(bot?: any) {
     const uid = getUid(req); const { name, emoji } = req.body;
     if (!uid || !name) return res.status(400).json({ ok:false, error:'Missing' });
     const r = db.prepare('INSERT INTO habits (uid,name,emoji) VALUES (?,?,?)').run(uid,name,emoji||'●');
-    res.json({ ok:true, id:r.lastInsertRowid });
+    res.json({ ok:true, id:(r as any).lastInsertRowid });
   });
   app.post('/api/habits/:id/toggle', (req, res) => {
     const id = parseInt(req.params.id);

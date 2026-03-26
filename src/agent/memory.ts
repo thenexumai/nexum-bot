@@ -8,7 +8,7 @@ export function saveMemory(uid: number, key: string, value: string) {
 }
 
 export function getMemories(uid: number): Array<{ key: string; value: string }> {
-  return db.prepare('SELECT key, value FROM memory WHERE uid=? ORDER BY id DESC LIMIT 50').all(uid) as any;
+  return db.prepare('SELECT key, value FROM memory WHERE uid=? ORDER BY id DESC LIMIT 50').all(uid) as unknown as Array<{ key: string; value: string }>;
 }
 
 export function clearMemory(uid: number) {
@@ -25,7 +25,7 @@ export function saveMessage(uid: number, role: 'user' | 'assistant', content: st
 }
 
 export function getHistory(uid: number, limit = 12): Array<{ role: string; content: string }> {
-  return (db.prepare('SELECT role, content FROM conversations WHERE uid=? ORDER BY id DESC LIMIT ?').all(uid, limit) as any[]).reverse();
+  return (db.prepare('SELECT role, content FROM conversations WHERE uid=? ORDER BY id DESC LIMIT ?').all(uid, limit) as unknown as any[] as any[]).reverse();
 }
 
 export function clearHistory(uid: number) {
