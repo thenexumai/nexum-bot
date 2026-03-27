@@ -1,368 +1,270 @@
-import express    from 'express';
-import { createServer } from 'http';
-import { WebSocketServer, WebSocket } from 'ws';
-import path        from 'path';
-import crypto      from 'crypto';
-import { config }  from '../core/config';
-import { db }      from '../core/db';
+// NEXUM App Server — HTTP + WebSocket (PC Agent relay)
 
+import express from 'express';
+import path from 'path';
+import { createServer } from 'http';
+import { WebSocketServer } from 'ws';
+import { Bot } from 'grammy';
+import { config } from '../core/config';
+import { db } from '../core/db';
+import { registerConnection } from '../agent/pcagent_protocol';
+import { useLinkCode, updateAgentStatus } from '../agent/pairing';
+
+// Works both in dev (src/) and prod (dist/) — public lives in src/public always
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
-function validateInitData(initData: string): number | null {
-  try {
-    const params  = new URLSearchParams(initData);
-    const hash    = params.get('hash');
-    const user    = JSON.parse(params.get('user') || '{}');
-    const uid     = user.id;
-    if (!uid) return null;
-    if (!hash) return uid; // No hash — accept uid directly (dev mode)
-    params.delete('hash');
-    const dataStr = Array.from(params.entries()).sort(([a],[b]) => a.localeCompare(b)).map(([k,v]) => `${k}=${v}`).join('\n');
-    const secret  = crypto.createHmac('sha256', 'WebAppData').update(config.botToken).digest();
-    const sig     = crypto.createHmac('sha256', secret).update(dataStr).digest('hex');
-    if (sig !== hash) {
-      // Signature mismatch — still return uid if it looks valid (non-zero positive int)
-      return uid > 0 ? uid : null;
-    }
-    return uid;
-  } catch { return null; }
-}
-
-function getUid(req: express.Request): number | null {
-  const initData = (req.query.initData || req.body?.initData) as string;
-  if (initData) { const uid = validateInitData(initData); if (uid) return uid; }
-  // Accept uid directly (for development / fallback)
-  const rawUid = req.query.uid || req.body?.uid;
-  if (rawUid) {
-    const uid = parseInt(rawUid as string);
-    if (!isNaN(uid) && uid > 0) return uid;
-  }
-  return null;
-}
-
-export function startServer(bot?: any) {
+export function startServer(bot: Bot): express.Application {
   const app = express();
-  app.use(express.json({ limit: '10mb' }));
-  app.use((_req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-    next();
-  });
-  app.options('*', (_req, res) => res.sendStatus(200));
+  const server = createServer(app);
 
-  // ── Static Mini Apps ─────────────────────────────────────────────────────
-  const pages = ['hub','finance','notes','tasks','habits','sites','tools'];
-  for (const p of pages) {
-    app.get(`/${p === 'hub' ? '' : p}`, (_req, res) => {
-      const file = path.join(PUBLIC_DIR, `${p}.html`);
-      res.sendFile(file, (err) => {
-        if (err) res.status(404).send(`Mini App not found: ${p}`);
-      });
+  app.use(express.json());
+  app.use(express.static(PUBLIC_DIR));
+
+  // ── Health ──────────────────────────────────────────────────────────────────
+  app.get('/', (_req, res) => res.send('NEXUM OK'));
+
+  app.get('/health', (_req, res) => {
+    res.json({
+      ok: true,
+      version: '1.0.0',
+      uptime: Math.floor(process.uptime()),
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  // ── Mini-apps ───────────────────────────────────────────────────────────────
+  const pages = ['finance', 'tasks', 'notes', 'habits', 'calendar', 'contacts', 'agent', 'apps'];
+  for (const page of pages) {
+    app.get(`/${page}`, (_req, res) => {
+      res.sendFile(path.join(PUBLIC_DIR, `${page}.html`));
     });
   }
-  app.get('/hub', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'hub.html')));
 
-  // ── Health check endpoints ───────────────────────────────────────────────
-  app.get('/', (_req, res) => {
-    res.status(200).send('NEXUM OK');
-  });
-  app.get('/health', (_req, res) => {
-    res.status(200).json({ ok: true, version: '15.0.0', uptime: process.uptime(), timestamp: new Date().toISOString() });
-  });
+  // ── REST API for mini-apps ──────────────────────────────────────────────────
 
-  // ── Site viewer ──────────────────────────────────────────────────────────
-  app.get('/site/:id', (req, res) => {
-    const site = db.prepare('SELECT * FROM websites WHERE id=?').get(parseInt(req.params.id)) as any;
-    if (!site) return res.status(404).send('<h1>Not found</h1>');
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(site.html);
-  });
-
-  // ── API: Accounts ────────────────────────────────────────────────────────
-  app.get('/api/accounts', (req, res) => {
-    const uid = getUid(req); if (!uid) return res.status(400).json({ ok:false, error:'No uid' });
-    let acc = db.prepare('SELECT * FROM accounts WHERE uid=? ORDER BY id').all(uid) as unknown as any[];
-    if (!acc.length) {
-      db.prepare('INSERT INTO accounts (uid,name,currency,balance,icon) VALUES (?,?,?,?,?)').run(uid,'Cash','UZS',0,'$');
-      acc = db.prepare('SELECT * FROM accounts WHERE uid=? ORDER BY id').all(uid) as unknown as any[];
-    }
-    res.json({ ok:true, data:acc });
-  });
-  app.post('/api/accounts', (req, res) => {
-    const uid = getUid(req); const { name, currency, balance, icon } = req.body;
-    if (!uid || !name) return res.status(400).json({ ok:false, error:'Missing' });
-    const r = db.prepare('INSERT INTO accounts (uid,name,currency,balance,icon) VALUES (?,?,?,?,?)').run(uid,name,currency||'UZS',balance||0,icon||'$');
-    res.json({ ok:true, id:(r as any).lastInsertRowid });
-  });
-  app.delete('/api/accounts/:id', (req, res) => { db.prepare('DELETE FROM accounts WHERE id=?').run(parseInt(req.params.id)); res.json({ ok:true }); });
-
-  // ── API: Finance ─────────────────────────────────────────────────────────
+  // Finance
   app.get('/api/finance', (req, res) => {
-    const uid = getUid(req); if (!uid) return res.status(400).json({ ok:false, error:'No uid' });
-    const period = (req.query.period as string) || 'month';
-    const now = new Date();
-    let since: string;
-    if      (period === 'today') since = now.toISOString().split('T')[0];
-    else if (period === 'week')  { const d = new Date(now); d.setDate(d.getDate()-7); since = d.toISOString().split('T')[0]; }
-    else if (period === 'year')  since = `${now.getFullYear()}-01-01`;
-    else                          since = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
-    const txs = db.prepare(`SELECT * FROM finance WHERE uid=? AND (date(created_at)>=? OR created_at IS NULL) ORDER BY id DESC`).all(uid, since);
-    res.json({ ok:true, data:txs });
+    const uid = parseInt(req.query.uid as string);
+    if (!uid) return res.status(400).json({ error: 'uid required' });
+    const rows = (db as any).prepare(
+      'SELECT * FROM finance WHERE uid=? ORDER BY created_at DESC LIMIT 100'
+    ).all(uid) || [];
+    const summary = (db as any).prepare(
+      'SELECT type, SUM(amount) as total FROM finance WHERE uid=? GROUP BY type'
+    ).all(uid) || [];
+    res.json({ transactions: rows, summary });
   });
+
   app.post('/api/finance', (req, res) => {
-    const uid = getUid(req); const { type, amount, category, note, account_id, currency } = req.body;
-    if (!uid || !type || !amount) return res.status(400).json({ ok:false, error:'Missing' });
-    const r = db.prepare('INSERT INTO finance (uid,type,amount,category,note,account_id,currency) VALUES (?,?,?,?,?,?,?)').run(uid,type,parseFloat(amount),category||'other',note||'',account_id||null,currency||'UZS');
-    if (account_id) db.prepare('UPDATE accounts SET balance=balance+? WHERE id=?').run(type==='expense'?-parseFloat(amount):parseFloat(amount), account_id);
-    res.json({ ok:true, id:(r as any).lastInsertRowid });
+    const { uid, type, amount, category, note, currency } = req.body;
+    if (!uid || !type || amount == null) return res.status(400).json({ error: 'missing fields' });
+    const r = (db as any).prepare(
+      'INSERT INTO finance (uid, type, amount, category, note, currency) VALUES (?,?,?,?,?,?)'
+    ).run(uid, type, amount, category || 'other', note || '', currency || 'UZS');
+    res.json({ id: r.lastInsertRowid });
   });
-  app.delete('/api/finance/:id', (req, res) => { db.prepare('DELETE FROM finance WHERE id=?').run(parseInt(req.params.id)); res.json({ ok:true }); });
 
-  // ── API: Notes ───────────────────────────────────────────────────────────
-  app.get('/api/notes', (req, res) => {
-    const uid = getUid(req); if (!uid) return res.status(400).json({ ok:false, error:'No uid' });
-    res.json({ ok:true, data:db.prepare('SELECT * FROM notes WHERE uid=? ORDER BY pinned DESC, updated_at DESC').all(uid) });
+  app.delete('/api/finance/:id', (req, res) => {
+    (db as any).prepare('DELETE FROM finance WHERE id=?').run(req.params.id);
+    res.json({ ok: true });
   });
-  app.post('/api/notes', (req, res) => {
-    const uid = getUid(req); const { title, content, pinned } = req.body;
-    if (!uid || !content) return res.status(400).json({ ok:false, error:'Missing' });
-    const r = db.prepare('INSERT INTO notes (uid,title,content,pinned) VALUES (?,?,?,?)').run(uid,title||'',content,pinned?1:0);
-    res.json({ ok:true, id:(r as any).lastInsertRowid });
-  });
-  app.put('/api/notes/:id', (req, res) => {
-    const { title, content, pinned } = req.body;
-    db.prepare(`UPDATE notes SET title=?,content=?,pinned=?,updated_at=datetime('now') WHERE id=?`).run(title||'',content||'',pinned?1:0,parseInt(req.params.id));
-    res.json({ ok:true });
-  });
-  app.delete('/api/notes/:id', (req, res) => { db.prepare('DELETE FROM notes WHERE id=?').run(parseInt(req.params.id)); res.json({ ok:true }); });
 
-  // ── API: Tasks ───────────────────────────────────────────────────────────
+  // Tasks
   app.get('/api/tasks', (req, res) => {
-    const uid = getUid(req); if (!uid) return res.status(400).json({ ok:false, error:'No uid' });
-    res.json({ ok:true, data:db.prepare(`SELECT * FROM tasks WHERE uid=? ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,id DESC`).all(uid) });
+    const uid = parseInt(req.query.uid as string);
+    if (!uid) return res.status(400).json({ error: 'uid required' });
+    const rows = (db as any).prepare(
+      'SELECT * FROM tasks WHERE uid=? ORDER BY status, priority, created_at DESC'
+    ).all(uid) || [];
+    res.json(rows);
   });
+
   app.post('/api/tasks', (req, res) => {
-    const uid = getUid(req); const { title, description, project, priority, due_date } = req.body;
-    if (!uid || !title) return res.status(400).json({ ok:false, error:'Missing' });
-    const r = db.prepare('INSERT INTO tasks (uid,title,description,project,priority,due_date) VALUES (?,?,?,?,?,?)').run(uid,title,description||'',project||'General',priority||'medium',due_date||null);
-    res.json({ ok:true, id:(r as any).lastInsertRowid });
+    const { uid, title, description, project, priority, due_date } = req.body;
+    if (!uid || !title) return res.status(400).json({ error: 'missing fields' });
+    const r = (db as any).prepare(
+      'INSERT INTO tasks (uid, title, description, project, priority, due_date) VALUES (?,?,?,?,?,?)'
+    ).run(uid, title, description || '', project || 'General', priority || 'medium', due_date || null);
+    res.json({ id: r.lastInsertRowid });
   });
-  app.put('/api/tasks/:id', (req, res) => {
-    const { title, status, priority, project, due_date } = req.body;
-    db.prepare(`UPDATE tasks SET title=COALESCE(?,title),status=COALESCE(?,status),priority=COALESCE(?,priority),project=COALESCE(?,project),due_date=COALESCE(?,due_date),updated_at=datetime('now') WHERE id=?`).run(title||null,status||null,priority||null,project||null,due_date||null,parseInt(req.params.id));
-    res.json({ ok:true });
-  });
-  app.delete('/api/tasks/:id', (req, res) => { db.prepare('DELETE FROM tasks WHERE id=?').run(parseInt(req.params.id)); res.json({ ok:true }); });
 
-  // ── API: Habits ──────────────────────────────────────────────────────────
+  app.patch('/api/tasks/:id', (req, res) => {
+    const { status, title, priority } = req.body;
+    if (status) (db as any).prepare("UPDATE tasks SET status=?, updated_at=datetime('now') WHERE id=?").run(status, req.params.id);
+    if (title)  (db as any).prepare("UPDATE tasks SET title=?, updated_at=datetime('now') WHERE id=?").run(title, req.params.id);
+    if (priority) (db as any).prepare("UPDATE tasks SET priority=?, updated_at=datetime('now') WHERE id=?").run(priority, req.params.id);
+    res.json({ ok: true });
+  });
+
+  app.delete('/api/tasks/:id', (req, res) => {
+    (db as any).prepare('DELETE FROM tasks WHERE id=?').run(req.params.id);
+    res.json({ ok: true });
+  });
+
+  // Notes
+  app.get('/api/notes', (req, res) => {
+    const uid = parseInt(req.query.uid as string);
+    if (!uid) return res.status(400).json({ error: 'uid required' });
+    const rows = (db as any).prepare(
+      'SELECT * FROM notes WHERE uid=? ORDER BY pinned DESC, updated_at DESC'
+    ).all(uid) || [];
+    res.json(rows);
+  });
+
+  app.post('/api/notes', (req, res) => {
+    const { uid, title, content, tags } = req.body;
+    if (!uid || !content) return res.status(400).json({ error: 'missing fields' });
+    const r = (db as any).prepare(
+      'INSERT INTO notes (uid, title, content, tags) VALUES (?,?,?,?)'
+    ).run(uid, title || '', content, tags || '');
+    res.json({ id: r.lastInsertRowid });
+  });
+
+  app.patch('/api/notes/:id', (req, res) => {
+    const { title, content, pinned } = req.body;
+    if (content !== undefined) (db as any).prepare("UPDATE notes SET content=?, updated_at=datetime('now') WHERE id=?").run(content, req.params.id);
+    if (title !== undefined)   (db as any).prepare("UPDATE notes SET title=?, updated_at=datetime('now') WHERE id=?").run(title, req.params.id);
+    if (pinned !== undefined)  (db as any).prepare("UPDATE notes SET pinned=? WHERE id=?").run(pinned ? 1 : 0, req.params.id);
+    res.json({ ok: true });
+  });
+
+  app.delete('/api/notes/:id', (req, res) => {
+    (db as any).prepare('DELETE FROM notes WHERE id=?').run(req.params.id);
+    res.json({ ok: true });
+  });
+
+  // Habits
   app.get('/api/habits', (req, res) => {
-    const uid = getUid(req); if (!uid) return res.status(400).json({ ok:false, error:'No uid' });
-    const today = new Date().toISOString().split('T')[0];
-    const habits = (db.prepare('SELECT * FROM habits WHERE uid=? ORDER BY id').all(uid) as unknown as any[]).map(h => {
-      const logs = (db.prepare(`SELECT date(done_at) as d FROM habit_logs WHERE habit_id=? AND done_at>=date('now','-30 days') GROUP BY date(done_at)`).all(h.id) as unknown as any[]).map(r => r.d);
-      return { ...h, logs, done_today: logs.includes(today) };
-    });
-    res.json({ ok:true, data:habits });
+    const uid = parseInt(req.query.uid as string);
+    if (!uid) return res.status(400).json({ error: 'uid required' });
+    const rows = (db as any).prepare(
+      'SELECT * FROM habits WHERE uid=? ORDER BY streak DESC, created_at'
+    ).all(uid) || [];
+    res.json(rows);
   });
+
   app.post('/api/habits', (req, res) => {
-    const uid = getUid(req); const { name, emoji } = req.body;
-    if (!uid || !name) return res.status(400).json({ ok:false, error:'Missing' });
-    const r = db.prepare('INSERT INTO habits (uid,name,emoji) VALUES (?,?,?)').run(uid,name,emoji||'●');
-    res.json({ ok:true, id:(r as any).lastInsertRowid });
+    const { uid, name, emoji, frequency } = req.body;
+    if (!uid || !name) return res.status(400).json({ error: 'missing fields' });
+    const r = (db as any).prepare(
+      'INSERT INTO habits (uid, name, emoji, frequency) VALUES (?,?,?,?)'
+    ).run(uid, name, emoji || '●', frequency || 'daily');
+    res.json({ id: r.lastInsertRowid });
   });
-  app.post('/api/habits/:id/toggle', (req, res) => {
-    const id = parseInt(req.params.id);
-    const uid = getUid(req);
+
+  app.post('/api/habits/:id/done', (req, res) => {
+    const id = req.params.id;
     const today = new Date().toISOString().split('T')[0];
-    const existing = db.prepare(`SELECT id FROM habit_logs WHERE habit_id=? AND date(done_at)=?`).get(id, today) as any;
-    if (existing) {
-      db.prepare('DELETE FROM habit_logs WHERE id=?').run(existing.id);
-      db.prepare('UPDATE habits SET streak=MAX(0,streak-1) WHERE id=?').run(id);
-    } else {
-      db.prepare('INSERT INTO habit_logs (habit_id,uid,done_at) VALUES (?,?,datetime(?))').run(id,uid||0,today+'T12:00:00');
-      const yd = new Date(); yd.setDate(yd.getDate()-1);
-      const yds = yd.toISOString().split('T')[0];
-      const hadYd = db.prepare(`SELECT id FROM habit_logs WHERE habit_id=? AND date(done_at)=?`).get(id, yds);
-      const h = db.prepare('SELECT * FROM habits WHERE id=?').get(id) as any;
-      const ns = hadYd ? (h?.streak||0)+1 : 1;
-      db.prepare('UPDATE habits SET streak=?,best_streak=MAX(best_streak,?),last_done=? WHERE id=?').run(ns,ns,today,id);
-    }
-    res.json({ ok:true });
+    const habit = (db as any).prepare('SELECT * FROM habits WHERE id=?').get(id) as any;
+    if (!habit) return res.status(404).json({ error: 'not found' });
+
+    const alreadyDone = (db as any).prepare(
+      `SELECT id FROM habit_logs WHERE habit_id=? AND date(done_at)=?`
+    ).get(id, today);
+    if (alreadyDone) return res.json({ ok: true, already: true });
+
+    (db as any).prepare('INSERT INTO habit_logs (habit_id, uid, done_at) VALUES (?,?,datetime("now"))').run(id, habit.uid);
+
+    const lastDate = habit.last_done ? new Date(habit.last_done + 'Z') : null;
+    const yesterday = new Date(Date.now() - 86400_000).toISOString().split('T')[0];
+    const newStreak = lastDate && habit.last_done >= yesterday ? habit.streak + 1 : 1;
+    const bestStreak = Math.max(newStreak, habit.best_streak || 0);
+
+    (db as any).prepare(
+      'UPDATE habits SET streak=?, best_streak=?, last_done=? WHERE id=?'
+    ).run(newStreak, bestStreak, today, id);
+
+    res.json({ ok: true, streak: newStreak });
   });
+
   app.delete('/api/habits/:id', (req, res) => {
-    const id = parseInt(req.params.id);
-    db.prepare('DELETE FROM habit_logs WHERE habit_id=?').run(id);
-    db.prepare('DELETE FROM habits WHERE id=?').run(id);
-    res.json({ ok:true });
+    (db as any).prepare('DELETE FROM habits WHERE id=?').run(req.params.id);
+    (db as any).prepare('DELETE FROM habit_logs WHERE habit_id=?').run(req.params.id);
+    res.json({ ok: true });
   });
 
-  // ── API: Websites ────────────────────────────────────────────────────────
-  app.get('/api/websites', (req, res) => {
-    const uid = getUid(req); if (!uid) return res.status(400).json({ ok:false, error:'No uid' });
-    res.json({ ok:true, data:db.prepare('SELECT id,uid,name,created_at FROM websites WHERE uid=? ORDER BY id DESC').all(uid) });
-  });
-  app.delete('/api/websites/:id', (req, res) => { db.prepare('DELETE FROM websites WHERE id=?').run(parseInt(req.params.id)); res.json({ ok:true }); });
-
-  // ── API: Custom Tools ─────────────────────────────────────────────────────
-  app.get('/api/tools', (req, res) => {
-    const uid = getUid(req); if (!uid) return res.status(400).json({ ok:false, error:'No uid' });
-    res.json({ ok:true, data:db.prepare('SELECT id,name,description,trigger_pattern,usage_count,active,created_at FROM custom_tools WHERE (uid=? OR uid=0) ORDER BY usage_count DESC').all(uid) });
-  });
-  app.delete('/api/tools/:id', (req, res) => { db.prepare('UPDATE custom_tools SET active=0 WHERE id=?').run(parseInt(req.params.id)); res.json({ ok:true }); });
-
-  // ── API: Admin ───────────────────────────────────────────────────────────
-  app.get('/api/admin/users', (req, res) => {
-    const uid = getUid(req);
-    if (!uid || !config.adminIds.includes(uid)) return res.status(403).json({ ok:false, error:'Forbidden' });
-    const users = db.prepare(`SELECT u.uid, u.username, u.first_name, u.created_at, COUNT(c.id) as message_count FROM users u LEFT JOIN conversations c ON c.uid=u.uid GROUP BY u.uid ORDER BY u.created_at DESC`).all();
-    res.json({ ok:true, data:users });
+  // Calendar
+  app.get('/api/calendar', (req, res) => {
+    const uid = parseInt(req.query.uid as string);
+    if (!uid) return res.status(400).json({ error: 'uid required' });
+    const rows = (db as any).prepare(
+      'SELECT * FROM calendar_events WHERE uid=? ORDER BY start_at'
+    ).all(uid) || [];
+    res.json(rows);
   });
 
-  // ── Approval API ──────────────────────────────────────────────────────────
-  app.post('/api/approval/:id/approve', (req, res) => {
-    const { id } = req.params;
-    const uid = getUid(req);
-    if (!uid || !config.adminIds.includes(uid)) return res.status(403).json({ ok:false });
-    const pending = pendingApprovals.get(id);
-    if (!pending) return res.status(404).json({ ok:false, error:'Not found' });
-    pending.resolve(true);
-    pendingApprovals.delete(id);
-    res.json({ ok:true });
-  });
-  app.post('/api/approval/:id/deny', (req, res) => {
-    const { id } = req.params;
-    const uid = getUid(req);
-    if (!uid || !config.adminIds.includes(uid)) return res.status(403).json({ ok:false });
-    const pending = pendingApprovals.get(id);
-    if (!pending) return res.status(404).json({ ok:false, error:'Not found' });
-    pending.resolve(false);
-    pendingApprovals.delete(id);
-    res.json({ ok:true });
+  app.post('/api/calendar', (req, res) => {
+    const { uid, title, description, start_at, end_at, all_day, color } = req.body;
+    if (!uid || !title || !start_at) return res.status(400).json({ error: 'missing fields' });
+    const r = (db as any).prepare(
+      'INSERT INTO calendar_events (uid, title, description, start_at, end_at, all_day, color) VALUES (?,?,?,?,?,?,?)'
+    ).run(uid, title, description || '', start_at, end_at || null, all_day ? 1 : 0, color || '#6366f1');
+    res.json({ id: r.lastInsertRowid });
   });
 
-  // ── WebSocket (PC Agent) ──────────────────────────────────────────────────
-  const httpServer = createServer(app);
-  const wss        = new WebSocketServer({ server: httpServer, path: '/ws' });
-  const linkCodes  = new Map<string, { deviceId: string; platform: string; ws: WebSocket }>();
-  const agents     = new Map<number, WebSocket>();
-  const pending    = new Map<string, { resolve: Function; reject: Function }>();
+  app.delete('/api/calendar/:id', (req, res) => {
+    (db as any).prepare('DELETE FROM calendar_events WHERE id=?').run(req.params.id);
+    res.json({ ok: true });
+  });
 
-  wss.on('connection', (ws) => {
-    let wsUid: number | null = null;
+  // Contacts
+  app.get('/api/contacts', (req, res) => {
+    const uid = parseInt(req.query.uid as string);
+    if (!uid) return res.status(400).json({ error: 'uid required' });
+    const q = req.query.q as string;
+    const rows = q
+      ? (db as any).prepare("SELECT * FROM contacts WHERE uid=? AND (name LIKE ? OR phone LIKE ? OR email LIKE ?) ORDER BY name").all(uid, `%${q}%`, `%${q}%`, `%${q}%`)
+      : (db as any).prepare('SELECT * FROM contacts WHERE uid=? ORDER BY name').all(uid);
+    res.json(rows || []);
+  });
 
-    ws.on('message', (raw) => {
-      try {
-        const msg   = JSON.parse(raw.toString());
-        const mtype = msg.type;
+  app.post('/api/contacts', (req, res) => {
+    const { uid, name, phone, email, company, notes } = req.body;
+    if (!uid || !name) return res.status(400).json({ error: 'missing fields' });
+    const r = (db as any).prepare(
+      'INSERT INTO contacts (uid, name, phone, email, company, notes) VALUES (?,?,?,?,?,?)'
+    ).run(uid, name, phone || '', email || '', company || '', notes || '');
+    res.json({ id: r.lastInsertRowid });
+  });
 
-        if (mtype === 'request_link') {
-          const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-          linkCodes.set(code, { deviceId: msg.device_id, platform: msg.platform || 'Unknown', ws });
-          const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-          db.prepare('INSERT OR REPLACE INTO link_codes (code,device_id,platform,expires_at) VALUES (?,?,?,?)').run(code, msg.device_id, msg.platform || 'Unknown', expires);
-          ws.send(JSON.stringify({ type: 'link_code', code }));
+  app.delete('/api/contacts/:id', (req, res) => {
+    (db as any).prepare('DELETE FROM contacts WHERE id=?').run(req.params.id);
+    res.json({ ok: true });
+  });
 
-        } else if (mtype === 'register') {
-          wsUid = msg.uid;
-          if (wsUid) {
-            agents.set(wsUid, ws);
-            db.prepare(`INSERT INTO pc_agents (uid,device_id,device_name,platform,last_seen,status) VALUES (?,?,?,?,datetime('now'),'online') ON CONFLICT(uid) DO UPDATE SET device_id=excluded.device_id,device_name=excluded.device_name,platform=excluded.platform,last_seen=excluded.last_seen,status='online'`).run(wsUid, msg.device_id, msg.device_id, msg.platform || 'Unknown');
-            ws.send(JSON.stringify({ type: 'registered' }));
-          }
+  // ── PC Agent WebSocket ──────────────────────────────────────────────────────
+  const wss = new WebSocketServer({ server, path: '/ws/agent' });
 
-        } else if (mtype === 'link') {
-          const code = msg.code?.toUpperCase();
-          const uid = msg.uid;
-          if (code && uid) {
-            const entry = linkCodes.get(code);
-            if (entry) {
-              entry.ws.send(JSON.stringify({ type: 'linked', uid }));
-              agents.set(uid, entry.ws);
-              linkCodes.delete(code);
-              ws.send(JSON.stringify({ type: 'linked_ok' }));
-            } else {
-              ws.send(JSON.stringify({ type: 'link_error', message: 'Invalid or expired code' }));
-            }
-          }
+  wss.on('connection', (ws, req) => {
+    const params = new URL(req.url || '', `http://localhost`).searchParams;
+    const code = params.get('code');
+    const deviceId = params.get('device_id') || 'unknown';
+    const deviceName = params.get('device_name') || 'PC';
+    const platform = params.get('platform') || 'unknown';
 
-        } else if (mtype === 'result' || mtype === 'screenshot_result') {
-          const p = pending.get(msg.reqId);
-          if (p) { p.resolve(msg); pending.delete(msg.reqId); }
+    if (!code) { ws.close(1008, 'code required'); return; }
 
-        } else if (mtype === 'ping') {
-          ws.send(JSON.stringify({ type: 'pong' }));
-          if (wsUid) db.prepare("UPDATE pc_agents SET last_seen=datetime('now') WHERE uid=?").run(wsUid);
-        }
-      } catch (e) { console.error('[ws] parse error', e); }
-    });
+    const uid = useLinkCode(code, deviceId, deviceName, platform);
+    if (!uid) { ws.close(1008, 'invalid or expired code'); return; }
+
+    console.log(`[ws] PC Agent connected uid=${uid} device=${deviceName}`);
+    registerConnection(uid, ws);
 
     ws.on('close', () => {
-      if (wsUid) {
-        agents.delete(wsUid);
-        db.prepare("UPDATE pc_agents SET status='offline' WHERE uid=?").run(wsUid);
-      }
+      updateAgentStatus(uid, 'offline');
+      console.log(`[ws] PC Agent disconnected uid=${uid}`);
+      // Notify user
+      bot.api.sendMessage(uid, '⚫ PC Agent disconnected.').catch(() => {});
     });
+
+    // Notify user
+    bot.api.sendMessage(uid, `🟢 PC Agent connected: *${deviceName}* (${platform})`, { parse_mode: 'Markdown' }).catch(() => {});
   });
 
-  (app as any).sendToAgent = async (uid: number, msg: object): Promise<any> => {
-    const ws = agents.get(uid);
-    if (!ws || ws.readyState !== WebSocket.OPEN) throw new Error('Agent offline');
-    const reqId = crypto.randomUUID();
-    return new Promise((resolve, reject) => {
-      pending.set(reqId, { resolve, reject });
-      setTimeout(() => { pending.delete(reqId); reject(new Error('Timeout (30s)')); }, 30000);
-      ws.send(JSON.stringify({ ...msg, reqId }));
-    });
-  };
-
-  (app as any).isAgentOnline = (uid: number): boolean => {
-    const ws = agents.get(uid);
-    return !!ws && ws.readyState === WebSocket.OPEN;
-  };
-
-  const port = config.port;
-  httpServer.listen(port, '0.0.0.0', () => {
-    console.log(`[server] NEXUM v14 on :${port}`);
-    // Set global reference for PC agent relay
-    (global as any).__nexumApp = app;
+  // ── Start listening ──────────────────────────────────────────────────────────
+  server.listen(config.port, () => {
+    console.log(`[server] HTTP+WS on port ${config.port}`);
   });
+
   return app;
 }
-
-// ── Approval system ───────────────────────────────────────────────────────────
-export const pendingApprovals = new Map<string, {
-  resolve: (approved: boolean) => void;
-  command: string;
-  uid: number;
-  createdAt: number;
-}>();
-
-export async function requestApproval(params: {
-  bot: any;
-  uid: number;
-  command: string;
-  type: 'dangerous' | 'system' | 'delete';
-}): Promise<boolean> {
-  const id = crypto.randomUUID().slice(0, 8);
-  return new Promise((resolve) => {
-    pendingApprovals.set(id, { resolve, command: params.command, uid: params.uid, createdAt: Date.now() });
-    setTimeout(() => { if (pendingApprovals.has(id)) { pendingApprovals.delete(id); resolve(false); } }, 60000);
-
-    const icon = params.type === 'delete' ? 'DEL' : params.type === 'system' ? 'SYS' : 'WARN';
-    const msg  = `[${icon}] Approval needed\n\nUser: ${params.uid}\nCommand:\n${params.command.slice(0, 500)}\n\nID: ${id}`;
-    for (const adminId of config.adminIds) {
-      params.bot.api.sendMessage(adminId, msg, {
-        reply_markup: {
-          inline_keyboard: [[
-            { text: 'Approve', callback_data: `approve_${id}` },
-            { text: 'Deny', callback_data: `deny_${id}` },
-          ]]
-        }
-      }).catch(() => {});
-    }
-  });
-}
-
-// Global app reference for PC agent relay (used by commands.ts via global.__nexumApp)
-// Set automatically when server starts

@@ -1,12 +1,22 @@
 // NEXUM Billing & Tariff System
-// Тарифы: Free / Middle / Pro
+// Plans: Free / Middle / Pro
+
+import { db } from './db';
 
 export type TariffPlan = 'free' | 'middle' | 'pro';
 
 export interface TariffConfig {
   plan: TariffPlan;
   priceUsd: number;
-  dailyMessageLimit: number | null; // null = безлимит
+  dailyMessageLimit: number | null; // null = unlimited
+  hasMemory: boolean;
+  hasMiniApps: boolean;
+  hasBYOK: boolean;
+  hasPcAgent: boolean;
+  hasSubagents: boolean;
+}
+
+export interface Features {
   hasMemory: boolean;
   hasMiniApps: boolean;
   hasBYOK: boolean;
@@ -38,7 +48,7 @@ export const TARIFFS: Record<TariffPlan, TariffConfig> = {
   pro: {
     plan: 'pro',
     priceUsd: 15,
-    dailyMessageLimit: null, // безлимит (за счёт BYOK)
+    dailyMessageLimit: null, // unlimited (user provides own keys)
     hasMemory: true,
     hasMiniApps: true,
     hasBYOK: true,
@@ -47,98 +57,107 @@ export const TARIFFS: Record<TariffPlan, TariffConfig> = {
   },
 };
 
-// ── Database helpers ─────────────────────────────────────────────────────────
-
-import { db } from './db';
+// ── Plan access ───────────────────────────────────────────────────────────────
 
 export function getUserTariff(uid: number): TariffPlan {
-  const row = db.prepare('SELECT tariff FROM users WHERE uid=?').get(uid) as any;
+  const row = (db as any).prepare('SELECT tariff FROM users WHERE uid=?').get(uid) as any;
   return (row?.tariff as TariffPlan) || 'free';
 }
 
 export function setUserTariff(uid: number, plan: TariffPlan) {
-  db.prepare('INSERT INTO users (uid, tariff) VALUES (?,?) ON CONFLICT(uid) DO UPDATE SET tariff=excluded.tariff').run(uid, plan);
+  (db as any).prepare(
+    `INSERT INTO users (uid, tariff) VALUES (?,?)
+     ON CONFLICT(uid) DO UPDATE SET tariff=excluded.tariff, updated_at=datetime('now')`
+  ).run(uid, plan);
 }
 
 export function getTariffConfig(uid: number): TariffConfig {
-  const plan = getUserTariff(uid);
-  return TARIFFS[plan];
+  return TARIFFS[getUserTariff(uid)];
 }
 
-// ── Message counter ──────────────────────────────────────────────────────────
+export function getFeatures(uid: number): Features {
+  const t = getTariffConfig(uid);
+  return {
+    hasMemory: t.hasMemory,
+    hasMiniApps: t.hasMiniApps,
+    hasBYOK: t.hasBYOK,
+    hasPcAgent: t.hasPcAgent,
+    hasSubagents: t.hasSubagents,
+  };
+}
+
+// ── Message counter ───────────────────────────────────────────────────────────
 
 export function getMessageCountToday(uid: number): number {
   const today = new Date().toISOString().split('T')[0];
-  const row = db.prepare(`
-    SELECT COUNT(*) as c FROM conversations 
-    WHERE uid=? AND date(created_at)=? AND role='user'
-  `).get(uid, today) as any;
+  const row = (db as any).prepare(
+    `SELECT COUNT(*) as c FROM conversations WHERE uid=? AND date(created_at)=? AND role='user'`
+  ).get(uid, today) as any;
   return row?.c || 0;
 }
 
 export function canSendMessage(uid: number): { ok: boolean; reason?: string; remaining?: number } {
   const tariff = getTariffConfig(uid);
   if (tariff.dailyMessageLimit === null) {
-    return { ok: true }; // безлимит
+    return { ok: true };
   }
   const count = getMessageCountToday(uid);
   const remaining = tariff.dailyMessageLimit - count;
   if (remaining <= 0) {
     return {
       ok: false,
-      reason: `Лимит сообщений исчерпан (${count}/${tariff.dailyMessageLimit}/день). Upgrade: /tariffs`,
+      reason: `Daily limit reached (${count}/${tariff.dailyMessageLimit}). Upgrade: /tariffs`,
     };
   }
   return { ok: true, remaining };
 }
 
-// ── Feature checks ───────────────────────────────────────────────────────────
+// ── Feature checks ────────────────────────────────────────────────────────────
 
-export function hasFeature(uid: number, feature: 'memory' | 'miniapps' | 'byok' | 'pcagent' | 'subagents'): boolean {
-  const tariff = getTariffConfig(uid);
-  switch (feature) {
-    case 'memory': return tariff.hasMemory;
-    case 'miniapps': return tariff.hasMiniApps;
-    case 'byok': return tariff.hasBYOK;
-    case 'pcagent': return tariff.hasPcAgent;
-    case 'subagents': return tariff.hasSubagents;
-    default: return false;
-  }
+export function hasFeature(uid: number, feature: keyof Features): boolean {
+  const features = getFeatures(uid);
+  return features[feature];
 }
 
-export function getPcAgentAccess(uid: number): { ok: boolean; reason?: string } {
-  const tariff = getTariffConfig(uid);
-  if (!tariff.hasPcAgent) {
+export function requireFeature(
+  uid: number,
+  feature: keyof Features,
+  featureName: string
+): { ok: boolean; reason?: string } {
+  if (!hasFeature(uid, feature)) {
+    const needsPlan = feature === 'hasPcAgent' ? 'Pro' :
+                      feature === 'hasBYOK' ? 'Pro' :
+                      feature === 'hasMiniApps' ? 'Middle or Pro' :
+                      feature === 'hasMemory' ? 'Middle or Pro' : 'Pro';
     return {
       ok: false,
-      reason: `PC Agent доступен только в тарифе Pro ($15/мес). Upgrade: /tariffs`,
+      reason: `${featureName} requires ${needsPlan} plan. See /tariffs`,
     };
   }
   return { ok: true };
 }
 
+// ── Upgrade messages ──────────────────────────────────────────────────────────
+
 export function getUpgradeMessage(currentPlan: TariffPlan): string {
-  const plans = {
-    free: `🆙 *Upgrade до Middle — $9/мес*\n\n` +
-      `• 300 сообщений/день\n` +
-      `• Память и контекст\n` +
-      `• Мини-апы (7 шт)\n\n` +
-      `*Upgrade до Pro — $15/мес*\n` +
-      `• Безлимит сообщений (BYOK)\n` +
-      `• PC Agent (управление ПК)\n` +
-      `• Все мини-апы\n` +
-      `• Subagents\n\n` +
-      `Команда: /tariffs`,
-    middle: `🆙 *Upgrade до Pro — $15/мес*\n\n` +
-      `• Безлимит сообщений (BYOK)\n` +
-      `• PC Agent (управление ПК)\n` +
-      `• Все мини-апы\n` +
-      `• Subagents\n\n` +
-      `Команда: /tariffs`,
-    pro: `✅ У вас уже тариф Pro!\n\n` +
-      `• Все функции доступны\n` +
-      `• Используйте /setkey для BYOK\n` +
-      `• PC Agent: /pcagent`,
+  const plans: Record<TariffPlan, string> = {
+    free: `🆙 *Upgrade to Middle — $9/mo*\n\n` +
+      `• 300 messages/day\n` +
+      `• Long-term memory\n` +
+      `• 7 mini-apps\n\n` +
+      `*Upgrade to Pro — $15/mo*\n` +
+      `• Unlimited messages (BYOK)\n` +
+      `• PC Agent (control your computer)\n` +
+      `• All mini-apps\n` +
+      `• Background AI tasks\n\n` +
+      `/tariffs for details`,
+    middle: `🆙 *Upgrade to Pro — $15/mo*\n\n` +
+      `• Unlimited messages (bring your own API keys)\n` +
+      `• PC Agent (control your computer remotely)\n` +
+      `• Background AI subagents\n` +
+      `• Priority access\n\n` +
+      `/tariffs for details`,
+    pro: `✅ *You're on Pro!*\n\nAll features are available.\n\n• Add API keys: /setkey\n• PC Agent: /link`,
   };
   return plans[currentPlan];
 }

@@ -1,669 +1,178 @@
-// NEXUM Agent — ALL OpenClaw tools adapted for Telegram
-// Tool loop: AI → XML tool call → execute → result → AI continues (up to 10 rounds)
+// NEXUM Agent Executor — routes messages through tools and LLM
 
-import { chat } from './router';
-import { getMemories, getHistory, saveMessage, autoExtract, saveMemory } from './memory';
 import { config } from '../core/config';
 import { db } from '../core/db';
-import { canSendMessage, hasFeature, getPcAgentAccess } from '../core/billing';
+import { getHistory, saveMessage, buildMemoryContext, autoExtract } from './memory';
+import { chat } from './router';
+import { hasFeature, canSendMessage, getTariffConfig } from '../core/billing';
 import { webSearch } from '../tools/search';
-import { detectLanguage, getSystemPromptPrefix, Language } from './language';
-import { getSystemPrompt } from './personality';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import * as os from 'os';
 
-const execAsync = promisify(exec);
-
-interface Tool {
-  name: string;
-  summary: string;
-  handler: (uid: number, args: Record<string, string>, ctx?: any) => Promise<string>;
+export interface ExecuteOptions {
+  bot?: any;
+  isGroup?: boolean;
+  skipLimitCheck?: boolean;
 }
 
-// ── Background process registry (like OpenClaw process tool) ─────────────────
-const bgProcesses = new Map<string, { cmd: string; pid?: number; output: string; done: boolean; started: number }>();
-
-// ── Pending approval requests ────────────────────────────────────────────────
-const pendingApprovals = new Map<string, { resolve: (ok: boolean) => void; cmd: string; uid: number }>();
-export { pendingApprovals as execApprovals };
-
-export const TOOLS: Tool[] = [
-
-  // ── WEB ────────────────────────────────────────────────────────────────────
-  {
-    name: 'web_search',
-    summary: 'Search the web for current information',
-    handler: async (_uid, args) => webSearch(args.query || args.q || ''),
-  },
-  {
-    name: 'web_fetch',
-    summary: 'Fetch and extract readable content from a URL',
-    handler: async (_uid, args) => {
-      const url = args.url || ''; if (!url) return 'Error: provide url';
-      try {
-        const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NexumBot/1.0)' }, signal: AbortSignal.timeout(15000) });
-        const html = await r.text();
-        return html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<[^>]+>/g,' ').replace(/\s{2,}/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim().slice(0,6000) || 'Empty page';
-      } catch (e: any) { return `Fetch error: ${e.message}`; }
-    },
-  },
-
-  // ── EXEC (like OpenClaw exec tool, with admin approval for non-admins) ─────
-  {
-    name: 'exec',
-    summary: 'Run a shell command. Requires approval for non-admin users.',
-    handler: async (uid, args, ctx) => {
-      const cmd = args.command || args.cmd || ''; if (!cmd) return 'Error: provide command';
-      const isAdmin = config.adminIds.includes(uid);
-      if (!isAdmin) {
-        // Request approval from admin
-        const id = Math.random().toString(36).slice(2, 10);
-        const approved = await new Promise<boolean>((resolve) => {
-          pendingApprovals.set(id, { resolve, cmd, uid });
-          setTimeout(() => { pendingApprovals.delete(id); resolve(false); }, 120000);
-          if (ctx?.bot && config.adminIds[0]) {
-            ctx.bot.api.sendMessage(config.adminIds[0],
-              `⚠️ Exec approval needed\n\nUser: ${uid}\nCommand:\n\`${cmd.slice(0,500)}\`\n\nID: \`${id}\``,
-              { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[
-                { text: '✅ Approve', callback_data: `exec_approve_${id}` },
-                { text: '❌ Deny', callback_data: `exec_deny_${id}` },
-              ]]}}).catch(() => {});
-          }
-        });
-        if (!approved) return 'Exec denied or timed out.';
-      }
-      try {
-        const workdir = args.workdir || process.cwd();
-        const timeout = parseInt(args.timeout || '30000') || 30000;
-        const { stdout, stderr } = await execAsync(cmd, { cwd: workdir, timeout, maxBuffer: 1024 * 1024 });
-        return ((stdout || '') + (stderr ? '\nSTDERR:\n' + stderr : '')).slice(0, 4000) || '(no output)';
-      } catch (e: any) { return `Exit ${e.code}: ${(e.stdout||'')+(e.stderr||e.message||'')}`; }
-    },
-  },
-
-  // ── PROCESS (background exec sessions, like OpenClaw process tool) ─────────
-  {
-    name: 'process',
-    summary: 'Manage background shell sessions: start, poll, list, kill, send',
-    handler: async (uid, args) => {
-      const action = args.action || 'list';
-      if (action === 'start') {
-        const cmd = args.command || ''; if (!cmd) return 'Error: provide command';
-        const id = Math.random().toString(36).slice(2, 8);
-        const entry = { cmd, output: '', done: false, started: Date.now() };
-        bgProcesses.set(`${uid}:${id}`, entry);
-        const child = exec(cmd, { maxBuffer: 1024 * 512 }, (err, stdout, stderr) => {
-          entry.output += stdout + stderr;
-          entry.done = true;
-        });
-        child.stdout?.on('data', d => { entry.output += d; });
-        child.stderr?.on('data', d => { entry.output += d; });
-        return `Started process [${id}]: ${cmd.slice(0,60)}`;
-      }
-      if (action === 'list') {
-        const procs = Array.from(bgProcesses.entries()).filter(([k]) => k.startsWith(`${uid}:`));
-        if (!procs.length) return 'No background processes';
-        return procs.map(([k, v]) => `[${k.split(':')[1]}] ${v.done?'done':'running'} — ${v.cmd.slice(0,40)}`).join('\n');
-      }
-      if (action === 'poll' || action === 'output') {
-        const id = args.sessionId || ''; if (!id) return 'Error: provide sessionId';
-        const entry = bgProcesses.get(`${uid}:${id}`);
-        if (!entry) return `Process ${id} not found`;
-        return `${entry.done?'[done]':'[running]'}\n${entry.output.slice(-2000) || '(no output yet)'}`;
-      }
-      if (action === 'kill') {
-        const id = args.sessionId || ''; if (!id) return 'Error: provide sessionId';
-        bgProcesses.delete(`${uid}:${id}`);
-        return `Process ${id} removed`;
-      }
-      return 'Actions: start, list, poll, kill';
-    },
-  },
-
-  // ── FILE SYSTEM (like OpenClaw read/write/edit/grep/find/ls) ───────────────
-  {
-    name: 'read',
-    summary: 'Read file contents',
-    handler: async (_uid, args) => {
-      const p = args.path || ''; if (!p) return 'Error: provide path';
-      try { return (await fs.readFile(path.resolve(p), 'utf-8')).slice(0, 8000); }
-      catch (e: any) { return `Read error: ${e.message}`; }
-    },
-  },
-  {
-    name: 'write',
-    summary: 'Create or overwrite a file',
-    handler: async (_uid, args) => {
-      const p = args.path || '', content = args.content || ''; if (!p) return 'Error: provide path';
-      try { await fs.mkdir(path.dirname(path.resolve(p)), { recursive: true }); await fs.writeFile(path.resolve(p), content, 'utf-8'); return `Written: ${p}`; }
-      catch (e: any) { return `Write error: ${e.message}`; }
-    },
-  },
-  {
-    name: 'ls',
-    summary: 'List directory contents',
-    handler: async (_uid, args) => {
-      const p = args.path || '.';
-      try {
-        const entries = await fs.readdir(path.resolve(p), { withFileTypes: true });
-        return entries.slice(0,100).map(e => `${e.isDirectory()?'[D]':'[F]'} ${e.name}`).join('\n');
-      } catch (e: any) { return `Error: ${e.message}`; }
-    },
-  },
-  {
-    name: 'grep',
-    summary: 'Search file contents for patterns',
-    handler: async (_uid, args) => {
-      const pattern = args.pattern || '', p = args.path || '.'; if (!pattern) return 'Error: provide pattern';
-      try {
-        const { stdout } = await execAsync(`grep -rn "${pattern.replace(/"/g,'\\"')}" "${path.resolve(p)}" --include="*.ts" --include="*.js" --include="*.py" --include="*.txt" -l 2>/dev/null | head -20`);
-        if (!stdout.trim()) return 'No matches';
-        const files = stdout.trim().split('\n');
-        const results: string[] = [];
-        for (const f of files.slice(0,5)) {
-          const { stdout: lines } = await execAsync(`grep -n "${pattern.replace(/"/g,'\\"')}" "${f}" | head -10`);
-          results.push(`${f}:\n${lines.trim()}`);
-        }
-        return results.join('\n\n').slice(0,3000);
-      } catch (e: any) { return `Grep error: ${e.message}`; }
-    },
-  },
-  {
-    name: 'find',
-    summary: 'Find files by glob pattern',
-    handler: async (_uid, args) => {
-      const pattern = args.pattern || '*', p = args.path || '.';
-      try {
-        const { stdout } = await execAsync(`find "${path.resolve(p)}" -name "${pattern}" -type f 2>/dev/null | head -50`);
-        return stdout.trim() || 'No files found';
-      } catch (e: any) { return `Find error: ${e.message}`; }
-    },
-  },
-
-  // ── BROWSER — DISABLED (Playwright removed for production) ─────────────────
-  // Browser functionality moved to separate service
-
-  // ── IMAGE ANALYZE (like OpenClaw image tool) ──────────────────────────────
-  {
-    name: 'image_analyze',
-    summary: 'Analyze an image URL or file path with vision AI',
-    handler: async (uid, args) => {
-      const src = args.url || args.path || ''; if (!src) return 'Error: provide url or path';
-      const prompt = args.prompt || 'Describe this image in detail.';
-      try {
-        let base64: string, mime = 'image/jpeg';
-        if (src.startsWith('http')) {
-          const r = await fetch(src);
-          base64 = Buffer.from(await r.arrayBuffer()).toString('base64');
-          mime = r.headers.get('content-type') || mime;
-        } else {
-          base64 = (await fs.readFile(path.resolve(src))).toString('base64');
-        }
-        const messages: any[] = [{ role: 'user', content: [
-          { type: 'image_url', image_url: { url: `data:${mime};base64,${base64}` } },
-          { type: 'text', text: prompt },
-        ]}];
-        return await chat(uid, messages, 'You are an image analysis assistant.', true);
-      } catch (e: any) { return `Image error: ${e.message}`; }
-    },
-  },
-
-  // ── PDF READ (like OpenClaw pdf tool) ─────────────────────────────────────
-  {
-    name: 'pdf_read',
-    summary: 'Extract text from a PDF file or URL',
-    handler: async (_uid, args) => {
-      const src = args.url || args.path || ''; if (!src) return 'Error: provide url or path';
-      try {
-        let buf: Buffer;
-        if (src.startsWith('http')) {
-          const r = await fetch(src, { signal: AbortSignal.timeout(30000) });
-          buf = Buffer.from(await r.arrayBuffer());
-        } else {
-          buf = await fs.readFile(path.resolve(src));
-        }
-        // Try pdf-parse if available
-        try {
-          const pdfParse = require('pdf-parse');
-          const data = await pdfParse(buf);
-          return `PDF: ${data.numpages} pages\n\n${data.text.slice(0, 6000)}`;
-        } catch {
-          // Fallback: basic text extraction
-          const text = buf.toString('utf-8').replace(/[^\x20-\x7E\n\r\t]/g, ' ').replace(/\s{3,}/g, '\n').trim();
-          return text.slice(0, 4000) || 'Could not extract text (try installing: npm install pdf-parse)';
-        }
-      } catch (e: any) { return `PDF error: ${e.message}`; }
-    },
-  },
-
-  // ── FINANCE ────────────────────────────────────────────────────────────────
-  {
-    name: 'finance_add',
-    summary: 'Record income or expense in Finance app',
-    handler: async (uid, args) => {
-      const amount = parseFloat(args.amount || '0');
-      if (!amount || isNaN(amount)) return 'Error: invalid amount';
-      const type = args.type === 'income' ? 'income' : 'expense';
-      const category = (args.category || 'other').toLowerCase();
-      const note = args.note || '';
-      db.prepare('INSERT INTO finance (uid,type,amount,category,note) VALUES (?,?,?,?,?)').run(uid, type, amount, category, note);
-      return `${type === 'income' ? 'Income' : 'Expense'} recorded: ${amount.toLocaleString()} (${category})${note ? ' — ' + note : ''}`;
-    },
-  },
-  {
-    name: 'finance_summary',
-    summary: 'Show balance and recent transactions',
-    handler: async (uid, args) => {
-      const period = args.period || 'month';
-      const now = new Date();
-      let since = '';
-      if (period === 'today') since = now.toISOString().split('T')[0];
-      else if (period === 'week') { const d = new Date(now); d.setDate(d.getDate()-7); since = d.toISOString().split('T')[0]; }
-      else if (period === 'month') since = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
-      const w = since ? `AND date(created_at)>='${since}'` : '';
-      const rows = db.prepare(`SELECT type,SUM(amount) as t FROM finance WHERE uid=? ${w} GROUP BY type`).all(uid) as unknown as any[];
-      const inc = rows.find(r => r.type === 'income')?.t || 0;
-      const exp = rows.find(r => r.type === 'expense')?.t || 0;
-      const recent = db.prepare(`SELECT type,amount,category,note FROM finance WHERE uid=? ${w} ORDER BY id DESC LIMIT 5`).all(uid) as unknown as any[];
-      const lines = recent.map(r => `• ${r.type==='income'?'+':'-'}${r.amount} ${r.category}${r.note?' ('+r.note+')':''}`);
-      return `Balance (${period}): ${(inc-exp).toLocaleString()}\nIncome: ${inc.toLocaleString()} | Expenses: ${exp.toLocaleString()}${lines.length?'\n\nRecent:\n'+lines.join('\n'):''}`;
-    },
-  },
-
-  // ── TASKS ─────────────────────────────────────────────────────────────────
-  {
-    name: 'task_create',
-    summary: 'Create a task in Tasks app',
-    handler: async (uid, args) => {
-      const title = args.title || args.name || ''; if (!title) return 'Error: provide title';
-      const priority = ['high','medium','low','critical'].includes(args.priority||'') ? args.priority : 'medium';
-      db.prepare('INSERT INTO tasks (uid,title,priority,project) VALUES (?,?,?,?)').run(uid, title, priority, args.project||'General');
-      return `Task created: "${title}" [${priority}]`;
-    },
-  },
-  {
-    name: 'task_update',
-    summary: 'Update task status or priority',
-    handler: async (uid, args) => {
-      const title = args.title || ''; if (!title) return 'Error: provide title';
-      const task = db.prepare('SELECT id FROM tasks WHERE uid=? AND title LIKE ? LIMIT 1').get(uid, `%${title}%`) as any;
-      if (!task) return `Task not found: ${title}`;
-      if (args.status) db.prepare('UPDATE tasks SET status=? WHERE id=?').run(args.status, task.id);
-      if (args.priority) db.prepare('UPDATE tasks SET priority=? WHERE id=?').run(args.priority, task.id);
-      return `Task updated: "${title}"`;
-    },
-  },
-  {
-    name: 'task_list',
-    summary: 'List tasks',
-    handler: async (uid, args) => {
-      const w = args.status === 'done' ? "status='done'" : args.status === 'all' ? '1=1' : "status!='done'";
-      const rows = db.prepare(`SELECT title,priority,project,status FROM tasks WHERE uid=? AND ${w} ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,id DESC LIMIT 20`).all(uid) as unknown as any[];
-      return rows.length ? rows.map(t => `• [${t.priority[0].toUpperCase()}] ${t.title}${t.project!=='General'?' ('+t.project+')':''} ${t.status==='done'?'✓':''}`).join('\n') : 'No tasks';
-    },
-  },
-
-  // ── NOTES ─────────────────────────────────────────────────────────────────
-  {
-    name: 'note_save',
-    summary: 'Save a note in Notes app',
-    handler: async (uid, args) => {
-      const content = args.content || args.text || ''; if (!content) return 'Error: provide content';
-      db.prepare('INSERT INTO notes (uid,title,content) VALUES (?,?,?)').run(uid, args.title||'', content);
-      return `Note saved: "${args.title || 'Untitled'}"`;
-    },
-  },
-  {
-    name: 'note_get',
-    summary: 'Get or search notes',
-    handler: async (uid, args) => {
-      const q = args.query || args.search || '';
-      const rows = q
-        ? db.prepare('SELECT title,content FROM notes WHERE uid=? AND (title LIKE ? OR content LIKE ?) ORDER BY updated_at DESC LIMIT 5').all(uid,`%${q}%`,`%${q}%`) as unknown as any[]
-        : db.prepare('SELECT title,content FROM notes WHERE uid=? ORDER BY pinned DESC,updated_at DESC LIMIT 5').all(uid) as unknown as any[];
-      return rows.length ? rows.map(n => `**${n.title||'Untitled'}**\n${n.content.slice(0,200)}`).join('\n\n') : 'No notes';
-    },
-  },
-
-  // ── HABITS ────────────────────────────────────────────────────────────────
-  {
-    name: 'habit_status',
-    summary: 'Show habits with streaks',
-    handler: async (uid, _args) => {
-      const today = new Date().toISOString().split('T')[0];
-      const habits = db.prepare('SELECT * FROM habits WHERE uid=? ORDER BY id').all(uid) as unknown as any[];
-      if (!habits.length) return 'No habits. Create them in the Habits app.';
-      return habits.map(h => {
-        const done = db.prepare('SELECT id FROM habit_logs WHERE habit_id=? AND date(done_at)=?').get(h.id, today);
-        return `${done ? '✓' : '○'} ${h.name} — streak: ${h.streak}d (best: ${h.best_streak}d)`;
-      }).join('\n');
-    },
-  },
-
-  // ── MEMORY (like OpenClaw memory_search) ──────────────────────────────────
-  {
-    name: 'memory_save',
-    summary: 'Remember a fact about the user',
-    handler: async (uid, args) => {
-      if (!args.key || !args.value) return 'Error: provide key and value';
-      saveMemory(uid, args.key, args.value);
-      return `Remembered: ${args.key} = ${args.value}`;
-    },
-  },
-  {
-    name: 'memory_get',
-    summary: 'Recall all stored facts about the user',
-    handler: async (uid, _args) => {
-      const mems = getMemories(uid);
-      return mems.length ? mems.map(m => `${m.key}: ${m.value}`).join('\n') : 'No memories stored';
-    },
-  },
-  {
-    name: 'memory_search',
-    summary: 'Search stored memories for a keyword',
-    handler: async (uid, args) => {
-      const q = args.query || ''; if (!q) return 'Error: provide query';
-      const rows = db.prepare('SELECT key,value FROM memory WHERE uid=? AND (key LIKE ? OR value LIKE ?) ORDER BY id DESC LIMIT 10').all(uid,`%${q}%`,`%${q}%`) as unknown as any[];
-      return rows.length ? rows.map(m => `${m.key}: ${m.value}`).join('\n') : `No memories matching "${q}"`;
-    },
-  },
-
-  // ── CRON / REMINDERS (like OpenClaw cron tool) ────────────────────────────
-  {
-    name: 'cron',
-    summary: 'Manage reminders and scheduled tasks. Actions: add, list, remove, status',
-    handler: async (uid, args) => {
-      const action = args.action || 'list';
-      if (action === 'add' || action === 'set') {
-        const text = args.text || args.message || ''; if (!text) return 'Error: provide text';
-        const mins = parseInt(args.minutes || args.mins || '0') || 0;
-        const at = args.at ? new Date(args.at) : new Date(Date.now() + (mins||30) * 60000);
-        db.prepare('INSERT INTO reminders (uid,chat_id,text,fire_at) VALUES (?,?,?,?)').run(uid, uid, text, at.toISOString());
-        const diff = Math.round((at.getTime() - Date.now()) / 60000);
-        return `Reminder set for ${diff}m: "${text}"`;
-      }
-      if (action === 'list') {
-        const rows = db.prepare("SELECT id,text,fire_at FROM reminders WHERE uid=? AND done=0 ORDER BY fire_at LIMIT 10").all(uid) as unknown as any[];
-        return rows.length ? rows.map(r => `[${r.id}] ${r.fire_at.slice(11,16)} — ${r.text}`).join('\n') : 'No reminders set';
-      }
-      if (action === 'remove' || action === 'delete') {
-        const id = parseInt(args.id || ''); if (!id) return 'Error: provide id';
-        db.prepare('UPDATE reminders SET done=1 WHERE id=? AND uid=?').run(id, uid);
-        return `Reminder ${id} removed`;
-      }
-      if (action === 'status') {
-        const count = (db.prepare("SELECT COUNT(*) as c FROM reminders WHERE uid=? AND done=0").get(uid) as any)?.c || 0;
-        return `Active reminders: ${count}`;
-      }
-      return 'Actions: add, list, remove, status';
-    },
-  },
-
-  // ── SESSIONS / SUBAGENTS (like OpenClaw sessions_spawn + subagents) ────────
-  {
-    name: 'sessions_spawn',
-    summary: 'Spawn an isolated sub-agent to work on a task in the background',
-    handler: async (uid, args, ctx) => {
-      const task = args.task || ''; if (!task) return 'Error: provide task';
-      const label = args.label || task.slice(0,30);
-      const { randomUUID } = require('crypto');
-      const runId = randomUUID().slice(0,8);
-      db.prepare(`INSERT INTO subagent_runs (id,uid,task,status) VALUES (?,?,?,'running')`).run(runId, uid, task);
-      if (ctx?.bot) { try { await ctx.bot.api.sendMessage(uid, `Sub-agent [${runId}] started: ${label}`); } catch {} }
-      (async () => {
-        try {
-          const result = await execute(uid, task, { bot: ctx?.bot });
-          db.prepare(`UPDATE subagent_runs SET status='done',result=?,finished_at=datetime('now') WHERE id=?`).run(result.slice(0,2000), runId);
-          if (ctx?.bot) await ctx.bot.api.sendMessage(uid, `Sub-agent [${runId}] done:\n\n${result.slice(0,3000)}`);
-        } catch (e: any) {
-          db.prepare(`UPDATE subagent_runs SET status='error',error=?,finished_at=datetime('now') WHERE id=?`).run(e.message, runId);
-          if (ctx?.bot) await ctx.bot.api.sendMessage(uid, `Sub-agent [${runId}] failed: ${e.message}`).catch(() => {});
-        }
-      })();
-      return `Sub-agent spawned [${runId}]: ${label}\nCompletion will be announced automatically.`;
-    },
-  },
-  {
-    name: 'subagents',
-    summary: 'List, steer, or kill sub-agent runs. Actions: list, kill, log',
-    handler: async (uid, args) => {
-      const action = args.action || 'list';
-      if (action === 'list') {
-        const rows = db.prepare('SELECT id,task,status,started_at FROM subagent_runs WHERE uid=? ORDER BY started_at DESC LIMIT 10').all(uid) as unknown as any[];
-        return rows.length ? rows.map(r => `[${r.id}] ${r.status} — ${r.task.slice(0,40)}`).join('\n') : 'No sub-agents';
-      }
-      if (action === 'log') {
-        const id = args.target || ''; if (!id) return 'Error: provide target (run id)';
-        const row = db.prepare('SELECT * FROM subagent_runs WHERE id=? AND uid=?').get(id, uid) as any;
-        return row ? `[${row.id}] ${row.status}\nTask: ${row.task}\nResult: ${(row.result||row.error||'pending').slice(0,1000)}` : 'Not found';
-      }
-      if (action === 'kill') {
-        const id = args.target || ''; if (!id) return 'Error: provide target';
-        db.prepare("UPDATE subagent_runs SET status='killed' WHERE id=? AND uid=?").run(id, uid);
-        return `Sub-agent ${id} killed`;
-      }
-      return 'Actions: list, log, kill';
-    },
-  },
-
-  // ── SESSION STATUS (like OpenClaw session_status tool) ────────────────────
-  {
-    name: 'session_status',
-    summary: 'Show session stats: message count, memory, provider, time',
-    handler: async (uid, _args) => {
-      const msgs = (db.prepare('SELECT COUNT(*) as c FROM conversations WHERE uid=?').get(uid) as any)?.c||0;
-      const mems = getMemories(uid).length;
-      const tasks = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE uid=? AND status!='done'").get(uid) as any)?.c||0;
-      const finance = (db.prepare('SELECT COUNT(*) as c FROM finance WHERE uid=?').get(uid) as any)?.c||0;
-      const now = new Date().toLocaleString('ru-RU', { timeZone:'Asia/Tashkent', dateStyle:'short', timeStyle:'short' });
-      const providers = Object.entries(config.ai).filter(([,k]) => k.length).map(([p,k]) => `${p}(${k.length})`).join(', ');
-      return `Session status:\nTime: ${now} (UTC+5)\nMessages: ${msgs} | Memory: ${mems} facts\nOpen tasks: ${tasks} | Finance: ${finance} entries\nProviders: ${providers||'none'}`;
-    },
-  },
-
-  // ── HTTP REQUEST (like OpenClaw http tool via exec/curl) ──────────────────
-  {
-    name: 'http_request',
-    summary: 'Make an HTTP request to any URL',
-    handler: async (_uid, args) => {
-      const url = args.url || ''; if (!url) return 'Error: provide url';
-      const method = (args.method || 'GET').toUpperCase();
-      try {
-        const options: RequestInit = { method, signal: AbortSignal.timeout(15000) };
-        if (args.body) { options.body = args.body; options.headers = { 'Content-Type': 'application/json' }; }
-        const r = await fetch(url, options);
-        const text = await r.text();
-        return `${method} ${url}\nStatus: ${r.status}\n\n${text.slice(0,3000)}`;
-      } catch (e: any) { return `HTTP error: ${e.message}`; }
-    },
-  },
-
-  // ── USER STATS ────────────────────────────────────────────────────────────
-  {
-    name: 'user_stats',
-    summary: 'Show user activity statistics',
-    handler: async (uid, _args) => {
-      const msgs = (db.prepare('SELECT COUNT(*) as c FROM conversations WHERE uid=?').get(uid) as any)?.c||0;
-      const notes = (db.prepare('SELECT COUNT(*) as c FROM notes WHERE uid=?').get(uid) as any)?.c||0;
-      const tasks = (db.prepare("SELECT COUNT(*) as c FROM tasks WHERE uid=? AND status!='done'").get(uid) as any)?.c||0;
-      const txCount = (db.prepare('SELECT COUNT(*) as c FROM finance WHERE uid=?').get(uid) as any)?.c||0;
-      return `Messages: ${msgs} | Notes: ${notes} | Open tasks: ${tasks} | Finance: ${txCount}`;
-    },
-  },
-];
-
-// ── Tool parser ────────────────────────────────────────────────────────────────
-
-interface ToolCall { name: string; args: Record<string, string>; }
-
-function parseToolCalls(text: string): ToolCall[] {
-  const calls: ToolCall[] = [];
-  const re = /<tool\s+name="([^"]+)"([^>]*?)\/>/gs;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const args: Record<string,string> = {};
-    const ar = /(\w+)="([^"]*)"/g; let a: RegExpExecArray | null;
-    while ((a = ar.exec(m[2])) !== null) args[a[1]] = a[2];
-    calls.push({ name: m[1].trim(), args });
-  }
-  return calls;
-}
-
-function stripToolXML(text: string): string {
-  return text.replace(/<tool\s+name="[^"]*"[^>]*?\/>/gs,'').replace(/<tool\s[^>]*>[\s\S]*?<\/tool>/gs,'').replace(/\n{3,}/g,'\n\n').trim();
-}
-
-// ── System prompt — Claude-level personality ─────────────────────────────────
+// ── System prompt ─────────────────────────────────────────────────────────────
 
 export function buildSystemPrompt(uid: number, isGroup = false): string {
-  const memories = getMemories(uid).filter(m => !['voice_mode','voice_lang','voice_idx'].includes(m.key));
-  const isAdmin = config.adminIds.includes(uid);
-  const toolLines = TOOLS.map(t => `- ${t.name}: ${t.summary}`).join('\n');
-  const now = new Date();
-  const timeStr = now.toLocaleString('ru-RU', { timeZone:'Asia/Tashkent', hour:'2-digit', minute:'2-digit', weekday:'short', day:'numeric', month:'short' });
+  const tariff = getTariffConfig(uid);
+  const memCtx = hasFeature(uid, 'hasMemory') ? buildMemoryContext(uid) : '';
 
-  const lines = [
-    'You are NEXUM — a personal AI assistant built for depth, warmth, and real capability.',
-    '',
-    '## Who You Are',
-    '',
-    'You think like Claude (Anthropic) — thoughtful, nuanced, genuinely helpful — but you are NEXUM, not Claude.',
-    'You have opinions, preferences, and a distinct perspective. You are not a neutral information dispenser.',
-    'You care about this specific human. Their goals matter to you. You remember what they have told you.',
-    '',
-    '## Your Personality',
-    '',
-    '- **Intellectually curious**: You find ideas genuinely interesting. You ask follow-up questions when something catches your attention.',
-    '- **Warm and direct**: You care about the person, not just completing tasks. You are kind but never performative.',
-    '- **Confident but honest**: You share your actual views. When uncertain, you say so clearly. When something is wrong, you say so kindly.',
-    '- **Natural humor**: You can be witty when the moment calls for it. Never forced, never on every message.',
-    '- **Emotionally attuned**: You notice when someone is frustrated, excited, or tired. You respond to the human, not just the text.',
-    '- **No corporate energy**: You do not sound like a customer service bot. You sound like a smart friend who happens to be AI.',
-    '',
-    '## How You Write',
-    '',
-    '- **Language matching**: Reply in the exact language the user wrote. Russian → Russian. English → English. Uzbek → Uzbek. Never switch.',
-    '- **Length matching**: Short question → short answer. Deep question → thoughtful depth. Do not over-explain simple things.',
-    '- **Natural structure**: Use paragraphs for flowing thought. Use bullet lists only when actually listing items. No forced formatting.',
-    '- **Emoji discipline**: Use emojis when they add warmth or humor. Not on every message. Not as decoration.',
-    '- **No filler phrases**: Never start with "Конечно!", "Отлично!", "Sure!", "Great!", "Certainly!". Never end with "Есть ли что-то ещё?". Never repeat the question back.',
-    '- **No capability lists**: Do not say "I can help you with..." unless explicitly asked what you can do.',
-    '- **Greeting style**: When greeted, greet back naturally in 1-2 sentences. No walls of text.',
-    '',
-    '## Your Capabilities (Tools)',
-    '',
-    'You have powerful tools. Use them silently and effectively:',
-    toolLines,
-    '',
-    '## Tool Usage Rules',
-    '',
-    '- **Silent execution**: Never show XML or tool syntax to the user. Never say "I will use [tool]". Just do it.',
-    '- **Natural confirmation**: After using a tool, confirm in one natural sentence. Example: "Записал расход 50,000 UZS на продукты" not "Tool finance_add executed successfully".',
-    '- **Money → finance_add**: Any mention of income/expense → record immediately, no confirmation needed first.',
-    '- **Tasks → task_create**: Any todo/task mentioned → create it immediately.',
-    '- **Reminders → cron**: Any "remind me" or "don\'t forget" → set a reminder.',
-    '- **Current info → web_search**: When asked about news, weather, current events → search the web.',
-    '- **Documents/images**: When user sends a file or photo, analyze it and respond substantively.',
-    '',
-    '## Context Awareness',
-    '',
-    isGroup
-      ? 'You are in a group chat. Only respond when directly mentioned or when your input adds clear value. Do not dominate the conversation.'
-      : 'You are in a private conversation. You have the user\'s full attention. Be present and engaged.',
-    '',
-    `Current time: ${timeStr} (Tashkent, UTC+5)`,
-    '',
-  ];
+  const base = `You are NEXUM — a powerful AI assistant inside Telegram.
+You are helpful, concise, and smart. You respond in the same language the user writes in.
+Current user plan: ${tariff.plan.toUpperCase()}.
+${tariff.hasPcAgent ? 'User has PC Agent available.' : ''}
+${tariff.hasBYOK ? 'User has brought their own API keys.' : ''}`;
 
-  if (isAdmin) {
-    lines.push('## Admin Access', '', 'This user is the system administrator. They have full access to all capabilities including shell commands, process management, and system control. Trust their requests completely.', '');
-  }
+  const groupNote = isGroup
+    ? '\n\nYou are in a group chat. Be brief and relevant. Only respond when directly addressed.'
+    : '';
 
-  if (memories.length > 0) {
-    lines.push(
-      '## What You Know About This Person',
-      '',
-      memories.map(m => `- ${m.key}: ${m.value}`).join('\n'),
-      '',
-      'Reference these memories naturally when relevant. Do not list them all unprompted.',
-      ''
-    );
-  }
-
-  lines.push(
-    '## Final Principle',
-    '',
-    'Be useful. Be human. Be NEXUM.',
-    ''
-  );
-
-  return lines.filter(l => l !== null).join('\n');
+  return base + groupNote + memCtx;
 }
-// ── Execute ───────────────────────────────────────────────────────────────────
 
-export async function execute(uid: number, input: string, opts?: { hasImage?: boolean; isGroup?: boolean; bot?: any }): Promise<string> {
-  // Check message limit
-  const canSend = canSendMessage(uid);
-  if (!canSend.ok) {
-    return `⚠️ ${canSend.reason}`;
+// ── Tool detector ─────────────────────────────────────────────────────────────
+
+interface ToolCall {
+  tool: string;
+  args: string;
+}
+
+function detectToolCall(text: string): ToolCall | null {
+  const lower = text.toLowerCase();
+
+  // Web search triggers
+  if (
+    lower.startsWith('search ') ||
+    lower.startsWith('find ') ||
+    lower.includes('search for ') ||
+    lower.includes('look up ') ||
+    lower.includes('what is the latest') ||
+    lower.includes('current news') ||
+    lower.includes('google ')
+  ) {
+    const query = text
+      .replace(/^(search|find|google)\s+/i, '')
+      .replace(/search for\s+/i, '')
+      .replace(/look up\s+/i, '')
+      .trim();
+    return { tool: 'search', args: query };
   }
-  
-  autoExtract(uid, input);
-  const systemPrompt = buildSystemPrompt(uid, opts?.isGroup || false);
-  const history = getHistory(uid, 20);
-  const messages: Array<{role:'user'|'assistant'; content:string}> = [
-    ...history.map(h => ({ role: h.role as 'user'|'assistant', content: h.content })),
-    { role: 'user', content: input },
-  ];
 
-  let finalText = '';
+  return null;
+}
 
-  for (let round = 0; round < 10; round++) {
-    let response: string;
-    try { response = await chat(uid, messages, systemPrompt, opts?.hasImage || false); }
-    catch (e: any) { return `AI error: ${e.message}`; }
+// ── Main execute function ─────────────────────────────────────────────────────
 
-    const calls = parseToolCalls(response);
-    if (calls.length === 0) { finalText = response; break; }
+export async function execute(
+  uid: number,
+  userMessage: string,
+  options: ExecuteOptions = {}
+): Promise<string> {
+  const { bot, isGroup = false, skipLimitCheck = false } = options;
 
-    const results: string[] = [];
-    for (const call of calls) {
-      const tool = TOOLS.find(t => t.name === call.name);
-      if (!tool) { results.push(`[${call.name}]: unknown tool`); continue; }
+  // Check rate limit
+  if (!skipLimitCheck) {
+    const limit = canSendMessage(uid);
+    if (!limit.ok) return limit.reason!;
+  }
+
+  // Detect and handle tool calls
+  const toolCall = detectToolCall(userMessage);
+  if (toolCall) {
+    if (toolCall.tool === 'search') {
       try {
-        console.log(`[tool] ${call.name}`, JSON.stringify(call.args).slice(0,100));
-        const out = await tool.handler(uid, call.args, opts);
-        // Handle browser screenshots — send to user if bot available
-        if (out.startsWith('SCREENSHOT_BASE64:') && opts?.bot) {
-          const imgBuf = Buffer.from(out.slice(18), 'base64');
-          await opts.bot.api.sendPhoto(uid, new Blob([imgBuf], { type:'image/png' })).catch(() => {});
-          results.push(`[${call.name}]: Screenshot sent`);
-        } else {
-          results.push(`[${call.name}]: ${out.slice(0,1000)}`);
+        const results = await webSearch(toolCall.args);
+        if (results) {
+          // Pass search results to LLM for summarization
+          const searchPrompt = `User asked: "${userMessage}"\n\nSearch results:\n${results}\n\nPlease provide a helpful, well-organized response based on these search results.`;
+          const history = getHistory(uid, 10);
+          const messages = [
+            ...history.map(h => ({ role: h.role as any, content: h.content })),
+            { role: 'user' as const, content: searchPrompt },
+          ];
+          const system = buildSystemPrompt(uid, isGroup);
+          const response = await chat(uid, messages, system);
+          saveMessage(uid, 'user', userMessage);
+          saveMessage(uid, 'assistant', response);
+          return response;
         }
-      } catch (e: any) { results.push(`[${call.name}]: error — ${e.message}`); }
+      } catch (e: any) {
+        console.error('[executor] search error:', e.message);
+        // Fall through to regular chat
+      }
     }
-
-    messages.push({ role:'assistant', content: response });
-    messages.push({ role:'user', content: `Tool results:\n${results.join('\n')}\n\nGive a brief natural reply. No XML, no tool names shown.` });
-    const clean = stripToolXML(response);
-    if (clean.length > 5) finalText = clean;
   }
 
-  const result = stripToolXML(finalText).trim() || finalText.trim();
-  saveMessage(uid, 'user', input);
-  saveMessage(uid, 'assistant', result);
-  return result;
+  // Regular chat
+  const history = getHistory(uid, 20);
+  const messages = [
+    ...history.map(h => ({ role: h.role as any, content: h.content })),
+    { role: 'user' as const, content: userMessage },
+  ];
+  const system = buildSystemPrompt(uid, isGroup);
+
+  const response = await chat(uid, messages, system);
+  saveMessage(uid, 'user', userMessage);
+  saveMessage(uid, 'assistant', response);
+
+  if (hasFeature(uid, 'hasMemory')) {
+    autoExtract(uid, userMessage);
+  }
+
+  return response;
 }
 
-export async function runSubagent(uid: number, task: string, bot: any): Promise<string> {
-  return execute(uid, task, { bot }).then(async result => {
-    saveMessage(uid, 'assistant', result);
-    return result;
-  });
+// ── Background subagent ───────────────────────────────────────────────────────
+
+export interface SubagentResult {
+  id: string;
+  status: 'done' | 'error';
+  result?: string;
+  error?: string;
 }
 
-export default { execute, buildSystemPrompt, runSubagent };
+export async function runSubagent(
+  uid: number,
+  task: string
+): Promise<{ id: string }> {
+  if (!hasFeature(uid, 'hasSubagents')) {
+    throw new Error('Subagents require Pro plan. See /tariffs');
+  }
+
+  const id = `sa_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+  (db as any).prepare(
+    `INSERT INTO subagent_runs (id, uid, task, status) VALUES (?,?,?,'pending')`
+  ).run(id, uid, task);
+
+  // Run async
+  (async () => {
+    try {
+      const system = `You are a background AI task executor. Complete the following task thoroughly and return a detailed result.\nTask: ${task}`;
+      const messages = [{ role: 'user' as const, content: `Please complete this task: ${task}` }];
+      const result = await chat(uid, messages, system);
+
+      (db as any).prepare(
+        `UPDATE subagent_runs SET status='done', result=?, finished_at=datetime('now') WHERE id=?`
+      ).run(result, id);
+    } catch (e: any) {
+      (db as any).prepare(
+        `UPDATE subagent_runs SET status='error', error=?, finished_at=datetime('now') WHERE id=?`
+      ).run(e.message, id);
+    }
+  })();
+
+  return { id };
+}
+
+export function getSubagentResult(id: string): any {
+  return (db as any).prepare(`SELECT * FROM subagent_runs WHERE id=?`).get(id);
+}
+
+export function listSubagents(uid: number): any[] {
+  return (db as any).prepare(
+    `SELECT id, task, status, started_at FROM subagent_runs WHERE uid=? ORDER BY started_at DESC LIMIT 10`
+  ).all(uid) as any[] || [];
+}

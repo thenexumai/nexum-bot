@@ -1,56 +1,145 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Календарь — NEXUM</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; padding: 20px; }
-    .container { max-width: 800px; margin: 0 auto; }
-    h1 { color: #333; margin-bottom: 20px; }
-    .calendar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: white; padding: 20px; border-radius: 8px; }
-    .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; background: white; padding: 20px; border-radius: 8px; }
-    .calendar-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; border-radius: 8px; cursor: pointer; }
-    .calendar-day:hover { background: #f0f0f0; }
-    .calendar-day.today { background: #667eea; color: white; }
-    .calendar-day.has-event { border: 2px solid #667eea; }
-    .events { margin-top: 20px; background: white; padding: 20px; border-radius: 8px; }
-    .event-item { padding: 15px; border-bottom: 1px solid #e0e0e0; }
-    .event-item:last-child { border-bottom: none; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calendar — NEXUM</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--border:#222;
+  --text:#f0f0f0;--muted:#888;--accent:#6366f1;--radius:14px;
+  --font:-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font);padding:20px 16px;max-width:480px;margin:0 auto}
+h2{font-size:22px;font-weight:700;margin-bottom:4px}
+.subtitle{color:var(--muted);font-size:14px;margin-bottom:20px}
+.month-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.month-nav h3{font-size:16px;font-weight:600}
+.nav-btn{background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:6px 12px;cursor:pointer;font-size:16px}
+.cal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px}
+.day-labels{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;padding:8px 0}
+.day-label{font-size:11px;color:var(--muted);font-weight:600}
+.days{display:grid;grid-template-columns:repeat(7,1fr)}
+.day{min-height:40px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:6px 2px;cursor:pointer;border-radius:8px;transition:.15s}
+.day:hover{background:var(--surface2)}
+.day.today .dn{background:var(--accent);color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center}
+.day.other-month .dn{color:var(--muted)}
+.dn{font-size:13px}
+.dot{width:5px;height:5px;border-radius:50%;background:var(--accent);margin-top:3px}
+.add-form{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:16px}
+.add-form h3{font-size:14px;font-weight:600;margin-bottom:10px}
+.add-form input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 12px;font-size:14px;font-family:inherit;margin-bottom:8px}
+.add-form input:focus{outline:none;border-color:var(--accent)}
+.add-form input::placeholder{color:var(--muted)}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer}
+.events{display:flex;flex-direction:column;gap:6px}
+.ev{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;display:flex;gap:10px;align-items:center}
+.ev-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.ev-info{flex:1}
+.ev-title{font-size:14px;font-weight:500}
+.ev-time{font-size:12px;color:var(--muted);margin-top:2px}
+.del{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;opacity:.5}
+.del:hover{opacity:1;color:#ef4444}
+.empty{color:var(--muted);text-align:center;padding:20px 0;font-size:14px}
+</style>
 </head>
 <body>
-  <div class="container">
-    <h1>📅 Календарь</h1>
-    <div class="calendar-header">
-      <button onclick="prevMonth()">←</button>
-      <h2 id="monthYear">Март 2026</h2>
-      <button onclick="nextMonth()">→</button>
-    </div>
-    <div class="calendar-grid" id="calendarGrid"></div>
-    <div class="events" id="events"></div>
+<h2>📅 Calendar</h2>
+<p class="subtitle">Your schedule</p>
+<div class="month-nav">
+  <button class="nav-btn" onclick="changeMonth(-1)">‹</button>
+  <h3 id="monthLabel"></h3>
+  <button class="nav-btn" onclick="changeMonth(1)">›</button>
+</div>
+<div class="cal">
+  <div class="day-labels">
+    <div class="day-label">Su</div><div class="day-label">Mo</div><div class="day-label">Tu</div>
+    <div class="day-label">We</div><div class="day-label">Th</div><div class="day-label">Fr</div>
+    <div class="day-label">Sa</div>
   </div>
-  <script>
-    const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
-    let currentMonth = new Date().getMonth();
-    let currentYear = new Date().getFullYear();
-    function renderCalendar() {
-      document.getElementById('monthYear').textContent = `${months[currentMonth]} ${currentYear}`;
-      const grid = document.getElementById('calendarGrid');
-      grid.innerHTML = '';
-      const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-      for (let i = 1; i <= daysInMonth; i++) {
-        const day = document.createElement('div');
-        day.className = 'calendar-day';
-        if (i === new Date().getDate() && currentMonth === new Date().getMonth()) day.classList.add('today');
-        day.textContent = i;
-        grid.appendChild(day);
-      }
-    }
-    function prevMonth() { currentMonth--; if (currentMonth < 0) { currentMonth = 11; currentYear--; } renderCalendar(); }
-    function nextMonth() { currentMonth++; if (currentMonth > 11) { currentMonth = 0; currentYear--; } renderCalendar(); }
-    renderCalendar();
-  </script>
+  <div class="days" id="days"></div>
+</div>
+<div class="add-form">
+  <h3>Add Event</h3>
+  <input id="evTitle" placeholder="Event title">
+  <input id="evDate" type="datetime-local">
+  <button class="btn" onclick="addEvent()">Add Event</button>
+</div>
+<div class="events" id="events"><div class="empty">No upcoming events</div></div>
+<script>
+const uid = new URLSearchParams(location.search).get('uid') || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) || 0;
+let events = [];
+let cur = new Date();
+const today = new Date();
+
+function changeMonth(d) { cur = new Date(cur.getFullYear(), cur.getMonth()+d, 1); renderCal(); }
+
+function renderCal() {
+  const y = cur.getFullYear(), m = cur.getMonth();
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  document.getElementById('monthLabel').textContent = months[m] + ' ' + y;
+  const first = new Date(y, m, 1).getDay();
+  const days = new Date(y, m+1, 0).getDate();
+  const prevDays = new Date(y, m, 0).getDate();
+  let html = '';
+  for (let i = 0; i < first; i++) {
+    const d = prevDays - first + i + 1;
+    html += `<div class="day other-month"><span class="dn">${d}</span></div>`;
+  }
+  for (let d = 1; d <= days; d++) {
+    const dt = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const isToday = d === today.getDate() && m === today.getMonth() && y === today.getFullYear();
+    const hasEv = events.some(e => e.start_at?.startsWith(dt));
+    html += `<div class="day ${isToday ? 'today' : ''}"><span class="dn">${d}</span>${hasEv ? '<div class="dot"></div>' : ''}</div>`;
+  }
+  document.getElementById('days').innerHTML = html;
+}
+
+async function load() {
+  if (!uid) return;
+  const r = await fetch('/api/calendar?uid=' + uid);
+  events = await r.json();
+  renderCal();
+  renderEvents();
+}
+
+function renderEvents() {
+  const el = document.getElementById('events');
+  const upcoming = events.filter(e => new Date(e.start_at) >= new Date(today.toDateString())).slice(0, 20);
+  if (!upcoming.length) { el.innerHTML = '<div class="empty">No upcoming events</div>'; return; }
+  el.innerHTML = upcoming.map(e => `
+    <div class="ev">
+      <div class="ev-dot" style="background:${e.color||'#6366f1'}"></div>
+      <div class="ev-info">
+        <div class="ev-title">${e.title}</div>
+        <div class="ev-time">${e.start_at?.replace('T',' ').slice(0,16)}</div>
+      </div>
+      <button class="del" onclick="del(${e.id})">×</button>
+    </div>
+  `).join('');
+}
+
+async function addEvent() {
+  const title = document.getElementById('evTitle').value.trim();
+  const start_at = document.getElementById('evDate').value;
+  if (!title || !start_at) return;
+  await fetch('/api/calendar', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ uid: parseInt(uid), title, start_at })
+  });
+  document.getElementById('evTitle').value = '';
+  document.getElementById('evDate').value = '';
+  load();
+}
+
+async function del(id) {
+  await fetch('/api/calendar/' + id, { method:'DELETE' });
+  load();
+}
+
+load();
+renderCal();
+</script>
 </body>
 </html>

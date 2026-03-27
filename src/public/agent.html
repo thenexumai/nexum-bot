@@ -1,62 +1,100 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NEXUM Agent — AI</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; padding: 20px; }
-    .container { max-width: 800px; margin: 0 auto; }
-    h1 { color: #333; margin-bottom: 20px; }
-    .chat-container { background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
-    .chat-messages { height: 400px; overflow-y: auto; padding: 20px; }
-    .message { margin-bottom: 15px; }
-    .message.user { text-align: right; }
-    .message.assistant { text-align: left; }
-    .message-bubble { display: inline-block; padding: 12px 18px; border-radius: 16px; max-width: 80%; }
-    .user .message-bubble { background: #667eea; color: white; }
-    .assistant .message-bubble { background: #e0e0e0; color: #333; }
-    .chat-input { display: flex; border-top: 1px solid #e0e0e0; }
-    .chat-input input { flex: 1; padding: 15px; border: none; font-size: 1rem; }
-    .chat-input button { background: #667eea; color: white; border: none; padding: 15px 30px; cursor: pointer; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent — NEXUM</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--border:#222;
+  --text:#f0f0f0;--muted:#888;--accent:#6366f1;--green:#22c55e;--radius:14px;
+  --font:-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font);padding:20px 16px;max-width:480px;margin:0 auto}
+h2{font-size:22px;font-weight:700;margin-bottom:4px}
+.subtitle{color:var(--muted);font-size:14px;margin-bottom:20px}
+.status-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+.status-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.status-dot{width:10px;height:10px;border-radius:50%;background:var(--muted)}
+.status-dot.online{background:var(--green);box-shadow:0 0 8px var(--green)}
+.status-label{font-size:15px;font-weight:600}
+.status-sub{font-size:13px;color:var(--muted)}
+.section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:12px}
+.section h3{font-size:14px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat{background:var(--surface2);border-radius:10px;padding:12px}
+.stat-val{font-size:22px;font-weight:700;color:var(--accent)}
+.stat-label{font-size:12px;color:var(--muted);margin-top:2px}
+.cmd-row{display:flex;gap:8px;margin-bottom:8px}
+.cmd-row input{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 12px;font-size:13px;font-family:inherit}
+.cmd-row input:focus{outline:none;border-color:var(--accent)}
+.cmd-row input::placeholder{color:var(--muted)}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer}
+.btn.sm{padding:7px 12px;font-size:12px}
+.output{background:var(--surface2);border-radius:8px;padding:12px;font-size:12px;font-family:monospace;color:#a0e0a0;min-height:48px;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.action-btn{background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 12px;font-size:13px;cursor:pointer}
+.action-btn:hover{border-color:var(--accent);color:var(--accent)}
+</style>
 </head>
 <body>
-  <div class="container">
-    <h1>🤖 NEXUM Agent</h1>
-    <div class="chat-container">
-      <div class="chat-messages" id="chatMessages">
-        <div class="message assistant">
-          <div class="message-bubble">Привет! Я Гидеон, твой AI помощник. Чем могу помочь?</div>
-        </div>
-      </div>
-      <div class="chat-input">
-        <input type="text" id="messageInput" placeholder="Введите сообщение..." onkeypress="if(event.key==='Enter')sendMessage()">
-        <button onclick="sendMessage()">Отправить</button>
-      </div>
+<h2>🤖 Agent Panel</h2>
+<p class="subtitle">NEXUM AI Agent status</p>
+
+<div class="status-card">
+  <div class="status-row">
+    <div class="status-dot" id="statusDot"></div>
+    <div>
+      <div class="status-label" id="statusLabel">Checking...</div>
+      <div class="status-sub" id="statusSub">Connect via /link in Telegram</div>
     </div>
   </div>
-  <script>
-    function sendMessage() {
-      const input = document.getElementById('messageInput');
-      const text = input.value.trim();
-      if (!text) return;
-      const messages = document.getElementById('chatMessages');
-      const userMsg = document.createElement('div');
-      userMsg.className = 'message user';
-      userMsg.innerHTML = `<div class="message-bubble">${text}</div>`;
-      messages.appendChild(userMsg);
-      input.value = '';
-      setTimeout(() => {
-        const assistantMsg = document.createElement('div');
-        assistantMsg.className = 'message assistant';
-        assistantMsg.innerHTML = `<div class="message-bubble">Сообщение отправлено! (демо)</div>`;
-        messages.appendChild(assistantMsg);
-        messages.scrollTop = messages.scrollHeight;
-      }, 500);
-      messages.scrollTop = messages.scrollHeight;
-    }
-  </script>
+</div>
+
+<div class="section">
+  <h3>Stats</h3>
+  <div class="stat-grid">
+    <div class="stat"><div class="stat-val" id="totalMsgs">—</div><div class="stat-label">Total messages</div></div>
+    <div class="stat"><div class="stat-val" id="todayMsgs">—</div><div class="stat-label">Today</div></div>
+    <div class="stat"><div class="stat-val" id="memCount">—</div><div class="stat-label">Memories</div></div>
+    <div class="stat"><div class="stat-val" id="noteCount">—</div><div class="stat-label">Notes</div></div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Quick Commands</h3>
+  <div class="actions">
+    <button class="action-btn" onclick="openApp('/finance')">💰 Finance</button>
+    <button class="action-btn" onclick="openApp('/tasks')">✅ Tasks</button>
+    <button class="action-btn" onclick="openApp('/notes')">📝 Notes</button>
+    <button class="action-btn" onclick="openApp('/habits')">🔥 Habits</button>
+    <button class="action-btn" onclick="openApp('/calendar')">📅 Calendar</button>
+    <button class="action-btn" onclick="openApp('/contacts')">👤 Contacts</button>
+  </div>
+</div>
+
+<script>
+const uid = new URLSearchParams(location.search).get('uid') || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) || 0;
+
+function openApp(path) {
+  window.location.href = path + '?uid=' + uid;
+}
+
+async function loadStats() {
+  if (!uid) return;
+  try {
+    const r = await fetch('/health');
+    const d = await r.json();
+    document.getElementById('statusDot').classList.add('online');
+    document.getElementById('statusLabel').textContent = 'Online';
+    document.getElementById('statusSub').textContent = `Uptime: ${Math.floor(d.uptime/60)}m`;
+  } catch {
+    document.getElementById('statusLabel').textContent = 'Offline';
+  }
+}
+
+loadStats();
+</script>
 </body>
 </html>

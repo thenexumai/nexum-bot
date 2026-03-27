@@ -1,111 +1,87 @@
-// NEXUM Draft Stream — точная реализация OpenClaw
-// throttle 1000ms, minInitialChars для равномерного старта
+// NEXUM Draft Stream — throttled progressive message updates (OpenClaw pattern)
 
-import { Api } from 'grammy';
-
-const TELEGRAM_MAX_CHARS = 4096;
-const THROTTLE_MS = 1000;         // Как в OpenClaw DEFAULT_THROTTLE_MS
-const MIN_INITIAL_CHARS = 60;     // Ждём накопления до первой отправки — равномерный старт
-
-export type DraftStream = {
-  update: (text: string) => void;
-  flush: () => Promise<void>;
-  stop: () => Promise<void>;
-  messageId: () => number | undefined;
-};
-
-export function createDraftStream(params: {
-  api: Api;
+interface DraftStreamOptions {
+  api: any;
   chatId: number;
   warn?: (msg: string) => void;
-}): DraftStream {
-  let msgId: number | undefined;
-  let lastSentAt = 0;
-  let lastSentText = '';
-  let pendingText = '';
-  let inFlight: Promise<boolean> | undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  throttleMs?: number;
+}
+
+interface DraftStream {
+  update: (text: string) => void;
+  stop: () => Promise<void>;
+  messageId: () => number | null;
+}
+
+export function createDraftStream(opts: DraftStreamOptions): DraftStream {
+  const { api, chatId, warn, throttleMs = 1200 } = opts;
+
+  let msgId: number | null = null;
+  let lastSent = '';
+  let pending: string | null = null;
+  let timer: NodeJS.Timeout | null = null;
   let stopped = false;
-  let firstSent = false;
 
-  const sendOrEdit = async (text: string): Promise<boolean> => {
-    const t = text.trimEnd();
-    if (!t || t === lastSentText) return true;
-    if (t.length > TELEGRAM_MAX_CHARS) { stopped = true; return false; }
+  async function sendOrEdit(text: string): Promise<void> {
+    if (!text?.trim()) return;
 
-    // Дебаунс первого сообщения — ждём MIN_INITIAL_CHARS чтобы старт был плавным
-    if (!firstSent && t.length < MIN_INITIAL_CHARS && !stopped) return false;
+    // Telegram max message length
+    const chunk = text.slice(0, 4096);
 
     try {
-      if (msgId != null) {
-        // Редактируем существующее сообщение
-        try {
-          await params.api.editMessageText(params.chatId, msgId, t, { parse_mode: 'Markdown' });
-        } catch {
-          // Markdown ошибка — отправляем plain text
-          await params.api.editMessageText(params.chatId, msgId, t);
-        }
-      } else {
-        // Первое сообщение
-        let sent: any;
-        try {
-          sent = await params.api.sendMessage(params.chatId, t, { parse_mode: 'Markdown' });
-        } catch {
-          sent = await params.api.sendMessage(params.chatId, t);
-        }
+      if (msgId === null) {
+        const sent = await api.sendMessage(chatId, chunk, { parse_mode: 'Markdown' });
         msgId = sent.message_id;
-        firstSent = true;
+        lastSent = chunk;
+      } else if (chunk !== lastSent) {
+        await api.editMessageText(chatId, msgId, chunk, { parse_mode: 'Markdown' });
+        lastSent = chunk;
       }
-      lastSentText = t;
-      lastSentAt = Date.now();
-      return true;
     } catch (e: any) {
-      params.warn?.(`draft error: ${e?.message}`);
-      return false;
+      // If Markdown fails, try plain
+      try {
+        if (msgId === null) {
+          const sent = await api.sendMessage(chatId, chunk);
+          msgId = sent.message_id;
+          lastSent = chunk;
+        } else if (chunk !== lastSent) {
+          await api.editMessageText(chatId, msgId, chunk);
+          lastSent = chunk;
+        }
+      } catch (e2: any) {
+        warn?.(`[draft] edit failed: ${e2.message?.slice(0, 80)}`);
+      }
     }
-  };
+  }
 
-  const flush = async (): Promise<void> => {
-    if (timer) { clearTimeout(timer); timer = undefined; }
-    while (!stopped) {
-      if (inFlight) { await inFlight; continue; }
-      const text = pendingText;
-      if (!text.trim()) { pendingText = ''; return; }
-      pendingText = '';
-      const cur = sendOrEdit(text).finally(() => { if (inFlight===cur) inFlight=undefined; }) as Promise<boolean>;
-      inFlight = cur;
-      const ok = await cur;
-      if (!ok) { pendingText = text; return; }
-      if (!pendingText) return;
-    }
-  };
-
-  const schedule = () => {
+  function scheduleFlush(): void {
     if (timer) return;
-    // Равномерный throttle — точно THROTTLE_MS между правками
-    const delay = Math.max(0, THROTTLE_MS - (Date.now() - lastSentAt));
-    timer = setTimeout(() => { void flush(); }, delay);
-  };
+    timer = setTimeout(async () => {
+      timer = null;
+      if (pending !== null && !stopped) {
+        const text = pending;
+        pending = null;
+        await sendOrEdit(text);
+      }
+    }, throttleMs);
+  }
 
-  const update = (text: string) => {
-    if (stopped) return;
-    pendingText = text;
-    if (inFlight) { schedule(); return; }
-    if (!timer && Date.now() - lastSentAt >= THROTTLE_MS) { void flush(); return; }
-    schedule();
-  };
+  return {
+    update(text: string) {
+      if (stopped) return;
+      pending = text;
+      scheduleFlush();
+    },
 
-  const stop = async (): Promise<void> => {
-    stopped = true;
-    if (timer) { clearTimeout(timer); timer = undefined; }
-    if (inFlight) { await inFlight; inFlight = undefined; }
-    // Финальный flush — отправляем всё что осталось
-    if (pendingText.trim()) {
-      stopped = false;
-      await flush();
+    async stop() {
       stopped = true;
-    }
-  };
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (pending !== null) {
+        await sendOrEdit(pending);
+        pending = null;
+      }
+    },
 
-  return { update, flush, stop, messageId: () => msgId };
+    messageId() { return msgId; },
+  };
 }

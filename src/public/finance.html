@@ -1,91 +1,150 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Финансы — NEXUM</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; padding: 20px; }
-    .container { max-width: 800px; margin: 0 auto; }
-    h1 { color: #333; margin-bottom: 20px; }
-    .balance-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 16px; margin-bottom: 20px; }
-    .balance-amount { font-size: 2.5rem; font-weight: bold; }
-    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
-    .stat-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    .stat-label { color: #666; font-size: 0.9rem; }
-    .stat-value { font-size: 1.5rem; font-weight: bold; margin-top: 5px; }
-    .income { color: #10b981; }
-    .expense { color: #ef4444; }
-    .add-btn { background: #667eea; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 1rem; cursor: pointer; width: 100%; }
-    .transactions { margin-top: 20px; }
-    .transaction-item { background: white; padding: 15px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Finance — NEXUM</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--border:#222;
+    --text:#f0f0f0;--muted:#888;--accent:#6366f1;
+    --green:#22c55e;--red:#ef4444;--radius:14px;
+    --font:-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,sans-serif;
+  }
+  body{background:var(--bg);color:var(--text);font-family:var(--font);padding:20px 16px;max-width:480px;margin:0 auto}
+  h2{font-size:22px;font-weight:700;margin-bottom:4px}
+  .subtitle{color:var(--muted);font-size:14px;margin-bottom:20px}
+  .summary{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
+  .sum-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+  .sum-card .label{font-size:12px;color:var(--muted);margin-bottom:4px}
+  .sum-card .val{font-size:22px;font-weight:700}
+  .val.inc{color:var(--green)}
+  .val.exp{color:var(--red)}
+  .form{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:20px}
+  .form h3{font-size:15px;font-weight:600;margin-bottom:12px}
+  .tabs{display:flex;gap:6px;margin-bottom:12px}
+  .tab{flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--muted);font-size:13px;cursor:pointer;transition:.15s}
+  .tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  input,select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 12px;font-size:14px;margin-bottom:8px;font-family:inherit}
+  input::placeholder{color:var(--muted)}
+  input:focus,select:focus{outline:none;border-color:var(--accent)}
+  .btn{width:100%;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:11px;font-size:14px;font-weight:600;cursor:pointer}
+  .btn:active{opacity:.85}
+  .list{display:flex;flex-direction:column;gap:8px}
+  .item{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;justify-content:space-between;align-items:center}
+  .item-left{}
+  .item-cat{font-size:12px;color:var(--muted)}
+  .item-note{font-size:14px;font-weight:500;margin-top:2px}
+  .item-date{font-size:11px;color:var(--muted);margin-top:2px}
+  .item-amount{font-size:18px;font-weight:700}
+  .inc-tag{color:var(--green)}
+  .exp-tag{color:var(--red)}
+  .del{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px;opacity:.6}
+  .del:hover{opacity:1;color:var(--red)}
+  .empty{color:var(--muted);text-align:center;padding:32px 0;font-size:14px}
+</style>
 </head>
 <body>
-  <div class="container">
-    <h1>💰 Финансы</h1>
-    <div class="balance-card">
-      <div class="balance-label">Общий баланс</div>
-      <div class="balance-amount">$0.00</div>
-    </div>
-    <div class="stats">
-      <div class="stat-card">
-        <div class="stat-label">Доходы</div>
-        <div class="stat-value income">$0.00</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Расходы</div>
-        <div class="stat-value expense">$0.00</div>
-      </div>
-    </div>
-    <button class="add-btn" onclick="addTransaction()">+ Добавить операцию</button>
-    <div class="transactions" id="transactions"></div>
+<h2>💰 Finance</h2>
+<p class="subtitle">Track income & expenses</p>
+
+<div class="summary">
+  <div class="sum-card"><div class="label">Income</div><div class="val inc" id="totalInc">0</div></div>
+  <div class="sum-card"><div class="label">Expenses</div><div class="val exp" id="totalExp">0</div></div>
+</div>
+
+<div class="form">
+  <h3>Add Transaction</h3>
+  <div class="tabs">
+    <button class="tab active" data-type="income" onclick="setType('income',this)">+ Income</button>
+    <button class="tab" data-type="expense" onclick="setType('expense',this)">− Expense</button>
   </div>
-  <script>
-    // Get Telegram user ID from initData
-    const urlParams = new URLSearchParams(window.location.search);
-    const initData = urlParams.get('tgWebAppData') || '';
-    const headers = { 'x-tg-authorization': initData };
+  <input type="number" id="amount" placeholder="Amount" min="0" step="0.01">
+  <select id="category">
+    <option value="salary">Salary</option>
+    <option value="freelance">Freelance</option>
+    <option value="food">Food</option>
+    <option value="transport">Transport</option>
+    <option value="shopping">Shopping</option>
+    <option value="health">Health</option>
+    <option value="entertainment">Entertainment</option>
+    <option value="bills">Bills</option>
+    <option value="other">Other</option>
+  </select>
+  <input type="text" id="note" placeholder="Note (optional)">
+  <button class="btn" onclick="addTx()">Add</button>
+</div>
 
-    // Load balance and transactions
-    async function loadFinance() {
-      try {
-        const balanceRes = await fetch('/api/finance/balance', { headers });
-        const balance = await balanceRes.json();
-        document.querySelector('.balance-amount').textContent = `$${balance.balance.toLocaleString()}`;
-        document.querySelector('.stat-value.income').textContent = `$${balance.income.toLocaleString()}`;
-        document.querySelector('.stat-value.expense').textContent = `$${balance.expense.toLocaleString()}`;
+<div class="list" id="list"><div class="empty">No transactions yet</div></div>
 
-        const transRes = await fetch('/api/finance/transactions', { headers });
-        const data = await transRes.json();
-        const container = document.getElementById('transactions');
-        container.innerHTML = data.transactions.map(t => `
-          <div class="transaction-item">
-            <span>${t.category || t.description}</span>
-            <span class="${t.type === 'income' ? 'income' : 'expense'}">
-              ${t.type === 'income' ? '+' : '-'}$${t.amount.toLocaleString()}
-            </span>
-          </div>
-        `).join('');
-      } catch (e) {
-        console.error('Error loading finance:', e);
-      }
-    }
+<script>
+const uid = new URLSearchParams(location.search).get('uid') || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) || 0;
+let type = 'income';
+let transactions = [];
 
-    function addTransaction() {
-      const amount = prompt('Сумма:');
-      if (!amount) return;
-      const type = confirm('Доход? OK=Да, Отмена=Расход') ? 'income' : 'expense';
-      const category = prompt('Категория:') || '';
-      fetch('/api/finance/transactions', {
-        method: 'POST',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, amount: parseFloat(amount), category })
-      }).then(() => loadFinance());
-    }
+function setType(t, btn) {
+  type = t;
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
 
-    loadFinance();
-  </script>
+async function load() {
+  if (!uid) return;
+  try {
+    const r = await fetch(`/api/finance?uid=${uid}`);
+    const d = await r.json();
+    transactions = d.transactions || [];
+    const inc = (d.summary || []).find(s => s.type === 'income')?.total || 0;
+    const exp = (d.summary || []).find(s => s.type === 'expense')?.total || 0;
+    document.getElementById('totalInc').textContent = fmt(inc);
+    document.getElementById('totalExp').textContent = fmt(exp);
+    render();
+  } catch(e) { console.error(e); }
+}
+
+function fmt(n) { return Number(n).toLocaleString(); }
+
+function render() {
+  const el = document.getElementById('list');
+  if (!transactions.length) { el.innerHTML = '<div class="empty">No transactions yet</div>'; return; }
+  el.innerHTML = transactions.map(t => `
+    <div class="item">
+      <div class="item-left">
+        <div class="item-cat">${t.category}</div>
+        <div class="item-note">${t.note || '—'}</div>
+        <div class="item-date">${t.created_at?.slice(0,10)}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="item-amount ${t.type === 'income' ? 'inc-tag' : 'exp-tag'}">
+          ${t.type === 'income' ? '+' : '−'}${fmt(t.amount)}
+        </div>
+        <button class="del" onclick="del(${t.id})">×</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function addTx() {
+  const amount = parseFloat(document.getElementById('amount').value);
+  if (!amount || amount <= 0) { alert('Enter a valid amount'); return; }
+  const category = document.getElementById('category').value;
+  const note = document.getElementById('note').value.trim();
+  await fetch('/api/finance', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ uid: parseInt(uid), type, amount, category, note })
+  });
+  document.getElementById('amount').value = '';
+  document.getElementById('note').value = '';
+  load();
+}
+
+async function del(id) {
+  await fetch(`/api/finance/${id}`, { method:'DELETE' });
+  load();
+}
+
+load();
+</script>
 </body>
 </html>
