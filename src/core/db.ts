@@ -7,6 +7,11 @@ fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
 export const db = new sqlite3.Database(DB_PATH);
 
+// Prevent unhandled 'error' events from crashing the process
+db.on('error', (err: Error) => {
+  console.error('[db] error:', err.message);
+});
+
 // Performance pragmas
 db.serialize(() => {
   db.run('PRAGMA journal_mode = WAL');
@@ -195,19 +200,17 @@ db.exec(`
   );
 `);
 
-// ── Safe migrations ───────────────────────────────────────────────────────────
-const migrations = [
-  `ALTER TABLE users ADD COLUMN lang TEXT DEFAULT 'auto'`,
-  `ALTER TABLE users ADD COLUMN tariff TEXT DEFAULT 'free'`,
-  `ALTER TABLE finance ADD COLUMN account_id INTEGER`,
-  `ALTER TABLE finance ADD COLUMN currency TEXT DEFAULT 'UZS'`,
-  `ALTER TABLE tasks ADD COLUMN description TEXT DEFAULT ''`,
-  `ALTER TABLE reminders ADD COLUMN repeat TEXT DEFAULT 'none'`,
-  `ALTER TABLE notes ADD COLUMN tags TEXT DEFAULT ''`,
-  `ALTER TABLE link_codes ADD COLUMN uid INTEGER NOT NULL DEFAULT 0`,
+// ── Safe migrations (only for columns added AFTER initial schema) ─────────────
+// These run silently — if the column already exists the error is swallowed.
+// Do NOT list columns that are already in CREATE TABLE above.
+const migrations: string[] = [
+  // Legacy columns from older schema versions — safe to attempt
+  `ALTER TABLE pc_agents ADD COLUMN device_id TEXT`,
+  `ALTER TABLE pc_agents ADD COLUMN device_name TEXT`,
+  `ALTER TABLE pc_agents ADD COLUMN platform TEXT`,
 ];
 for (const sql of migrations) {
-  try { db.exec(sql); } catch { /* already exists */ }
+  try { db.exec(sql); } catch { /* column already exists, ignore */ }
 }
 
 // ── Sync statement wrapper ────────────────────────────────────────────────────
