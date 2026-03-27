@@ -1,28 +1,27 @@
 FROM node:20-slim
 
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    build-essential \
+    libsqlite3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Install Python (needed for some npm packages)
-RUN apt-get update && apt-get install -y python3 && rm -rf /var/lib/apt/lists/*
-
-# Copy package files
 COPY package*.json ./
-
-# Install dependencies (sqlite3 has prebuilt binaries - no compilation needed)
 RUN npm ci --only=production
 
-# Copy source code
-COPY . .
+COPY tsconfig.json ./
+COPY src ./src
 
-# Build TypeScript
 RUN npm run build
 
-# Copy public folder to dist (for mini-apps)
-RUN cp -r src/public dist/public
+RUN mkdir -p /app/data
 
 ENV NODE_ENV=production
 
 EXPOSE 3000
 
-# Use compiled JavaScript
-CMD ["node", "dist/index.js"]
+CMD ["npm", "start"]

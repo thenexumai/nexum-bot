@@ -1,10 +1,37 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
-.env
+
+# Database & data
 data/
 *.db
-*.db-wal
-*.db-shm
-.nexum_agent.json
-OPENCLAW_BRIEF*.txt
-*.txt
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Environment — NEVER commit this
+.env
+.env.local
+.env.production
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+pc_agent/__pycache__/

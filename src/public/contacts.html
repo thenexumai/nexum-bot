@@ -1,52 +1,117 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Контакты — NEXUM</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; padding: 20px; }
-    .container { max-width: 800px; margin: 0 auto; }
-    h1 { color: #333; margin-bottom: 20px; }
-    .search { width: 100%; padding: 15px; border: 2px solid #e0e0e0; border-radius: 8px; margin-bottom: 20px; }
-    .contact-list { list-style: none; }
-    .contact-item { background: white; padding: 20px; border-radius: 8px; margin-bottom: 10px; display: flex; align-items: center; gap: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    .contact-avatar { width: 50px; height: 50px; border-radius: 50%; background: #667eea; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; }
-    .contact-info { flex: 1; }
-    .contact-name { font-weight: bold; margin-bottom: 5px; }
-    .contact-phone { color: #666; }
-    .add-contact { margin-top: 20px; }
-    .add-contact input { padding: 15px; border: 2px solid #e0e0e0; border-radius: 8px; width: 70%; }
-    .add-contact button { background: #667eea; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contacts — NEXUM</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--border:#222;
+  --text:#f0f0f0;--muted:#888;--accent:#6366f1;--radius:14px;
+  --font:-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font);padding:20px 16px;max-width:480px;margin:0 auto}
+h2{font-size:22px;font-weight:700;margin-bottom:4px}
+.subtitle{color:var(--muted);font-size:14px;margin-bottom:20px}
+.search-row{margin-bottom:12px}
+.search-row input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:11px 14px;font-size:14px;font-family:inherit}
+.search-row input:focus{outline:none;border-color:var(--accent)}
+.search-row input::placeholder{color:var(--muted)}
+.add-form{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:16px}
+.add-form h3{font-size:14px;font-weight:600;margin-bottom:10px}
+.add-form input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 12px;font-size:14px;font-family:inherit;margin-bottom:8px}
+.add-form input:focus{outline:none;border-color:var(--accent)}
+.add-form input::placeholder{color:var(--muted)}
+.add-form details summary{color:var(--muted);font-size:13px;cursor:pointer;margin-bottom:8px;list-style:none}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer}
+.contacts{display:flex;flex-direction:column;gap:6px}
+.contact{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;align-items:center;gap:12px}
+.avatar{width:42px;height:42px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0;color:#fff}
+.info{flex:1}
+.cname{font-size:15px;font-weight:600}
+.cdetail{font-size:12px;color:var(--muted);margin-top:2px}
+.del{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;opacity:.5}
+.del:hover{opacity:1;color:#ef4444}
+.empty{color:var(--muted);text-align:center;padding:32px 0;font-size:14px}
+</style>
 </head>
 <body>
-  <div class="container">
-    <h1>👥 Контакты</h1>
-    <input type="text" class="search" placeholder="Поиск контактов...">
-    <ul class="contact-list" id="contactList">
-      <li class="contact-item">
-        <div class="contact-avatar">Т</div>
-        <div class="contact-info">
-          <div class="contact-name">Тимур</div>
-          <div class="contact-phone">@exyysdof</div>
-        </div>
-      </li>
-    </ul>
-    <div class="add-contact">
-      <input type="text" id="contactInput" placeholder="Новый контакт...">
-      <button onclick="addContact()">Добавить</button>
+<h2>👤 Contacts</h2>
+<p class="subtitle">Your people</p>
+<div class="search-row">
+  <input id="search" placeholder="Search contacts..." oninput="search()">
+</div>
+<div class="add-form">
+  <h3>Add Contact</h3>
+  <input id="cName" placeholder="Name *">
+  <input id="cPhone" placeholder="Phone">
+  <input id="cEmail" placeholder="Email">
+  <details><summary>+ More fields</summary>
+    <input id="cCompany" placeholder="Company" style="margin-top:8px">
+  </details>
+  <button class="btn" onclick="addContact()">Add Contact</button>
+</div>
+<div class="contacts" id="contacts"><div class="empty">No contacts yet</div></div>
+<script>
+const uid = new URLSearchParams(location.search).get('uid') || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) || 0;
+let contacts = [];
+
+async function load(q) {
+  if (!uid) return;
+  const url = '/api/contacts?uid=' + uid + (q ? '&q=' + encodeURIComponent(q) : '');
+  const r = await fetch(url);
+  contacts = await r.json();
+  render();
+}
+
+function initials(name) {
+  return name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+}
+
+function render() {
+  const el = document.getElementById('contacts');
+  if (!contacts.length) { el.innerHTML = '<div class="empty">No contacts</div>'; return; }
+  el.innerHTML = contacts.map(c => `
+    <div class="contact">
+      <div class="avatar">${initials(c.name)}</div>
+      <div class="info">
+        <div class="cname">${c.name}</div>
+        <div class="cdetail">${[c.phone, c.email, c.company].filter(Boolean).join(' · ')}</div>
+      </div>
+      <button class="del" onclick="del(${c.id})">×</button>
     </div>
-  </div>
-  <script>
-    function addContact() {
-      const input = document.getElementById('contactInput');
-      const text = input.value.trim();
-      if (!text) return;
-      alert('Контакт добавлен! (демо)');
-      input.value = '';
-    }
-  </script>
+  `).join('');
+}
+
+function search() {
+  const q = document.getElementById('search').value.trim();
+  load(q);
+}
+
+async function addContact() {
+  const name = document.getElementById('cName').value.trim();
+  if (!name) return;
+  await fetch('/api/contacts', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      uid: parseInt(uid),
+      name,
+      phone: document.getElementById('cPhone').value.trim(),
+      email: document.getElementById('cEmail').value.trim(),
+      company: document.getElementById('cCompany').value.trim(),
+    })
+  });
+  ['cName','cPhone','cEmail','cCompany'].forEach(id => document.getElementById(id).value = '');
+  load();
+}
+
+async function del(id) {
+  await fetch('/api/contacts/' + id, { method:'DELETE' });
+  load();
+}
+
+load();
+</script>
 </body>
 </html>

@@ -1,60 +1,113 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Привычки — NEXUM</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; padding: 20px; }
-    .container { max-width: 800px; margin: 0 auto; }
-    h1 { color: #333; margin-bottom: 20px; }
-    .habit-list { list-style: none; }
-    .habit-item { background: white; padding: 20px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-    .habit-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-    .habit-name { font-size: 1.2rem; font-weight: bold; }
-    .habit-streak { color: #667eea; font-weight: bold; }
-    .habit-days { display: flex; gap: 5px; }
-    .habit-day { width: 40px; height: 40px; border-radius: 50%; background: #e0e0e0; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-    .habit-day.completed { background: #10b981; color: white; }
-    .add-habit { margin-top: 20px; }
-    .add-habit input { padding: 15px; border: 2px solid #e0e0e0; border-radius: 8px; width: 70%; }
-    .add-habit button { background: #667eea; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Habits — NEXUM</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--border:#222;
+  --text:#f0f0f0;--muted:#888;--accent:#6366f1;--green:#22c55e;--radius:14px;
+  --font:-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font);padding:20px 16px;max-width:480px;margin:0 auto}
+h2{font-size:22px;font-weight:700;margin-bottom:4px}
+.subtitle{color:var(--muted);font-size:14px;margin-bottom:20px}
+.form{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:16px;display:flex;gap:8px}
+.form input{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 12px;font-size:14px;font-family:inherit}
+.form input:focus{outline:none;border-color:var(--accent)}
+.form input::placeholder{color:var(--muted)}
+.emoji-input{width:52px;text-align:center}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer}
+.list{display:flex;flex-direction:column;gap:8px}
+.habit{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;display:flex;align-items:center;gap:14px}
+.habit.done-today{border-color:var(--green)}
+.emoji{font-size:24px;width:36px;text-align:center}
+.info{flex:1}
+.hname{font-size:15px;font-weight:600}
+.streak{font-size:12px;color:var(--muted);margin-top:3px}
+.streak span{color:var(--green);font-weight:600}
+.check-btn{width:40px;height:40px;border-radius:50%;border:2px solid var(--border);background:transparent;color:var(--muted);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s}
+.check-btn.done{background:var(--green);border-color:var(--green);color:#fff}
+.del{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;opacity:.5}
+.del:hover{opacity:1;color:#ef4444}
+.empty{color:var(--muted);text-align:center;padding:32px 0;font-size:14px}
+</style>
 </head>
 <body>
-  <div class="container">
-    <h1>🎯 Привычки</h1>
-    <ul class="habit-list" id="habitList">
-      <li class="habit-item">
-        <div class="habit-header">
-          <span class="habit-name">Спорт</span>
-          <span class="habit-streak">🔥 5 дней</span>
+<h2>🔥 Habits</h2>
+<p class="subtitle">Build powerful streaks</p>
+<div class="form">
+  <input class="emoji-input" id="emoji" placeholder="🎯" maxlength="2">
+  <input id="habitName" placeholder="Habit name..." onkeydown="if(event.key==='Enter')addHabit()">
+  <button class="btn" onclick="addHabit()">Add</button>
+</div>
+<div class="list" id="list"><div class="empty">No habits yet</div></div>
+<script>
+const uid = new URLSearchParams(location.search).get('uid') || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) || 0;
+let habits = [];
+const today = new Date().toISOString().split('T')[0];
+
+async function load() {
+  if (!uid) return;
+  const r = await fetch('/api/habits?uid=' + uid);
+  habits = await r.json();
+  render();
+}
+
+function isDoneToday(h) {
+  return h.last_done === today;
+}
+
+function render() {
+  const el = document.getElementById('list');
+  if (!habits.length) { el.innerHTML = '<div class="empty">No habits yet</div>'; return; }
+  el.innerHTML = habits.map(h => {
+    const done = isDoneToday(h);
+    return `
+      <div class="habit ${done ? 'done-today' : ''}">
+        <div class="emoji">${h.emoji || '●'}</div>
+        <div class="info">
+          <div class="hname">${h.name}</div>
+          <div class="streak">🔥 <span>${h.streak}</span> day streak · best: ${h.best_streak}</div>
         </div>
-        <div class="habit-days">
-          <div class="habit-day completed">Пн</div>
-          <div class="habit-day completed">Вт</div>
-          <div class="habit-day completed">Ср</div>
-          <div class="habit-day completed">Чт</div>
-          <div class="habit-day completed">Пт</div>
-          <div class="habit-day">Сб</div>
-          <div class="habit-day">Вс</div>
-        </div>
-      </li>
-    </ul>
-    <div class="add-habit">
-      <input type="text" id="habitInput" placeholder="Новая привычка...">
-      <button onclick="addHabit()">Добавить</button>
-    </div>
-  </div>
-  <script>
-    function addHabit() {
-      const input = document.getElementById('habitInput');
-      const text = input.value.trim();
-      if (!text) return;
-      alert('Привычка добавлена! (демо)');
-      input.value = '';
-    }
-  </script>
+        <button class="check-btn ${done ? 'done' : ''}" onclick="markDone(${h.id})" title="Mark done">
+          ${done ? '✓' : '○'}
+        </button>
+        <button class="del" onclick="del(${h.id})">×</button>
+      </div>`;
+  }).join('');
+}
+
+async function addHabit() {
+  const name = document.getElementById('habitName').value.trim();
+  if (!name) return;
+  const emoji = document.getElementById('emoji').value.trim() || '●';
+  await fetch('/api/habits', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ uid: parseInt(uid), name, emoji })
+  });
+  document.getElementById('habitName').value = '';
+  document.getElementById('emoji').value = '';
+  load();
+}
+
+async function markDone(id) {
+  const r = await fetch('/api/habits/' + id + '/done', { method:'POST' });
+  const d = await r.json();
+  if (d.streak) {
+    // Quick visual feedback
+    load();
+  }
+}
+
+async function del(id) {
+  await fetch('/api/habits/' + id, { method:'DELETE' });
+  load();
+}
+
+load();
+</script>
 </body>
 </html>

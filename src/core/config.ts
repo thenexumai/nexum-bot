@@ -11,12 +11,12 @@ function keys(prefix: string): string[] {
 }
 
 export const config = {
-  botToken:   process.env.BOT_TOKEN!,
-  adminIds:   (process.env.ADMIN_IDS || '').split(',').map(s => parseInt(s.trim())).filter(Boolean),
-  webappUrl:  (process.env.WEBAPP_URL || '').replace(/\/$/, ''),
-  port:       parseInt(process.env.PORT || process.env.NODE_PORT || '3000'),
-  dbPath:     process.env.DB_PATH || './data/nexum.db',
-  publicBot:  process.env.PUBLIC_BOT === 'true',
+  botToken:  process.env.BOT_TOKEN!,
+  adminIds:  (process.env.ADMIN_IDS || '').split(',').map(s => parseInt(s.trim())).filter(Boolean),
+  webappUrl: (process.env.WEBAPP_URL || '').replace(/\/$/, ''),
+  port:      parseInt(process.env.PORT || process.env.NODE_PORT || '3000'),
+  dbPath:    process.env.DB_PATH || './data/nexum.db',
+  publicBot: process.env.PUBLIC_BOT === 'true',
 
   ai: {
     cerebras:   keys('CB'),
@@ -29,6 +29,7 @@ export const config = {
     deepseek:   keys('DS'),
     claude:     keys('CL'),
   },
+
   serper: [
     process.env.SERPER_KEY,
     process.env.SERPER_KEY2,
@@ -38,6 +39,7 @@ export const config = {
 
 // Round-robin key rotation per provider
 const _idx: Record<string, number> = {};
+
 export function getKey(provider: keyof typeof config.ai): string | null {
   const list = config.ai[provider];
   if (!list.length) return null;
@@ -51,4 +53,8 @@ export function getSerperKey(): string | null {
   const i = (_idx['serper'] || 0) % config.serper.length;
   _idx['serper'] = i + 1;
   return config.serper[i];
+}
+
+export function hasAnyProvider(): boolean {
+  return Object.values(config.ai).some(arr => arr.length > 0);
 }

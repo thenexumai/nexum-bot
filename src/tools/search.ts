@@ -1,25 +1,38 @@
+// NEXUM Web Search — Serper API
+
 import { getSerperKey } from '../core/config';
 
-export async function webSearch(query: string): Promise<string> {
+export async function webSearch(query: string, numResults = 5): Promise<string | null> {
   const key = getSerperKey();
-  if (!key) return 'Search unavailable (no SERPER_KEY)';
+  if (!key) return null;
 
-  const r = await fetch('https://google.serper.dev/search', {
-    method: 'POST',
-    headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ q: query, num: 6, hl: 'ru' }),
-  });
-  if (!r.ok) throw new Error(`Serper ${r.status}`);
-  const d = await r.json() as any;
+  try {
+    const r = await fetch('https://google.serper.dev/search', {
+      method: 'POST',
+      headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: query, num: numResults }),
+    });
 
-  const results: string[] = [];
-  if (d.answerBox?.answer)      results.push(`${d.answerBox.answer}`);
-  if (d.answerBox?.snippet)     results.push(d.answerBox.snippet);
-  if (d.knowledgeGraph?.description) results.push(d.knowledgeGraph.description);
-  if (d.organic) {
-    for (const item of d.organic.slice(0, 4)) {
-      results.push(`**${item.title}**\n${item.snippet || ''}\n${item.link}`);
+    if (!r.ok) return null;
+    const data = await r.json() as any;
+
+    const parts: string[] = [];
+
+    if (data.answerBox?.answer) {
+      parts.push(`Answer: ${data.answerBox.answer}`);
     }
+    if (data.answerBox?.snippet) {
+      parts.push(`Featured: ${data.answerBox.snippet}`);
+    }
+
+    const organic = (data.organic || []).slice(0, numResults);
+    for (const item of organic) {
+      parts.push(`[${item.title}]\n${item.snippet}\nURL: ${item.link}`);
+    }
+
+    return parts.join('\n\n') || null;
+  } catch (e: any) {
+    console.error('[search]', e.message);
+    return null;
   }
-  return results.join('\n\n') || 'No results found';
 }

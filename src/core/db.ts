@@ -7,14 +7,14 @@ fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
 export const db = new sqlite3.Database(DB_PATH);
 
-// Enable pragmas
+// Performance pragmas
 db.serialize(() => {
   db.run('PRAGMA journal_mode = WAL');
   db.run('PRAGMA foreign_keys = ON');
   db.run('PRAGMA synchronous = NORMAL');
 });
 
-// ── Core schema ──────────────────────────────────────────────────────────────
+// ── Schema ────────────────────────────────────────────────────────────────────
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     uid        INTEGER PRIMARY KEY,
@@ -50,6 +50,7 @@ db.exec(`
     title      TEXT DEFAULT '',
     content    TEXT NOT NULL,
     pinned     INTEGER DEFAULT 0,
+    tags       TEXT DEFAULT '',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -119,34 +120,29 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
-  CREATE TABLE IF NOT EXISTS websites (
+  CREATE TABLE IF NOT EXISTS calendar_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    uid         INTEGER NOT NULL,
+    title       TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    start_at    TEXT NOT NULL,
+    end_at      TEXT,
+    all_day     INTEGER DEFAULT 0,
+    color       TEXT DEFAULT '#6366f1',
+    created_at  TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS contacts (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     uid        INTEGER NOT NULL,
     name       TEXT NOT NULL,
-    html       TEXT NOT NULL,
-    created_at TEXT DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS custom_tools (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    uid             INTEGER NOT NULL,
-    name            TEXT NOT NULL,
-    description     TEXT NOT NULL,
-    trigger_pattern TEXT NOT NULL,
-    code            TEXT NOT NULL,
-    active          INTEGER DEFAULT 1,
-    usage_count     INTEGER DEFAULT 0,
-    created_at      TEXT DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS tool_results (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    uid        INTEGER NOT NULL,
-    tool_name  TEXT NOT NULL,
-    input      TEXT,
-    output     TEXT,
-    success    INTEGER DEFAULT 1,
-    created_at TEXT DEFAULT (datetime('now'))
+    phone      TEXT DEFAULT '',
+    email      TEXT DEFAULT '',
+    company    TEXT DEFAULT '',
+    notes      TEXT DEFAULT '',
+    avatar     TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS pc_agents (
@@ -162,22 +158,10 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS link_codes (
     code       TEXT PRIMARY KEY,
-    device_id  TEXT,
-    platform   TEXT,
+    uid        INTEGER NOT NULL,
     expires_at TEXT NOT NULL,
     used       INTEGER DEFAULT 0
   );
-
-  CREATE TABLE IF NOT EXISTS vector_memories (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    uid        INTEGER NOT NULL,
-    content    TEXT NOT NULL,
-    role       TEXT NOT NULL DEFAULT 'user',
-    embedding  TEXT,
-    norm       REAL,
-    created_at TEXT DEFAULT (datetime('now'))
-  );
-  CREATE INDEX IF NOT EXISTS idx_vm_uid ON vector_memories(uid);
 
   CREATE TABLE IF NOT EXISTS user_api_keys (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -199,23 +183,34 @@ db.exec(`
     started_at  TEXT DEFAULT (datetime('now')),
     finished_at TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS tool_results (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    uid        INTEGER NOT NULL,
+    tool_name  TEXT NOT NULL,
+    input      TEXT,
+    output     TEXT,
+    success    INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 // ── Safe migrations ───────────────────────────────────────────────────────────
 const migrations = [
-  `ALTER TABLE pc_agents ADD COLUMN device_id TEXT`,
-  `ALTER TABLE finance   ADD COLUMN account_id INTEGER`,
-  `ALTER TABLE finance   ADD COLUMN currency TEXT DEFAULT 'UZS'`,
-  `ALTER TABLE tasks     ADD COLUMN description TEXT DEFAULT ''`,
+  `ALTER TABLE users ADD COLUMN lang TEXT DEFAULT 'auto'`,
+  `ALTER TABLE users ADD COLUMN tariff TEXT DEFAULT 'free'`,
+  `ALTER TABLE finance ADD COLUMN account_id INTEGER`,
+  `ALTER TABLE finance ADD COLUMN currency TEXT DEFAULT 'UZS'`,
+  `ALTER TABLE tasks ADD COLUMN description TEXT DEFAULT ''`,
   `ALTER TABLE reminders ADD COLUMN repeat TEXT DEFAULT 'none'`,
-  `ALTER TABLE users     ADD COLUMN lang TEXT DEFAULT 'auto'`,
-  `ALTER TABLE users     ADD COLUMN tariff TEXT DEFAULT 'free'`,
+  `ALTER TABLE notes ADD COLUMN tags TEXT DEFAULT ''`,
+  `ALTER TABLE link_codes ADD COLUMN uid INTEGER NOT NULL DEFAULT 0`,
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch { /* already exists */ }
 }
 
-// ── Statement wrapper (better-sqlite3 compatible sync API) ───────────────────
+// ── Sync statement wrapper ────────────────────────────────────────────────────
 
 export interface RunResult {
   lastInsertRowid: number | string;
@@ -224,28 +219,28 @@ export interface RunResult {
 
 export class Statement {
   private sql: string;
-  
+
   constructor(sql: string) {
     this.sql = sql;
   }
-  
+
   run(...params: any[]): RunResult {
-    let result: RunResult | null = null;
-    let error: Error | null = null;
+    let result: RunResult = { lastInsertRowid: 0, changes: 0 };
     db.run(this.sql, params, function(err) {
-      if (err) error = err;
-      else result = { lastInsertRowid: this.lastID, changes: this.changes };
+      if (!err) {
+        result.lastInsertRowid = this.lastID;
+        result.changes = this.changes;
+      }
     });
-    if (error) throw error!;
-    return result!;
+    return result;
   }
-  
+
   get(...params: any[]): any {
     let row: any = null;
     db.get(this.sql, params, (err, r) => { if (!err) row = r; });
     return row;
   }
-  
+
   all(...params: any[]): any[] {
     let rows: any[] = [];
     db.all(this.sql, params, (err, r) => { if (!err) rows = r || []; });
@@ -253,29 +248,36 @@ export class Statement {
   }
 }
 
-// Add prepare to Database interface
-declare module 'sqlite3' {
-  interface Database {
-    prepare(sql: string): Statement;
-  }
-}
+// Extend db with prepare
+(db as any).prepare = (sql: string): Statement => new Statement(sql);
 
-// Extend db with prepare method
-(db as any).prepare = function(sql: string): Statement {
-  return new Statement(sql);
-};
-
-// ── Helper functions ─────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 export function ensureUser(uid: number, username?: string, firstName?: string) {
-  db.prepare(`INSERT OR REPLACE INTO users (uid, username, first_name, updated_at) VALUES (?, ?, ?, datetime('now'))`).run(uid, username || null, firstName || null);
+  (db as any).prepare(
+    `INSERT INTO users (uid, username, first_name, updated_at) VALUES (?,?,?,datetime('now'))
+     ON CONFLICT(uid) DO UPDATE SET
+       username=excluded.username,
+       first_name=excluded.first_name,
+       updated_at=excluded.updated_at`
+  ).run(uid, username || null, firstName || null);
 }
 
 export function getUserApiKey(uid: number, provider: string): string | null {
-  const row: any = db.prepare('SELECT api_key FROM user_api_keys WHERE uid=? AND provider=?').get(uid, provider);
+  const row: any = (db as any).prepare(
+    'SELECT api_key FROM user_api_keys WHERE uid=? AND provider=?'
+  ).get(uid, provider);
   return row?.api_key || null;
 }
 
 export function setUserApiKey(uid: number, provider: string, key: string) {
-  db.prepare(`INSERT OR REPLACE INTO user_api_keys (uid, provider, api_key) VALUES (?,?,?)`).run(uid, provider, key);
+  (db as any).prepare(
+    `INSERT OR REPLACE INTO user_api_keys (uid, provider, api_key) VALUES (?,?,?)`
+  ).run(uid, provider, key);
+}
+
+export function deleteUserApiKey(uid: number, provider: string) {
+  (db as any).prepare(
+    `DELETE FROM user_api_keys WHERE uid=? AND provider=?`
+  ).run(uid, provider);
 }

@@ -1,81 +1,50 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NEXUM Hub — Все мини-апы</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
-    .container { max-width: 1200px; margin: 0 auto; }
-    h1 { color: white; text-align: center; margin-bottom: 30px; font-size: 2.5rem; }
-    .apps-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
-    .app-card { background: white; border-radius: 16px; padding: 30px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.2); transition: transform 0.3s; }
-    .app-card:hover { transform: translateY(-5px); }
-    .app-icon { font-size: 3rem; margin-bottom: 15px; }
-    .app-name { font-size: 1.5rem; font-weight: bold; color: #333; margin-bottom: 10px; }
-    .app-desc { color: #666; margin-bottom: 20px; }
-    .app-btn { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 30px; border-radius: 8px; text-decoration: none; font-weight: bold; transition: opacity 0.3s; }
-    .app-btn:hover { opacity: 0.9; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUM</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--border:#222;
+    --text:#f0f0f0;--muted:#888;--accent:#6366f1;--accent2:#818cf8;
+    --green:#22c55e;--red:#ef4444;--yellow:#eab308;--radius:14px;
+    --font:-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,sans-serif;
+  }
+  body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;padding:24px 16px}
+  .logo{text-align:center;margin-bottom:32px}
+  .logo h1{font-size:32px;font-weight:700;letter-spacing:-0.5px}
+  .logo h1 span{color:var(--accent)}
+  .logo p{color:var(--muted);font-size:15px;margin-top:6px}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;max-width:420px;margin:0 auto}
+  .card{
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:20px 16px;text-align:center;cursor:pointer;text-decoration:none;color:inherit;
+    transition:background .15s,transform .1s;display:block;
+  }
+  .card:hover{background:var(--surface2);transform:translateY(-1px)}
+  .card:active{transform:scale(.97)}
+  .card .icon{font-size:28px;margin-bottom:8px}
+  .card .label{font-size:14px;font-weight:600}
+  .card .desc{font-size:12px;color:var(--muted);margin-top:3px}
+  .footer{text-align:center;margin-top:32px;color:var(--muted);font-size:13px}
+</style>
 </head>
 <body>
-  <div class="container">
-    <h1>🚀 NEXUM Hub</h1>
-    <div class="apps-grid">
-      <div class="app-card">
-        <div class="app-icon">💰</div>
-        <div class="app-name">Финансы</div>
-        <div class="app-desc">Учёт доходов и расходов</div>
-        <a href="finance.html" class="app-btn">Открыть</a>
-      </div>
-      <div class="app-card">
-        <div class="app-icon">✅</div>
-        <div class="app-name">Задачи</div>
-        <div class="app-desc">Список дел и проекты</div>
-        <a href="tasks.html" class="app-btn">Открыть</a>
-      </div>
-      <div class="app-card">
-        <div class="app-icon">📝</div>
-        <div class="app-name">Заметки</div>
-        <div class="app-desc">Быстрые заметки и идеи</div>
-        <a href="notes.html" class="app-btn">Открыть</a>
-      </div>
-      <div class="app-card">
-        <div class="app-icon">🎯</div>
-        <div class="app-name">Привычки</div>
-        <div class="app-desc">Трекер привычек</div>
-        <a href="habits.html" class="app-btn">Открыть</a>
-      </div>
-      <div class="app-card">
-        <div class="app-icon">📅</div>
-        <div class="app-name">Календарь</div>
-        <div class="app-desc">События и напоминания</div>
-        <a href="calendar.html" class="app-btn">Открыть</a>
-      </div>
-      <div class="app-card">
-        <div class="app-icon">👥</div>
-        <div class="app-name">Контакты</div>
-        <div class="app-desc">База контактов</div>
-        <a href="contacts.html" class="app-btn">Открыть</a>
-      </div>
-      <div class="app-card">
-        <div class="app-icon">🤖</div>
-        <div class="app-name">NEXUM Agent</div>
-        <div class="app-desc">AI помощник</div>
-        <a href="agent.html" class="app-btn">Открыть</a>
-      </div>
-    </div>
-  </div>
-  <script>
-    // Get user ID from Telegram initData
-    const urlParams = new URLSearchParams(window.location.search);
-    const initData = urlParams.get('tgWebAppData');
-    if (initData) {
-      const params = new URLSearchParams(initData);
-      const user = JSON.parse(params.get('user') || '{}');
-      console.log('User ID:', user.id);
-    }
-  </script>
+<div class="logo">
+  <h1>NEX<span>UM</span></h1>
+  <p>Your AI Superagent</p>
+</div>
+<div class="grid">
+  <a class="card" href="/finance"><div class="icon">💰</div><div class="label">Finance</div><div class="desc">Track income & expenses</div></a>
+  <a class="card" href="/tasks"><div class="icon">✅</div><div class="label">Tasks</div><div class="desc">Manage your to-dos</div></a>
+  <a class="card" href="/notes"><div class="icon">📝</div><div class="label">Notes</div><div class="desc">Quick notes & ideas</div></a>
+  <a class="card" href="/habits"><div class="icon">🔥</div><div class="label">Habits</div><div class="desc">Build daily streaks</div></a>
+  <a class="card" href="/calendar"><div class="icon">📅</div><div class="label">Calendar</div><div class="desc">Events & schedule</div></a>
+  <a class="card" href="/contacts"><div class="icon">👤</div><div class="label">Contacts</div><div class="desc">People & connections</div></a>
+  <a class="card" href="/agent" style="grid-column:span 2"><div class="icon">🤖</div><div class="label">AI Agent</div><div class="desc">NEXUM Agent panel</div></a>
+</div>
+<div class="footer">NEXUM v1.0</div>
 </body>
 </html>
