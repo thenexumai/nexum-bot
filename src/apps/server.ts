@@ -10,6 +10,7 @@ import { db } from '../core/db';
 import { registerConnection } from '../agent/pcagent_protocol';
 import { useLinkCode, updateAgentStatus } from '../agent/pairing';
 
+// Works both in dev (src/) and prod (dist/) — public lives in src/public always
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
 export function startServer(bot: Bot): express.Application {
