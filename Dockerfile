@@ -12,25 +12,29 @@ WORKDIR /app
 
 COPY package*.json ./
 
-# Install ALL deps (including devDeps like typescript) for build
+# Install all deps (devDeps needed for tsc)
 RUN npm ci
+
+# Explicitly rebuild native modules (sqlite3) for this environment
+RUN npm rebuild sqlite3
 
 COPY tsconfig.json ./
 COPY src ./src
 
-# Build TypeScript
+# Compile TypeScript
 RUN npm run build
 
-# Copy public assets next to compiled dist so server can find them
+# Copy static assets to dist
 RUN cp -r src/public dist/public
 
-# Remove devDeps after build to keep image lean
+# Remove devDeps to slim the image
 RUN npm prune --omit=dev
 
+# Ensure data directory exists
 RUN mkdir -p /app/data
 
 ENV NODE_ENV=production
 
 EXPOSE 3000
 
-CMD ["npm", "start"]
+CMD ["node", "dist/index.js"]

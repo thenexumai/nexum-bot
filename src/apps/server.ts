@@ -13,7 +13,7 @@ import { useLinkCode, updateAgentStatus } from '../agent/pairing';
 // Works both in dev (src/) and prod (dist/) — public lives in src/public always
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
-export function startServer(bot: Bot): express.Application {
+export function startServer(bot?: Bot): express.Application {
   const app = express();
   const server = createServer(app);
 
@@ -253,12 +253,14 @@ export function startServer(bot: Bot): express.Application {
     ws.on('close', () => {
       updateAgentStatus(uid, 'offline');
       console.log(`[ws] PC Agent disconnected uid=${uid}`);
-      // Notify user
-      bot.api.sendMessage(uid, '⚫ PC Agent disconnected.').catch(() => {});
+      // Notify user via bot if available
+      const activeBot = bot || (global as any).__nexumBot;
+      if (activeBot) activeBot.api.sendMessage(uid, '⚫ PC Agent disconnected.').catch(() => {});
     });
 
-    // Notify user
-    bot.api.sendMessage(uid, `🟢 PC Agent connected: *${deviceName}* (${platform})`, { parse_mode: 'Markdown' }).catch(() => {});
+    // Notify user via bot if available
+    const activeBot2 = bot || (global as any).__nexumBot;
+    if (activeBot2) activeBot2.api.sendMessage(uid, `🟢 PC Agent connected: *${deviceName}* (${platform})`, { parse_mode: 'Markdown' }).catch(() => {});
   });
 
   // ── Start listening ──────────────────────────────────────────────────────────
