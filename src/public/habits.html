@@ -2,112 +2,719 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Habits — NEXUM</title>
+<link rel="stylesheet" href="shared/design-system.css">
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--border:#222;
-  --text:#f0f0f0;--muted:#888;--accent:#6366f1;--green:#22c55e;--radius:14px;
-  --font:-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,sans-serif;
-}
-body{background:var(--bg);color:var(--text);font-family:var(--font);padding:20px 16px;max-width:480px;margin:0 auto}
-h2{font-size:22px;font-weight:700;margin-bottom:4px}
-.subtitle{color:var(--muted);font-size:14px;margin-bottom:20px}
-.form{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:16px;display:flex;gap:8px}
-.form input{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 12px;font-size:14px;font-family:inherit}
-.form input:focus{outline:none;border-color:var(--accent)}
-.form input::placeholder{color:var(--muted)}
-.emoji-input{width:52px;text-align:center}
-.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer}
-.list{display:flex;flex-direction:column;gap:8px}
-.habit{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;display:flex;align-items:center;gap:14px}
-.habit.done-today{border-color:var(--green)}
-.emoji{font-size:24px;width:36px;text-align:center}
-.info{flex:1}
-.hname{font-size:15px;font-weight:600}
-.streak{font-size:12px;color:var(--muted);margin-top:3px}
-.streak span{color:var(--green);font-weight:600}
-.check-btn{width:40px;height:40px;border-radius:50%;border:2px solid var(--border);background:transparent;color:var(--muted);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s}
-.check-btn.done{background:var(--green);border-color:var(--green);color:#fff}
-.del{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;opacity:.5}
-.del:hover{opacity:1;color:#ef4444}
-.empty{color:var(--muted);text-align:center;padding:32px 0;font-size:14px}
+  /* ── Habit-specific styles ─────────────────────────────────────── */
+  .habit-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    min-height: 64px;
+    border-bottom: 1px solid var(--border);
+    transition: background var(--transition);
+  }
+  .habit-item:last-child { border-bottom: none; }
+  .habit-item:active { background: var(--bg-hover); }
+
+  .habit-emoji {
+    font-size: 22px;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .habit-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .habit-name {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .habit-stats {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .habit-streak-num {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--success);
+    font-weight: 600;
+  }
+
+  .habit-streak-num .streak-icon {
+    display: flex;
+    align-items: center;
+    color: var(--success);
+  }
+  .habit-streak-num .streak-icon svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .habit-best {
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  .habit-dots-row {
+    margin-top: 6px;
+  }
+
+  .habit-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .check-btn {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 48px;
+    border-radius: var(--radius-full);
+    border: 2px solid var(--border-strong);
+    background: transparent;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all var(--transition);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .check-btn:active { transform: scale(0.9); }
+  .check-btn svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .check-btn.done {
+    background: var(--success);
+    border-color: var(--success);
+    color: #fff;
+  }
+
+  .delete-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all var(--transition);
+    opacity: 0.5;
+  }
+  .delete-btn:hover,
+  .delete-btn:active {
+    opacity: 1;
+    color: var(--danger);
+    background: var(--danger-subtle);
+  }
+
+  .section-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .section-label .section-icon {
+    display: flex;
+    align-items: center;
+    color: var(--accent);
+  }
+  .section-label .section-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .habit-done-today .habit-name {
+    color: var(--success);
+  }
+
+  /* Frequency badge */
+  .freq-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    border-radius: var(--radius-full);
+    background: var(--accent-subtle);
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-left: 4px;
+  }
+
+  /* Confirm delete overlay */
+  .confirm-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--danger-subtle);
+    border-radius: var(--radius-sm);
+    margin: 8px 0;
+  }
+  .confirm-bar-text {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--danger);
+  }
+  .confirm-bar-actions {
+    display: flex;
+    gap: 8px;
+  }
 </style>
 </head>
 <body>
-<h2>🔥 Habits</h2>
-<p class="subtitle">Build powerful streaks</p>
-<div class="form">
-  <input class="emoji-input" id="emoji" placeholder="🎯" maxlength="2">
-  <input id="habitName" placeholder="Habit name..." onkeydown="if(event.key==='Enter')addHabit()">
-  <button class="btn" onclick="addHabit()">Add</button>
+<script src="shared/icons.js"></script>
+<script src="shared/app-shell.js"></script>
+
+<div class="app-container" id="app">
+  <!-- Header -->
+  <header class="app-header">
+    <span class="app-header-title" id="headerTitle">Habits</span>
+    <button class="app-header-action" id="addBtn" aria-label="Add habit"></button>
+  </header>
+
+  <!-- Content -->
+  <main class="app-content" id="content">
+    <!-- Loading state -->
+    <div class="loading-container" id="loadingState">
+      <div class="spinner"></div>
+    </div>
+
+    <!-- Empty state -->
+    <div class="empty-state hidden" id="emptyState">
+      <div class="empty-state-icon" id="emptyIcon"></div>
+      <div class="empty-state-title" id="emptyTitle">No habits yet</div>
+      <div class="empty-state-desc" id="emptyDesc">Start building good habits</div>
+      <button class="btn btn-primary" id="emptyAddBtn">Add Habit</button>
+    </div>
+
+    <!-- Habit list -->
+    <div class="hidden" id="habitListContainer">
+      <div class="section-label">
+        <span class="section-icon" id="todaySectionIcon"></span>
+        <span id="todayLabel">Today</span>
+      </div>
+      <div class="list" id="habitList"></div>
+    </div>
+  </main>
 </div>
-<div class="list" id="list"><div class="empty">No habits yet</div></div>
+
+<!-- Add Habit Modal -->
+<div class="modal-overlay" id="addModal">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title" id="modalTitle">Add Habit</span>
+      <button class="btn btn-ghost btn-sm" id="modalCloseBtn"></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label" id="labelName">Habit name</label>
+        <input class="form-input" type="text" id="inputName" maxlength="100" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label class="form-label" id="labelEmoji">Emoji (optional)</label>
+        <input class="form-input" type="text" id="inputEmoji" maxlength="2" placeholder="e.g. 💪" style="width:80px;">
+      </div>
+      <div class="form-group">
+        <label class="form-label" id="labelFrequency">Frequency</label>
+        <select class="form-select" id="inputFrequency">
+          <option value="daily" id="optDaily">Daily</option>
+          <option value="weekly" id="optWeekly">Weekly</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-full" id="modalCancelBtn">Cancel</button>
+      <button class="btn btn-primary btn-full" id="modalSaveBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title" id="deleteModalTitle">Delete Habit</span>
+      <button class="btn btn-ghost btn-sm" id="deleteModalCloseBtn"></button>
+    </div>
+    <div class="modal-body">
+      <p id="deleteConfirmText" style="font-size:15px;color:var(--text-secondary);text-align:center;padding:8px 0;"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-full" id="deleteCancelBtn">Cancel</button>
+      <button class="btn btn-danger btn-full" id="deleteConfirmBtn">Delete</button>
+    </div>
+  </div>
+</div>
+
 <script>
-const uid = new URLSearchParams(location.search).get('uid') || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) || 0;
-let habits = [];
-const today = new Date().toISOString().split('T')[0];
+(function() {
+  'use strict';
 
-async function load() {
-  if (!uid) return;
-  const r = await fetch('/api/habits?uid=' + uid);
-  habits = await r.json();
-  render();
-}
+  // ── i18n ──────────────────────────────────────────────────────
+  var T = {
+    en: Object.assign({}, APP_TRANSLATIONS.en, {
+      'habits_title': 'Habits',
+      'add_habit': 'Add Habit',
+      'today': 'Today',
+      'streak': 'Streak',
+      'best': 'Best',
+      'habit_name': 'Habit name',
+      'emoji_label': 'Emoji (optional)',
+      'frequency': 'Frequency',
+      'daily': 'Daily',
+      'weekly': 'Weekly',
+      'no_habits': 'No habits yet',
+      'start_habits': 'Start building good habits',
+      'save': 'Save',
+      'cancel': 'Cancel',
+      'delete': 'Delete',
+      'delete_habit': 'Delete Habit',
+      'delete_confirm': 'Are you sure you want to delete "{name}"?',
+      'done_today': 'Done today',
+      'day_streak': '{n} day streak',
+      'best_label': 'best: {n}',
+      'habit_name_placeholder': 'e.g. Morning run',
+    }),
+    ru: Object.assign({}, APP_TRANSLATIONS.ru, {
+      'habits_title': 'Привычки',
+      'add_habit': 'Добавить привычку',
+      'today': 'Сегодня',
+      'streak': 'Серия',
+      'best': 'Лучшая',
+      'habit_name': 'Название привычки',
+      'emoji_label': 'Эмодзи (необязательно)',
+      'frequency': 'Частота',
+      'daily': 'Ежедневно',
+      'weekly': 'Еженедельно',
+      'no_habits': 'Нет привычек',
+      'start_habits': 'Начните формировать привычки',
+      'save': 'Сохранить',
+      'cancel': 'Отмена',
+      'delete': 'Удалить',
+      'delete_habit': 'Удалить привычку',
+      'delete_confirm': 'Вы уверены, что хотите удалить "{name}"?',
+      'done_today': 'Выполнено сегодня',
+      'day_streak': 'серия: {n} дн.',
+      'best_label': 'лучшая: {n}',
+      'habit_name_placeholder': 'напр. Утренняя пробежка',
+    })
+  };
 
-function isDoneToday(h) {
-  return h.last_done === today;
-}
+  // ── State ─────────────────────────────────────────────────────
+  var state = {
+    uid: '0',
+    lang: 'en',
+    habits: [],
+    loading: true,
+    deleteTarget: null
+  };
 
-function render() {
-  const el = document.getElementById('list');
-  if (!habits.length) { el.innerHTML = '<div class="empty">No habits yet</div>'; return; }
-  el.innerHTML = habits.map(h => {
-    const done = isDoneToday(h);
-    return `
-      <div class="habit ${done ? 'done-today' : ''}">
-        <div class="emoji">${h.emoji || '●'}</div>
-        <div class="info">
-          <div class="hname">${h.name}</div>
-          <div class="streak">🔥 <span>${h.streak}</span> day streak · best: ${h.best_streak}</div>
-        </div>
-        <button class="check-btn ${done ? 'done' : ''}" onclick="markDone(${h.id})" title="Mark done">
-          ${done ? '✓' : '○'}
-        </button>
-        <button class="del" onclick="del(${h.id})">×</button>
-      </div>`;
-  }).join('');
-}
+  // ── DOM refs ──────────────────────────────────────────────────
+  var $headerTitle = document.getElementById('headerTitle');
+  var $addBtn = document.getElementById('addBtn');
+  var $loadingState = document.getElementById('loadingState');
+  var $emptyState = document.getElementById('emptyState');
+  var $emptyIcon = document.getElementById('emptyIcon');
+  var $emptyTitle = document.getElementById('emptyTitle');
+  var $emptyDesc = document.getElementById('emptyDesc');
+  var $emptyAddBtn = document.getElementById('emptyAddBtn');
+  var $habitListContainer = document.getElementById('habitListContainer');
+  var $habitList = document.getElementById('habitList');
+  var $todaySectionIcon = document.getElementById('todaySectionIcon');
+  var $todayLabel = document.getElementById('todayLabel');
+  var $addModal = document.getElementById('addModal');
+  var $modalTitle = document.getElementById('modalTitle');
+  var $modalCloseBtn = document.getElementById('modalCloseBtn');
+  var $labelName = document.getElementById('labelName');
+  var $labelEmoji = document.getElementById('labelEmoji');
+  var $labelFrequency = document.getElementById('labelFrequency');
+  var $optDaily = document.getElementById('optDaily');
+  var $optWeekly = document.getElementById('optWeekly');
+  var $inputName = document.getElementById('inputName');
+  var $inputEmoji = document.getElementById('inputEmoji');
+  var $inputFrequency = document.getElementById('inputFrequency');
+  var $modalCancelBtn = document.getElementById('modalCancelBtn');
+  var $modalSaveBtn = document.getElementById('modalSaveBtn');
+  var $deleteModal = document.getElementById('deleteModal');
+  var $deleteModalTitle = document.getElementById('deleteModalTitle');
+  var $deleteModalCloseBtn = document.getElementById('deleteModalCloseBtn');
+  var $deleteConfirmText = document.getElementById('deleteConfirmText');
+  var $deleteCancelBtn = document.getElementById('deleteCancelBtn');
+  var $deleteConfirmBtn = document.getElementById('deleteConfirmBtn');
 
-async function addHabit() {
-  const name = document.getElementById('habitName').value.trim();
-  if (!name) return;
-  const emoji = document.getElementById('emoji').value.trim() || '●';
-  await fetch('/api/habits', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ uid: parseInt(uid), name, emoji })
-  });
-  document.getElementById('habitName').value = '';
-  document.getElementById('emoji').value = '';
-  load();
-}
-
-async function markDone(id) {
-  const r = await fetch('/api/habits/' + id + '/done', { method:'POST' });
-  const d = await r.json();
-  if (d.streak) {
-    // Quick visual feedback
-    load();
+  // ── Helpers ───────────────────────────────────────────────────
+  function t(key, params) {
+    var translations = T[state.lang] || T.en;
+    return tr(translations, key, params);
   }
-}
 
-async function del(id) {
-  await fetch('/api/habits/' + id, { method:'DELETE' });
-  load();
-}
+  function todayStr() {
+    return new Date().toISOString().split('T')[0];
+  }
 
-load();
+  function isDoneToday(habit) {
+    if (!habit.last_done) return false;
+    return habit.last_done.slice(0, 10) === todayStr();
+  }
+
+  /**
+   * Build 7-day streak dots.
+   * We compute which of the last 7 days were "done" based on
+   * streak count and last_done date, working backwards.
+   */
+  function buildStreakDots(habit) {
+    var dots = [];
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var lastDone = habit.last_done ? new Date(habit.last_done.slice(0, 10) + 'T00:00:00') : null;
+    var streak = habit.streak || 0;
+
+    // Build a set of "done" dates from the streak
+    var doneDates = {};
+    if (lastDone && streak > 0) {
+      var d = new Date(lastDone);
+      for (var s = 0; s < streak && s < 7; s++) {
+        doneDates[d.toISOString().split('T')[0]] = true;
+        d.setDate(d.getDate() - 1);
+      }
+    }
+
+    // Last 7 days, from oldest to newest
+    for (var i = 6; i >= 0; i--) {
+      var day = new Date(today);
+      day.setDate(day.getDate() - i);
+      var key = day.toISOString().split('T')[0];
+      var filled = !!doneDates[key];
+      dots.push('<span class="streak-dot' + (filled ? ' filled' : '') + '"></span>');
+    }
+
+    return '<div class="streak-dots">' + dots.join('') + '</div>';
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // ── API ───────────────────────────────────────────────────────
+  async function fetchHabits() {
+    try {
+      var resp = await fetch('/api/habits?uid=' + encodeURIComponent(state.uid));
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      state.habits = await resp.json();
+    } catch (e) {
+      console.error('Failed to load habits:', e);
+      state.habits = [];
+    }
+  }
+
+  async function createHabit(name, emoji, frequency) {
+    try {
+      var resp = await fetch('/api/habits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: state.uid,
+          name: name,
+          emoji: emoji || '',
+          frequency: frequency || 'daily'
+        })
+      });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return await resp.json();
+    } catch (e) {
+      console.error('Failed to create habit:', e);
+      return null;
+    }
+  }
+
+  async function markDone(habitId) {
+    try {
+      var resp = await fetch('/api/habits/' + habitId + '/done', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: state.uid })
+      });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return await resp.json();
+    } catch (e) {
+      console.error('Failed to mark done:', e);
+      return null;
+    }
+  }
+
+  async function deleteHabit(habitId) {
+    try {
+      var resp = await fetch('/api/habits/' + habitId, {
+        method: 'DELETE'
+      });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return true;
+    } catch (e) {
+      console.error('Failed to delete habit:', e);
+      return false;
+    }
+  }
+
+  // ── Rendering ─────────────────────────────────────────────────
+  function applyTranslations() {
+    $headerTitle.textContent = t('habits_title');
+    $addBtn.innerHTML = icon('plus');
+    $emptyIcon.innerHTML = icon('habits', 28);
+    $emptyTitle.textContent = t('no_habits');
+    $emptyDesc.textContent = t('start_habits');
+    $emptyAddBtn.textContent = t('add_habit');
+    $todaySectionIcon.innerHTML = icon('habits', 16);
+    $todayLabel.textContent = t('today');
+    $modalTitle.textContent = t('add_habit');
+    $modalCloseBtn.innerHTML = icon('x');
+    $labelName.textContent = t('habit_name');
+    $labelEmoji.textContent = t('emoji_label');
+    $labelFrequency.textContent = t('frequency');
+    $optDaily.textContent = t('daily');
+    $optWeekly.textContent = t('weekly');
+    $inputName.placeholder = t('habit_name_placeholder');
+    $modalCancelBtn.textContent = t('cancel');
+    $modalSaveBtn.textContent = t('save');
+    $deleteModalTitle.textContent = t('delete_habit');
+    $deleteModalCloseBtn.innerHTML = icon('x');
+    $deleteCancelBtn.textContent = t('cancel');
+    $deleteConfirmBtn.textContent = t('delete');
+  }
+
+  function render() {
+    // Toggle states
+    var hasHabits = state.habits.length > 0;
+
+    $loadingState.classList.add('hidden');
+    $emptyState.classList.toggle('hidden', hasHabits);
+    $habitListContainer.classList.toggle('hidden', !hasHabits);
+
+    if (!hasHabits) return;
+
+    var html = '';
+    state.habits.forEach(function(h) {
+      var done = isDoneToday(h);
+      var emojiDisplay = h.emoji ? escapeHtml(h.emoji) : '';
+      var nameDisplay = escapeHtml(h.name);
+      var streakNum = h.streak || 0;
+      var bestNum = h.best_streak || 0;
+      var freqLabel = h.frequency === 'weekly' ? t('weekly') : t('daily');
+
+      html += '<div class="habit-item' + (done ? ' habit-done-today' : '') + '" data-id="' + h.id + '">';
+
+      // Emoji or icon
+      if (emojiDisplay) {
+        html += '<div class="habit-emoji">' + emojiDisplay + '</div>';
+      } else {
+        html += '<div class="list-item-icon">' + icon('habits') + '</div>';
+      }
+
+      // Info
+      html += '<div class="habit-info">';
+      html += '<div class="habit-name">' + nameDisplay;
+      if (h.frequency === 'weekly') {
+        html += ' <span class="freq-badge">' + freqLabel + '</span>';
+      }
+      html += '</div>';
+      html += '<div class="habit-stats">';
+      html += '<span class="habit-streak-num"><span class="streak-icon">' + icon('habits', 14) + '</span> ' + streakNum + '</span>';
+      html += '<span class="habit-best">' + t('best_label', { n: bestNum }) + '</span>';
+      html += '</div>';
+      html += '<div class="habit-dots-row">' + buildStreakDots(h) + '</div>';
+      html += '</div>';
+
+      // Actions
+      html += '<div class="habit-actions">';
+      html += '<button class="check-btn' + (done ? ' done' : '') + '" data-action="check" data-id="' + h.id + '" aria-label="' + (done ? t('done_today') : t('check')) + '">';
+      html += icon('check', 22);
+      html += '</button>';
+      html += '<button class="delete-btn" data-action="delete" data-id="' + h.id + '" data-name="' + escapeHtml(h.name) + '" aria-label="' + t('delete') + '">';
+      html += icon('trash', 16);
+      html += '</button>';
+      html += '</div>';
+
+      html += '</div>';
+    });
+
+    $habitList.innerHTML = html;
+    $habitListContainer.classList.add('fade-in');
+  }
+
+  // ── Modal helpers ─────────────────────────────────────────────
+  function openAddModal() {
+    $inputName.value = '';
+    $inputEmoji.value = '';
+    $inputFrequency.value = 'daily';
+    $addModal.classList.add('active');
+    setTimeout(function() { $inputName.focus(); }, 350);
+  }
+
+  function closeAddModal() {
+    $addModal.classList.remove('active');
+  }
+
+  function openDeleteModal(id, name) {
+    state.deleteTarget = id;
+    $deleteConfirmText.textContent = t('delete_confirm', { name: name });
+    $deleteModal.classList.add('active');
+  }
+
+  function closeDeleteModal() {
+    $deleteModal.classList.remove('active');
+    state.deleteTarget = null;
+  }
+
+  // ── Event handlers ────────────────────────────────────────────
+  async function handleSave() {
+    var name = $inputName.value.trim();
+    if (!name) {
+      $inputName.focus();
+      return;
+    }
+    var emoji = $inputEmoji.value.trim();
+    var frequency = $inputFrequency.value;
+
+    $modalSaveBtn.disabled = true;
+    $modalSaveBtn.textContent = t('loading');
+
+    var result = await createHabit(name, emoji, frequency);
+    if (result) {
+      closeAddModal();
+      await fetchHabits();
+      render();
+    }
+
+    $modalSaveBtn.disabled = false;
+    $modalSaveBtn.textContent = t('save');
+  }
+
+  async function handleCheck(id) {
+    // Optimistic: find and update the button immediately
+    var btn = document.querySelector('.check-btn[data-id="' + id + '"]');
+    if (btn && btn.classList.contains('done')) return; // Already done today
+    if (btn) {
+      btn.classList.add('done');
+    }
+
+    var result = await markDone(id);
+    // Reload to get accurate data
+    await fetchHabits();
+    render();
+  }
+
+  async function handleDelete() {
+    if (!state.deleteTarget) return;
+    $deleteConfirmBtn.disabled = true;
+    $deleteConfirmBtn.textContent = t('loading');
+
+    var success = await deleteHabit(state.deleteTarget);
+    if (success) {
+      closeDeleteModal();
+      await fetchHabits();
+      render();
+    }
+
+    $deleteConfirmBtn.disabled = false;
+    $deleteConfirmBtn.textContent = t('delete');
+  }
+
+  // ── Event binding ─────────────────────────────────────────────
+  $addBtn.addEventListener('click', openAddModal);
+  $emptyAddBtn.addEventListener('click', openAddModal);
+
+  $modalCloseBtn.addEventListener('click', closeAddModal);
+  $modalCancelBtn.addEventListener('click', closeAddModal);
+  $modalSaveBtn.addEventListener('click', handleSave);
+
+  $deleteModalCloseBtn.addEventListener('click', closeDeleteModal);
+  $deleteCancelBtn.addEventListener('click', closeDeleteModal);
+  $deleteConfirmBtn.addEventListener('click', handleDelete);
+
+  // Close modals on overlay click
+  $addModal.addEventListener('click', function(e) {
+    if (e.target === $addModal) closeAddModal();
+  });
+  $deleteModal.addEventListener('click', function(e) {
+    if (e.target === $deleteModal) closeDeleteModal();
+  });
+
+  // Enter key in name field
+  $inputName.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSave();
+    }
+  });
+
+  // Delegated click on habit list
+  $habitList.addEventListener('click', function(e) {
+    var target = e.target.closest('[data-action]');
+    if (!target) return;
+    var action = target.getAttribute('data-action');
+    var id = target.getAttribute('data-id');
+    if (action === 'check' && id) {
+      handleCheck(id);
+    } else if (action === 'delete' && id) {
+      var name = target.getAttribute('data-name') || '';
+      openDeleteModal(id, name);
+    }
+  });
+
+  // ── Init ──────────────────────────────────────────────────────
+  async function boot() {
+    var app = await initApp();
+    state.uid = app.uid;
+    state.lang = app.lang;
+
+    applyTranslations();
+
+    await fetchHabits();
+    state.loading = false;
+    render();
+  }
+
+  boot();
+})();
 </script>
 </body>
 </html>

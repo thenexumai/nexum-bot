@@ -1,25 +1,31 @@
-import sqlite3 = require('sqlite3');
+/**
+ * NEXUM Database
+ * better-sqlite3 — fully synchronous, no data races.
+ * All migrations are idempotent (CREATE TABLE IF NOT EXISTS + ALTER IF NOT EXISTS).
+ */
+
+import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { config } from './config';
+import { createLogger } from '../infra/logger';
 
-const DB_PATH = process.env.DB_PATH || path.join(process.cwd(), 'data', 'nexum.db');
-fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+const log = createLogger('db');
 
-export const db = new sqlite3.Database(DB_PATH);
+const dbPath = path.resolve(config.dbPath);
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
-// Prevent unhandled 'error' events from crashing the process
-db.on('error', (err: Error) => {
-  console.error('[db] error:', err.message);
-});
+export const db = new Database(dbPath);
 
-// Performance pragmas
-db.serialize(() => {
-  db.run('PRAGMA journal_mode = WAL');
-  db.run('PRAGMA foreign_keys = ON');
-  db.run('PRAGMA synchronous = NORMAL');
-});
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+db.pragma('synchronous = NORMAL');
+db.pragma('cache_size = -64000'); // 64MB page cache
+
+log.info(`Opened database at ${dbPath}`);
 
 // ── Schema ────────────────────────────────────────────────────────────────────
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     uid        INTEGER PRIMARY KEY,
@@ -34,11 +40,11 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS conversations (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     uid        INTEGER NOT NULL,
-    role       TEXT NOT NULL,
+    role       TEXT NOT NULL CHECK(role IN ('user','assistant')),
     content    TEXT NOT NULL,
     created_at TEXT DEFAULT (datetime('now'))
   );
-  CREATE INDEX IF NOT EXISTS idx_conv_uid ON conversations(uid);
+  CREATE INDEX IF NOT EXISTS idx_conv_uid_created ON conversations(uid, created_at);
 
   CREATE TABLE IF NOT EXISTS memory (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,8 +72,8 @@ db.exec(`
     title       TEXT NOT NULL,
     description TEXT DEFAULT '',
     project     TEXT DEFAULT 'General',
-    priority    TEXT DEFAULT 'medium',
-    status      TEXT DEFAULT 'todo',
+    priority    TEXT DEFAULT 'medium' CHECK(priority IN ('low','medium','high')),
+    status      TEXT DEFAULT 'todo' CHECK(status IN ('todo','in_progress','done')),
     due_date    TEXT,
     created_at  TEXT DEFAULT (datetime('now')),
     updated_at  TEXT DEFAULT (datetime('now'))
@@ -87,7 +93,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS habit_logs (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    habit_id INTEGER NOT NULL,
+    habit_id INTEGER NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
     uid      INTEGER NOT NULL,
     done_at  TEXT DEFAULT (datetime('now'))
   );
@@ -98,21 +104,22 @@ db.exec(`
     name       TEXT NOT NULL,
     currency   TEXT DEFAULT 'UZS',
     balance    REAL DEFAULT 0,
-    icon       TEXT DEFAULT '$',
+    icon       TEXT DEFAULT '💰',
     created_at TEXT DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS finance (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     uid        INTEGER NOT NULL,
-    type       TEXT NOT NULL,
-    amount     REAL NOT NULL,
+    type       TEXT NOT NULL CHECK(type IN ('income','expense','transfer')),
+    amount     REAL NOT NULL CHECK(amount > 0),
     category   TEXT DEFAULT 'other',
     note       TEXT DEFAULT '',
     account_id INTEGER,
     currency   TEXT DEFAULT 'UZS',
     created_at TEXT DEFAULT (datetime('now'))
   );
+  CREATE INDEX IF NOT EXISTS idx_finance_uid ON finance(uid, created_at);
 
   CREATE TABLE IF NOT EXISTS reminders (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -181,10 +188,9 @@ db.exec(`
     id          TEXT PRIMARY KEY,
     uid         INTEGER NOT NULL,
     task        TEXT NOT NULL,
-    status      TEXT DEFAULT 'pending',
+    status      TEXT DEFAULT 'pending' CHECK(status IN ('pending','running','done','error')),
     result      TEXT,
     error       TEXT,
-    tool_calls  TEXT DEFAULT '[]',
     started_at  TEXT DEFAULT (datetime('now')),
     finished_at TEXT
   );
@@ -198,89 +204,44 @@ db.exec(`
     success    INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now'))
   );
+  CREATE INDEX IF NOT EXISTS idx_tool_results_uid ON tool_results(uid, created_at);
 `);
 
-// ── Safe migrations (only for columns added AFTER initial schema) ─────────────
-// These run silently — if the column already exists the error is swallowed.
-// Do NOT list columns that are already in CREATE TABLE above.
-const migrations: string[] = [
-  // Legacy columns from older schema versions — safe to attempt
-  `ALTER TABLE pc_agents ADD COLUMN device_id TEXT`,
-  `ALTER TABLE pc_agents ADD COLUMN device_name TEXT`,
-  `ALTER TABLE pc_agents ADD COLUMN platform TEXT`,
-];
-for (const sql of migrations) {
-  try { db.exec(sql); } catch { /* column already exists, ignore */ }
+// ── User helpers ──────────────────────────────────────────────────────────────
+
+export function ensureUser(uid: number, username?: string, firstName?: string): void {
+  db.prepare(`
+    INSERT INTO users (uid, username, first_name, updated_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(uid) DO UPDATE SET
+      username   = COALESCE(excluded.username, username),
+      first_name = COALESCE(excluded.first_name, first_name),
+      updated_at = excluded.updated_at
+  `).run(uid, username ?? null, firstName ?? null);
 }
 
-// ── Sync statement wrapper ────────────────────────────────────────────────────
-
-export interface RunResult {
-  lastInsertRowid: number | string;
-  changes: number;
+export function getUser(uid: number): Record<string, unknown> | undefined {
+  return db.prepare('SELECT * FROM users WHERE uid=?').get(uid) as Record<string, unknown> | undefined;
 }
 
-export class Statement {
-  private sql: string;
-
-  constructor(sql: string) {
-    this.sql = sql;
-  }
-
-  run(...params: any[]): RunResult {
-    let result: RunResult = { lastInsertRowid: 0, changes: 0 };
-    db.run(this.sql, params, function(err) {
-      if (!err) {
-        result.lastInsertRowid = this.lastID;
-        result.changes = this.changes;
-      }
-    });
-    return result;
-  }
-
-  get(...params: any[]): any {
-    let row: any = null;
-    db.get(this.sql, params, (err, r) => { if (!err) row = r; });
-    return row;
-  }
-
-  all(...params: any[]): any[] {
-    let rows: any[] = [];
-    db.all(this.sql, params, (err, r) => { if (!err) rows = r || []; });
-    return rows;
-  }
-}
-
-// Extend db with prepare
-(db as any).prepare = (sql: string): Statement => new Statement(sql);
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-export function ensureUser(uid: number, username?: string, firstName?: string) {
-  (db as any).prepare(
-    `INSERT INTO users (uid, username, first_name, updated_at) VALUES (?,?,?,datetime('now'))
-     ON CONFLICT(uid) DO UPDATE SET
-       username=excluded.username,
-       first_name=excluded.first_name,
-       updated_at=excluded.updated_at`
-  ).run(uid, username || null, firstName || null);
-}
+// ── BYOK helpers ──────────────────────────────────────────────────────────────
 
 export function getUserApiKey(uid: number, provider: string): string | null {
-  const row: any = (db as any).prepare(
-    'SELECT api_key FROM user_api_keys WHERE uid=? AND provider=?'
-  ).get(uid, provider);
-  return row?.api_key || null;
+  const row = db.prepare('SELECT api_key FROM user_api_keys WHERE uid=? AND provider=?')
+    .get(uid, provider) as { api_key: string } | undefined;
+  return row?.api_key ?? null;
 }
 
-export function setUserApiKey(uid: number, provider: string, key: string) {
-  (db as any).prepare(
-    `INSERT OR REPLACE INTO user_api_keys (uid, provider, api_key) VALUES (?,?,?)`
-  ).run(uid, provider, key);
+export function setUserApiKey(uid: number, provider: string, key: string): void {
+  db.prepare(`INSERT OR REPLACE INTO user_api_keys (uid, provider, api_key) VALUES (?, ?, ?)`)
+    .run(uid, provider, key);
 }
 
-export function deleteUserApiKey(uid: number, provider: string) {
-  (db as any).prepare(
-    `DELETE FROM user_api_keys WHERE uid=? AND provider=?`
-  ).run(uid, provider);
+export function deleteUserApiKey(uid: number, provider: string): void {
+  db.prepare('DELETE FROM user_api_keys WHERE uid=? AND provider=?').run(uid, provider);
+}
+
+export function listUserApiKeys(uid: number): { provider: string; created_at: string }[] {
+  return db.prepare('SELECT provider, created_at FROM user_api_keys WHERE uid=? ORDER BY provider')
+    .all(uid) as { provider: string; created_at: string }[];
 }

@@ -2,35 +2,30 @@ FROM node:20-slim
 
 RUN apt-get update && apt-get install -y \
     python3 \
+    python3-pip \
     make \
     g++ \
     build-essential \
-    libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
+# Install dependencies first (layer caching)
 COPY package*.json ./
-
-# Install all deps (devDeps needed for tsc)
 RUN npm ci
 
-# Explicitly rebuild native modules (sqlite3) for this environment
-RUN npm rebuild sqlite3
-
+# Copy source and compile TypeScript
 COPY tsconfig.json ./
 COPY src ./src
-
-# Compile TypeScript
 RUN npm run build
 
 # Copy static assets to dist
 RUN cp -r src/public dist/public
 
-# Remove devDeps to slim the image
+# Prune dev dependencies
 RUN npm prune --omit=dev
 
-# Ensure data directory exists
+# Create data directory for SQLite
 RUN mkdir -p /app/data
 
 ENV NODE_ENV=production

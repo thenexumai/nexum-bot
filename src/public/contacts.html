@@ -2,116 +2,780 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Contacts — NEXUM</title>
+<link rel="stylesheet" href="shared/design-system.css">
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--border:#222;
-  --text:#f0f0f0;--muted:#888;--accent:#6366f1;--radius:14px;
-  --font:-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,sans-serif;
-}
-body{background:var(--bg);color:var(--text);font-family:var(--font);padding:20px 16px;max-width:480px;margin:0 auto}
-h2{font-size:22px;font-weight:700;margin-bottom:4px}
-.subtitle{color:var(--muted);font-size:14px;margin-bottom:20px}
-.search-row{margin-bottom:12px}
-.search-row input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:11px 14px;font-size:14px;font-family:inherit}
-.search-row input:focus{outline:none;border-color:var(--accent)}
-.search-row input::placeholder{color:var(--muted)}
-.add-form{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:16px}
-.add-form h3{font-size:14px;font-weight:600;margin-bottom:10px}
-.add-form input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 12px;font-size:14px;font-family:inherit;margin-bottom:8px}
-.add-form input:focus{outline:none;border-color:var(--accent)}
-.add-form input::placeholder{color:var(--muted)}
-.add-form details summary{color:var(--muted);font-size:13px;cursor:pointer;margin-bottom:8px;list-style:none}
-.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer}
-.contacts{display:flex;flex-direction:column;gap:6px}
-.contact{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;align-items:center;gap:12px}
-.avatar{width:42px;height:42px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0;color:#fff}
-.info{flex:1}
-.cname{font-size:15px;font-weight:600}
-.cdetail{font-size:12px;color:var(--muted);margin-top:2px}
-.del{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;opacity:.5}
-.del:hover{opacity:1;color:#ef4444}
-.empty{color:var(--muted);text-align:center;padding:32px 0;font-size:14px}
+  .contact-count {
+    font-size: 13px;
+    color: var(--text-muted);
+    padding: 0 4px 8px;
+  }
+  .list-item { cursor: pointer; }
+  .avatar-lg-detail {
+    width: 72px;
+    height: 72px;
+    border-radius: var(--radius-full);
+    background: var(--accent-subtle);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 26px;
+    margin: 0 auto 12px;
+  }
+  .detail-name {
+    font-size: 20px;
+    font-weight: 700;
+    text-align: center;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+  .detail-company {
+    font-size: 14px;
+    color: var(--text-secondary);
+    text-align: center;
+    margin-bottom: 16px;
+  }
+  .detail-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .detail-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .detail-field-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+  }
+  .detail-field-value {
+    font-size: 15px;
+    color: var(--text-primary);
+    word-break: break-word;
+  }
+  .detail-field-value.empty-val {
+    color: var(--text-muted);
+    font-style: italic;
+  }
+  .detail-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 20px;
+  }
+  .detail-actions .btn { flex: 1; }
+  .modal-body .form-group:last-child { margin-bottom: 0; }
 </style>
 </head>
 <body>
-<h2>👤 Contacts</h2>
-<p class="subtitle">Your people</p>
-<div class="search-row">
-  <input id="search" placeholder="Search contacts..." oninput="search()">
-</div>
-<div class="add-form">
-  <h3>Add Contact</h3>
-  <input id="cName" placeholder="Name *">
-  <input id="cPhone" placeholder="Phone">
-  <input id="cEmail" placeholder="Email">
-  <details><summary>+ More fields</summary>
-    <input id="cCompany" placeholder="Company" style="margin-top:8px">
-  </details>
-  <button class="btn" onclick="addContact()">Add Contact</button>
-</div>
-<div class="contacts" id="contacts"><div class="empty">No contacts yet</div></div>
-<script>
-const uid = new URLSearchParams(location.search).get('uid') || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) || 0;
-let contacts = [];
+<div class="app-container" id="app">
 
-async function load(q) {
-  if (!uid) return;
-  const url = '/api/contacts?uid=' + uid + (q ? '&q=' + encodeURIComponent(q) : '');
-  const r = await fetch(url);
-  contacts = await r.json();
-  render();
-}
+  <!-- Header -->
+  <header class="app-header">
+    <span class="app-header-title" id="headerTitle">Contacts</span>
+    <button class="app-header-action" id="btnAdd" aria-label="Add contact">
+    </button>
+  </header>
 
-function initials(name) {
-  return name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
-}
+  <!-- Content -->
+  <main class="app-content" id="appContent">
 
-function render() {
-  const el = document.getElementById('contacts');
-  if (!contacts.length) { el.innerHTML = '<div class="empty">No contacts</div>'; return; }
-  el.innerHTML = contacts.map(c => `
-    <div class="contact">
-      <div class="avatar">${initials(c.name)}</div>
-      <div class="info">
-        <div class="cname">${c.name}</div>
-        <div class="cdetail">${[c.phone, c.email, c.company].filter(Boolean).join(' · ')}</div>
-      </div>
-      <button class="del" onclick="del(${c.id})">×</button>
+    <!-- Loading state -->
+    <div class="loading-container" id="loadingState">
+      <div class="spinner"></div>
     </div>
-  `).join('');
-}
 
-function search() {
-  const q = document.getElementById('search').value.trim();
-  load(q);
-}
+    <!-- Main content (hidden until loaded) -->
+    <div id="mainContent" class="hidden">
 
-async function addContact() {
-  const name = document.getElementById('cName').value.trim();
-  if (!name) return;
-  await fetch('/api/contacts', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({
-      uid: parseInt(uid),
-      name,
-      phone: document.getElementById('cPhone').value.trim(),
-      email: document.getElementById('cEmail').value.trim(),
-      company: document.getElementById('cCompany').value.trim(),
+      <!-- Search bar -->
+      <div class="search-bar" id="searchBar">
+        <input type="text" class="form-input" id="searchInput" autocomplete="off">
+      </div>
+
+      <!-- Contact count -->
+      <div class="contact-count" id="contactCount"></div>
+
+      <!-- Contact list -->
+      <div id="contactList"></div>
+
+      <!-- Empty state -->
+      <div class="empty-state hidden" id="emptyState">
+        <div class="empty-state-icon" id="emptyIcon"></div>
+        <div class="empty-state-title" id="emptyTitle">No contacts yet</div>
+        <div class="empty-state-desc" id="emptyDesc">Add your first contact</div>
+        <button class="btn btn-primary" id="emptyAddBtn">
+          Add Contact
+        </button>
+      </div>
+
+      <!-- Empty search results -->
+      <div class="empty-state hidden" id="emptySearch">
+        <div class="empty-state-icon" id="emptySearchIcon"></div>
+        <div class="empty-state-title" id="emptySearchTitle">No results</div>
+        <div class="empty-state-desc" id="emptySearchDesc">Try a different search</div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- Add/Edit Contact Modal -->
+<div class="modal-overlay" id="modalAdd">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title" id="modalAddTitle">Add Contact</span>
+      <button class="app-header-action" id="modalAddClose" aria-label="Close"></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label" id="labelName">Name</label>
+        <input type="text" class="form-input" id="inputName" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label" id="labelPhone">Phone</label>
+        <input type="tel" class="form-input" id="inputPhone">
+      </div>
+      <div class="form-group">
+        <label class="form-label" id="labelEmail">Email</label>
+        <input type="email" class="form-input" id="inputEmail">
+      </div>
+      <div class="form-group">
+        <label class="form-label" id="labelCompany">Company</label>
+        <input type="text" class="form-input" id="inputCompany">
+      </div>
+      <div class="form-group">
+        <label class="form-label" id="labelNotes">Notes</label>
+        <textarea class="form-textarea" id="inputNotes" rows="3"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-full" id="modalAddCancel">Cancel</button>
+      <button class="btn btn-primary btn-full" id="modalAddSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Contact Detail Modal -->
+<div class="modal-overlay" id="modalDetail">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title" id="modalDetailTitle">Contact</span>
+      <button class="app-header-action" id="modalDetailClose" aria-label="Close"></button>
+    </div>
+    <div class="modal-body">
+      <div class="avatar-lg-detail" id="detailAvatar"></div>
+      <div class="detail-name" id="detailName"></div>
+      <div class="detail-company" id="detailCompany"></div>
+      <div class="detail-fields" id="detailFields"></div>
+      <div class="detail-actions">
+        <button class="btn btn-primary" id="detailEditBtn">Edit</button>
+        <button class="btn btn-danger" id="detailDeleteBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div class="modal-overlay" id="modalDelete">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title" id="modalDeleteTitle">Delete Contact</span>
+      <button class="app-header-action" id="modalDeleteClose" aria-label="Close"></button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:15px;color:var(--text-secondary);text-align:center;padding:8px 0" id="deleteConfirmText">
+        Are you sure you want to delete this contact?
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-full" id="modalDeleteCancel">Cancel</button>
+      <button class="btn btn-danger btn-full" id="modalDeleteConfirm">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script src="shared/icons.js"></script>
+<script src="shared/app-shell.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  // ── Translations ──────────────────────────────────────────────────
+  var T = {
+    en: Object.assign({}, APP_TRANSLATIONS.en, {
+      'contacts_title': 'Contacts',
+      'add_contact': 'Add Contact',
+      'edit_contact': 'Edit Contact',
+      'search_contacts': 'Search contacts...',
+      'no_contacts': 'No contacts yet',
+      'add_first_contact': 'Add your first contact',
+      'no_results': 'No results',
+      'no_results_desc': 'Try a different search',
+      'name': 'Name',
+      'phone': 'Phone',
+      'email': 'Email',
+      'company': 'Company',
+      'notes_field': 'Notes',
+      'save': 'Save',
+      'cancel': 'Cancel',
+      'delete': 'Delete',
+      'edit': 'Edit',
+      'contact': 'Contact',
+      'delete_contact': 'Delete Contact',
+      'delete_confirm': 'Are you sure you want to delete this contact?',
+      'name_required': 'Name is required',
+      'not_specified': 'Not specified',
+      'contact_count': '{count} contacts',
+      'contact_count_one': '1 contact',
+    }),
+    ru: Object.assign({}, APP_TRANSLATIONS.ru, {
+      'contacts_title': 'Контакты',
+      'add_contact': 'Добавить контакт',
+      'edit_contact': 'Редактировать контакт',
+      'search_contacts': 'Поиск контактов...',
+      'no_contacts': 'Нет контактов',
+      'add_first_contact': 'Добавьте первый контакт',
+      'no_results': 'Ничего не найдено',
+      'no_results_desc': 'Попробуйте другой запрос',
+      'name': 'Имя',
+      'phone': 'Телефон',
+      'email': 'Email',
+      'company': 'Компания',
+      'notes_field': 'Заметки',
+      'save': 'Сохранить',
+      'cancel': 'Отмена',
+      'delete': 'Удалить',
+      'edit': 'Редактировать',
+      'contact': 'Контакт',
+      'delete_contact': 'Удалить контакт',
+      'delete_confirm': 'Вы уверены, что хотите удалить этот контакт?',
+      'name_required': 'Имя обязательно',
+      'not_specified': 'Не указано',
+      'contact_count': '{count} контактов',
+      'contact_count_one': '1 контакт',
     })
+  };
+
+  // ── State ─────────────────────────────────────────────────────────
+  var state = {
+    uid: '0',
+    lang: 'en',
+    contacts: [],
+    filteredContacts: [],
+    searchQuery: '',
+    editingContact: null, // null = add mode, object = edit mode
+    viewingContact: null,
+    deletingContact: null
+  };
+
+  // ── Helpers ───────────────────────────────────────────────────────
+  function t(key, params) {
+    var translations = T[state.lang] || T.en;
+    return tr(translations, key, params);
+  }
+
+  function getInitials(name) {
+    if (!name) return '?';
+    var parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return parts[0][0].toUpperCase();
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // ── API ───────────────────────────────────────────────────────────
+  function apiGet() {
+    return fetch('/api/contacts?uid=' + state.uid)
+      .then(function(r) {
+        if (!r.ok) throw new Error('Failed to load');
+        return r.json();
+      });
+  }
+
+  function apiCreate(data) {
+    return fetch('/api/contacts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(function(r) {
+      if (!r.ok) throw new Error('Failed to create');
+      return r.json();
+    });
+  }
+
+  function apiUpdate(id, data) {
+    return fetch('/api/contacts/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(function(r) {
+      if (!r.ok) throw new Error('Failed to update');
+      return r.json();
+    });
+  }
+
+  function apiDelete(id) {
+    return fetch('/api/contacts/' + id, {
+      method: 'DELETE'
+    }).then(function(r) {
+      if (!r.ok) throw new Error('Failed to delete');
+    });
+  }
+
+  // ── Data Loading ──────────────────────────────────────────────────
+  function loadContacts() {
+    showLoading(true);
+    apiGet()
+      .then(function(data) {
+        state.contacts = Array.isArray(data) ? data : [];
+        applyFilter();
+        showLoading(false);
+        renderAll();
+      })
+      .catch(function() {
+        state.contacts = [];
+        showLoading(false);
+        renderAll();
+      });
+  }
+
+  function applyFilter() {
+    var q = state.searchQuery.toLowerCase().trim();
+    if (!q) {
+      state.filteredContacts = state.contacts.slice();
+    } else {
+      state.filteredContacts = state.contacts.filter(function(c) {
+        return (c.name && c.name.toLowerCase().indexOf(q) !== -1) ||
+               (c.phone && c.phone.toLowerCase().indexOf(q) !== -1) ||
+               (c.email && c.email.toLowerCase().indexOf(q) !== -1) ||
+               (c.company && c.company.toLowerCase().indexOf(q) !== -1);
+      });
+    }
+    // Sort alphabetically by name
+    state.filteredContacts.sort(function(a, b) {
+      var na = (a.name || '').toLowerCase();
+      var nb = (b.name || '').toLowerCase();
+      return na < nb ? -1 : na > nb ? 1 : 0;
+    });
+  }
+
+  // ── Rendering ─────────────────────────────────────────────────────
+  function showLoading(show) {
+    var loading = document.getElementById('loadingState');
+    var main = document.getElementById('mainContent');
+    if (show) {
+      loading.classList.remove('hidden');
+      main.classList.add('hidden');
+    } else {
+      loading.classList.add('hidden');
+      main.classList.remove('hidden');
+    }
+  }
+
+  function renderAll() {
+    renderContactCount();
+    renderContactList();
+    renderEmptyStates();
+  }
+
+  function renderContactCount() {
+    var el = document.getElementById('contactCount');
+    var total = state.contacts.length;
+    if (total === 0) {
+      el.textContent = '';
+    } else if (total === 1) {
+      el.textContent = t('contact_count_one');
+    } else {
+      el.textContent = t('contact_count', { count: total });
+    }
+  }
+
+  function renderContactList() {
+    var container = document.getElementById('contactList');
+    var contacts = state.filteredContacts;
+
+    if (contacts.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+
+    // Group by first letter
+    var groups = {};
+    contacts.forEach(function(c) {
+      var letter = (c.name && c.name[0]) ? c.name[0].toUpperCase() : '#';
+      if (!/[A-ZА-ЯЁ]/.test(letter)) letter = '#';
+      if (!groups[letter]) groups[letter] = [];
+      groups[letter].push(c);
+    });
+
+    // Sort group keys
+    var letters = Object.keys(groups).sort(function(a, b) {
+      if (a === '#') return 1;
+      if (b === '#') return -1;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+
+    var html = '';
+    letters.forEach(function(letter) {
+      html += '<div class="list-section-title">' + escapeHtml(letter) + '</div>';
+      html += '<div class="list" style="margin-bottom:12px">';
+      groups[letter].forEach(function(c) {
+        var subtitle = [c.phone, c.company].filter(Boolean).join(' \u00B7 ');
+        html += '<div class="list-item" data-id="' + c.id + '" role="button" tabindex="0">';
+        html += '  <div class="avatar">' + escapeHtml(getInitials(c.name)) + '</div>';
+        html += '  <div class="list-item-content">';
+        html += '    <div class="list-item-title">' + escapeHtml(c.name) + '</div>';
+        if (subtitle) {
+          html += '    <div class="list-item-subtitle">' + escapeHtml(subtitle) + '</div>';
+        }
+        html += '  </div>';
+        html += '  <div class="list-item-meta">' + icon('chevronRight', 16) + '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+
+    container.innerHTML = html;
+
+    // Attach click handlers
+    var items = container.querySelectorAll('.list-item');
+    for (var i = 0; i < items.length; i++) {
+      items[i].addEventListener('click', onContactTap);
+      items[i].addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onContactTap.call(this, e);
+        }
+      });
+    }
+  }
+
+  function renderEmptyStates() {
+    var list = document.getElementById('contactList');
+    var emptyState = document.getElementById('emptyState');
+    var emptySearch = document.getElementById('emptySearch');
+    var searchBar = document.getElementById('searchBar');
+    var countEl = document.getElementById('contactCount');
+
+    if (state.contacts.length === 0) {
+      // No contacts at all
+      list.classList.add('hidden');
+      emptySearch.classList.add('hidden');
+      emptyState.classList.remove('hidden');
+      searchBar.classList.add('hidden');
+      countEl.classList.add('hidden');
+    } else if (state.filteredContacts.length === 0 && state.searchQuery) {
+      // Search returned nothing
+      list.classList.add('hidden');
+      emptyState.classList.add('hidden');
+      emptySearch.classList.remove('hidden');
+      searchBar.classList.remove('hidden');
+      countEl.classList.remove('hidden');
+    } else {
+      // Has contacts to show
+      list.classList.remove('hidden');
+      emptyState.classList.add('hidden');
+      emptySearch.classList.add('hidden');
+      searchBar.classList.remove('hidden');
+      countEl.classList.remove('hidden');
+    }
+  }
+
+  // ── i18n Application ──────────────────────────────────────────────
+  function applyTranslations() {
+    document.getElementById('headerTitle').textContent = t('contacts_title');
+    document.getElementById('searchInput').placeholder = t('search_contacts');
+    document.getElementById('emptyTitle').textContent = t('no_contacts');
+    document.getElementById('emptyDesc').textContent = t('add_first_contact');
+    document.getElementById('emptyAddBtn').textContent = t('add_contact');
+    document.getElementById('emptySearchTitle').textContent = t('no_results');
+    document.getElementById('emptySearchDesc').textContent = t('no_results_desc');
+    document.getElementById('labelName').textContent = t('name') + ' *';
+    document.getElementById('labelPhone').textContent = t('phone');
+    document.getElementById('labelEmail').textContent = t('email');
+    document.getElementById('labelCompany').textContent = t('company');
+    document.getElementById('labelNotes').textContent = t('notes_field');
+    document.getElementById('modalAddCancel').textContent = t('cancel');
+    document.getElementById('modalAddSave').textContent = t('save');
+    document.getElementById('modalDeleteCancel').textContent = t('cancel');
+    document.getElementById('modalDeleteConfirm').textContent = t('delete');
+    document.getElementById('deleteConfirmText').textContent = t('delete_confirm');
+    document.getElementById('modalDeleteTitle').textContent = t('delete_contact');
+    document.getElementById('detailEditBtn').textContent = t('edit');
+    document.getElementById('detailDeleteBtn').textContent = t('delete');
+    document.getElementById('modalDetailTitle').textContent = t('contact');
+  }
+
+  // ── Modal Helpers ─────────────────────────────────────────────────
+  function openModal(id) {
+    var modal = document.getElementById(id);
+    // Force reflow before adding active class for transition
+    modal.offsetHeight;
+    modal.classList.add('active');
+  }
+
+  function closeModal(id) {
+    document.getElementById(id).classList.remove('active');
+  }
+
+  // ── Contact Tap → Detail ──────────────────────────────────────────
+  function onContactTap(e) {
+    var el = this;
+    var id = parseInt(el.getAttribute('data-id'), 10);
+    var contact = state.contacts.find(function(c) { return c.id === id; });
+    if (!contact) return;
+    showDetailModal(contact);
+  }
+
+  function showDetailModal(contact) {
+    state.viewingContact = contact;
+
+    document.getElementById('detailAvatar').textContent = getInitials(contact.name);
+    document.getElementById('detailName').textContent = contact.name || '';
+    document.getElementById('detailCompany').textContent = contact.company || '';
+    document.getElementById('detailCompany').style.display = contact.company ? '' : 'none';
+
+    var fieldsHtml = '';
+    var fields = [
+      { label: t('phone'), value: contact.phone },
+      { label: t('email'), value: contact.email },
+      { label: t('company'), value: contact.company },
+      { label: t('notes_field'), value: contact.notes }
+    ];
+    fields.forEach(function(f) {
+      fieldsHtml += '<div class="detail-field">';
+      fieldsHtml += '<div class="detail-field-label">' + escapeHtml(f.label) + '</div>';
+      if (f.value) {
+        fieldsHtml += '<div class="detail-field-value">' + escapeHtml(f.value) + '</div>';
+      } else {
+        fieldsHtml += '<div class="detail-field-value empty-val">' + t('not_specified') + '</div>';
+      }
+      fieldsHtml += '</div>';
+    });
+    document.getElementById('detailFields').innerHTML = fieldsHtml;
+
+    openModal('modalDetail');
+  }
+
+  // ── Add/Edit Modal ────────────────────────────────────────────────
+  function openAddModal() {
+    state.editingContact = null;
+    document.getElementById('modalAddTitle').textContent = t('add_contact');
+    document.getElementById('inputName').value = '';
+    document.getElementById('inputPhone').value = '';
+    document.getElementById('inputEmail').value = '';
+    document.getElementById('inputCompany').value = '';
+    document.getElementById('inputNotes').value = '';
+    openModal('modalAdd');
+    setTimeout(function() {
+      document.getElementById('inputName').focus();
+    }, 350);
+  }
+
+  function openEditModal(contact) {
+    state.editingContact = contact;
+    document.getElementById('modalAddTitle').textContent = t('edit_contact');
+    document.getElementById('inputName').value = contact.name || '';
+    document.getElementById('inputPhone').value = contact.phone || '';
+    document.getElementById('inputEmail').value = contact.email || '';
+    document.getElementById('inputCompany').value = contact.company || '';
+    document.getElementById('inputNotes').value = contact.notes || '';
+    openModal('modalAdd');
+    setTimeout(function() {
+      document.getElementById('inputName').focus();
+    }, 350);
+  }
+
+  function saveContact() {
+    var name = document.getElementById('inputName').value.trim();
+    if (!name) {
+      document.getElementById('inputName').style.borderColor = 'var(--danger)';
+      document.getElementById('inputName').focus();
+      return;
+    }
+
+    var data = {
+      name: name,
+      phone: document.getElementById('inputPhone').value.trim(),
+      email: document.getElementById('inputEmail').value.trim(),
+      company: document.getElementById('inputCompany').value.trim(),
+      notes: document.getElementById('inputNotes').value.trim()
+    };
+
+    var saveBtn = document.getElementById('modalAddSave');
+    saveBtn.disabled = true;
+    saveBtn.textContent = t('loading');
+
+    var promise;
+    if (state.editingContact) {
+      promise = apiUpdate(state.editingContact.id, data);
+    } else {
+      data.uid = parseInt(state.uid, 10);
+      promise = apiCreate(data);
+    }
+
+    promise
+      .then(function() {
+        closeModal('modalAdd');
+        loadContacts();
+      })
+      .catch(function() {
+        // Silently handle - keep modal open
+      })
+      .then(function() {
+        saveBtn.disabled = false;
+        saveBtn.textContent = t('save');
+      });
+  }
+
+  // ── Delete ────────────────────────────────────────────────────────
+  function confirmDelete(contact) {
+    state.deletingContact = contact;
+    openModal('modalDelete');
+  }
+
+  function executeDelete() {
+    if (!state.deletingContact) return;
+    var deleteBtn = document.getElementById('modalDeleteConfirm');
+    deleteBtn.disabled = true;
+
+    apiDelete(state.deletingContact.id)
+      .then(function() {
+        closeModal('modalDelete');
+        closeModal('modalDetail');
+        state.deletingContact = null;
+        state.viewingContact = null;
+        loadContacts();
+      })
+      .catch(function() {
+        // Silently handle
+      })
+      .then(function() {
+        deleteBtn.disabled = false;
+      });
+  }
+
+  // ── Search ────────────────────────────────────────────────────────
+  var searchTimeout = null;
+  function onSearchInput() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(function() {
+      state.searchQuery = document.getElementById('searchInput').value.trim();
+      applyFilter();
+      renderAll();
+    }, 150);
+  }
+
+  // ── Event Binding ─────────────────────────────────────────────────
+  function bindEvents() {
+    // Add button in header
+    document.getElementById('btnAdd').addEventListener('click', openAddModal);
+
+    // Empty state add button
+    document.getElementById('emptyAddBtn').addEventListener('click', openAddModal);
+
+    // Search input
+    document.getElementById('searchInput').addEventListener('input', onSearchInput);
+
+    // Add/Edit modal
+    document.getElementById('modalAddClose').addEventListener('click', function() { closeModal('modalAdd'); });
+    document.getElementById('modalAddCancel').addEventListener('click', function() { closeModal('modalAdd'); });
+    document.getElementById('modalAddSave').addEventListener('click', saveContact);
+
+    // Detail modal
+    document.getElementById('modalDetailClose').addEventListener('click', function() { closeModal('modalDetail'); });
+    document.getElementById('detailEditBtn').addEventListener('click', function() {
+      if (state.viewingContact) {
+        closeModal('modalDetail');
+        setTimeout(function() {
+          openEditModal(state.viewingContact);
+        }, 300);
+      }
+    });
+    document.getElementById('detailDeleteBtn').addEventListener('click', function() {
+      if (state.viewingContact) {
+        confirmDelete(state.viewingContact);
+      }
+    });
+
+    // Delete confirm modal
+    document.getElementById('modalDeleteClose').addEventListener('click', function() { closeModal('modalDelete'); });
+    document.getElementById('modalDeleteCancel').addEventListener('click', function() { closeModal('modalDelete'); });
+    document.getElementById('modalDeleteConfirm').addEventListener('click', executeDelete);
+
+    // Close modals on overlay click
+    ['modalAdd', 'modalDetail', 'modalDelete'].forEach(function(id) {
+      document.getElementById(id).addEventListener('click', function(e) {
+        if (e.target === this) closeModal(id);
+      });
+    });
+
+    // Reset name input border on typing
+    document.getElementById('inputName').addEventListener('input', function() {
+      this.style.borderColor = '';
+    });
+
+    // Handle Enter key in form
+    var formInputs = ['inputName', 'inputPhone', 'inputEmail', 'inputCompany'];
+    formInputs.forEach(function(id) {
+      document.getElementById(id).addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          saveContact();
+        }
+      });
+    });
+  }
+
+  // ── Inject Icons ──────────────────────────────────────────────────
+  function injectIcons() {
+    document.getElementById('btnAdd').innerHTML = icon('plus', 20);
+    document.getElementById('emptyIcon').innerHTML = icon('contacts', 28);
+    document.getElementById('emptySearchIcon').innerHTML = icon('search', 28);
+    document.getElementById('modalAddClose').innerHTML = icon('x', 20);
+    document.getElementById('modalDetailClose').innerHTML = icon('x', 20);
+    document.getElementById('modalDeleteClose').innerHTML = icon('x', 20);
+
+    // Search icon inside search bar
+    var searchBar = document.getElementById('searchBar');
+    var searchSvg = document.createElement('span');
+    searchSvg.innerHTML = icon('search', 18);
+    var svgEl = searchSvg.firstChild;
+    if (svgEl) {
+      searchBar.insertBefore(svgEl, searchBar.firstChild);
+    }
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────
+  initApp().then(function(app) {
+    state.uid = app.uid;
+    state.lang = app.lang;
+
+    injectIcons();
+    applyTranslations();
+    bindEvents();
+    loadContacts();
   });
-  ['cName','cPhone','cEmail','cCompany'].forEach(id => document.getElementById(id).value = '');
-  load();
-}
 
-async function del(id) {
-  await fetch('/api/contacts/' + id, { method:'DELETE' });
-  load();
-}
-
-load();
+})();
 </script>
 </body>
 </html>

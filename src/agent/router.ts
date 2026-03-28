@@ -1,72 +1,149 @@
-// NEXUM AI Router — multi-provider with fallback chain and streaming
+/**
+ * NEXUM AI Router
+ *
+ * Multi-provider with real SSE streaming support.
+ * BYOK keys → system fallback chain.
+ *
+ * Streaming works like OpenClaw:
+ *  - tokens arrive via SSE from the LLM
+ *  - each token delta is appended to accumulated text
+ *  - onChunk(accumulated) is called after each token
+ *  - Telegram edits the message in-place → text appears to grow
+ */
 
-import { config, getKey } from '../core/config';
-import { db } from '../core/db';
+import { getProviderKey, type AiProvider } from '../core/config';
+import { getUserApiKey } from '../core/db';
+import { createLogger } from '../infra/logger';
+
+const log = createLogger('router');
 
 export interface Message {
   role: 'user' | 'assistant' | 'system';
-  content: string | any[];
+  content: string | ContentPart[];
+}
+
+export interface ContentPart {
+  type: 'text' | 'image_url';
+  text?: string;
+  image_url?: { url: string };
 }
 
 export type StreamCallback = (accumulated: string) => void;
 
-function getUserApiKey(uid: number, provider: string): string | null {
-  const row = (db as any).prepare(
-    'SELECT api_key FROM user_api_keys WHERE uid=? AND provider=?'
-  ).get(uid, provider) as any;
-  return row?.api_key || null;
+// ── Real SSE streaming for OpenAI-compatible providers ───────────────────────
+
+async function streamOpenAICompat(
+  baseUrl: string,
+  key: string,
+  model: string,
+  msgs: Message[],
+  system: string,
+  name: string,
+  onChunk: StreamCallback
+): Promise<string> {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'system', content: system }, ...msgs],
+      max_tokens: 2048,
+      temperature: 0.7,
+      stream: true,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`${name} ${response.status}: ${body.slice(0, 150)}`);
+  }
+
+  if (!response.body) throw new Error(`${name}: no response body`);
+
+  const reader  = response.body.getReader();
+  const decoder = new TextDecoder();
+  let accumulated = '';
+  let buffer      = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? ''; // keep incomplete line
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+      const data = trimmed.slice(6);
+      if (data === '[DONE]') break;
+
+      try {
+        const parsed = JSON.parse(data) as {
+          choices: [{ delta: { content?: string }; finish_reason?: string }];
+        };
+        const delta = parsed.choices[0]?.delta?.content;
+        if (delta) {
+          accumulated += delta;
+          onChunk(accumulated);
+        }
+      } catch {
+        // Malformed SSE chunk — skip silently
+      }
+    }
+  }
+
+  return accumulated || '';
 }
 
-// ── Provider implementations ──────────────────────────────────────────────────
-
-async function callCerebras(msgs: Message[], key: string, system: string): Promise<string> {
-  const r = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+// Non-streaming fallback (for providers that don't support stream=true well)
+async function callOpenAICompat(
+  baseUrl: string, key: string, model: string,
+  msgs: Message[], system: string, name: string
+): Promise<string> {
+  const r = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'llama-3.3-70b',
+      model,
       messages: [{ role: 'system', content: system }, ...msgs],
       max_tokens: 2048,
       temperature: 0.7,
     }),
   });
-  if (!r.ok) throw new Error(`Cerebras ${r.status}: ${await r.text().catch(() => '')}`);
-  return ((await r.json()) as any).choices[0].message.content;
+  if (!r.ok) throw new Error(`${name} ${r.status}: ${(await r.text().catch(() => '')).slice(0, 150)}`);
+  return ((await r.json()) as { choices: [{ message: { content: string } }] }).choices[0].message.content;
 }
 
-async function callGroq(msgs: Message[], key: string, system: string): Promise<string> {
-  const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'system', content: system }, ...msgs],
-      max_tokens: 2048,
-      temperature: 0.7,
-    }),
-  });
-  if (!r.ok) throw new Error(`Groq ${r.status}: ${await r.text().catch(() => '')}`);
-  return ((await r.json()) as any).choices[0].message.content;
-}
+// ── Gemini (doesn't support standard SSE format easily — use non-streaming) ──
 
-async function callGemini(msgs: Message[], key: string, system: string, vision = false): Promise<string> {
-  const model = vision ? 'gemini-1.5-flash' : 'gemini-1.5-flash';
+async function callGemini(
+  msgs: Message[], key: string, system: string, vision = false
+): Promise<string> {
   const contents = msgs.map(m => {
     if (typeof m.content === 'string') {
       return { role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] };
     }
-    const parts = (m.content as any[]).map((c: any) => {
-      if (c.type === 'image_url') {
-        const b64 = c.image_url.url.replace(/^data:[^;]+;base64,/, '');
-        const mime = c.image_url.url.match(/^data:([^;]+)/)?.[1] || 'image/jpeg';
-        return { inlineData: { mimeType: mime, data: b64 } };
-      }
-      return { text: c.text || '' };
-    });
-    return { role: 'user', parts };
+    return {
+      role: 'user',
+      parts: (m.content as ContentPart[]).map(c => {
+        if (c.type === 'image_url' && c.image_url) {
+          const b64  = c.image_url.url.replace(/^data:[^;]+;base64,/, '');
+          const mime = c.image_url.url.match(/^data:([^;]+)/)?.[1] ?? 'image/jpeg';
+          return { inlineData: { mimeType: mime, data: b64 } };
+        }
+        return { text: c.text ?? '' };
+      }),
+    };
   });
+
   const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -76,26 +153,18 @@ async function callGemini(msgs: Message[], key: string, system: string, vision =
       }),
     }
   );
-  if (!r.ok) throw new Error(`Gemini ${r.status}: ${await r.text().catch(() => '')}`);
-  return ((await r.json()) as any).candidates[0].content.parts[0].text;
+  if (!r.ok) throw new Error(`Gemini ${r.status}: ${(await r.text().catch(() => '')).slice(0, 150)}`);
+  return ((await r.json()) as { candidates: [{ content: { parts: [{ text: string }] } }] })
+    .candidates[0].content.parts[0].text;
 }
 
-async function callDeepSeek(msgs: Message[], key: string, system: string): Promise<string> {
-  const r = await fetch('https://api.deepseek.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'deepseek-chat',
-      messages: [{ role: 'system', content: system }, ...msgs],
-      max_tokens: 2048,
-    }),
-  });
-  if (!r.ok) throw new Error(`DeepSeek ${r.status}: ${await r.text().catch(() => '')}`);
-  return ((await r.json()) as any).choices[0].message.content;
-}
+// ── Claude (Anthropic SSE streaming) ─────────────────────────────────────────
 
-async function callClaude(msgs: Message[], key: string, system: string): Promise<string> {
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
+async function streamClaude(
+  msgs: Message[], key: string, system: string,
+  onChunk: StreamCallback
+): Promise<string> {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'x-api-key': key,
@@ -106,71 +175,107 @@ async function callClaude(msgs: Message[], key: string, system: string): Promise
       model: 'claude-3-haiku-20240307',
       max_tokens: 2048,
       system,
-      messages: msgs.filter(m => m.role !== 'system'),
+      stream: true,
+      messages: msgs.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content })),
     }),
   });
-  if (!r.ok) throw new Error(`Claude ${r.status}: ${await r.text().catch(() => '')}`);
-  return ((await r.json()) as any).content[0].text;
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Claude ${response.status}: ${body.slice(0, 150)}`);
+  }
+
+  if (!response.body) throw new Error('Claude: no response body');
+
+  const reader  = response.body.getReader();
+  const decoder = new TextDecoder();
+  let accumulated = '';
+  let buffer      = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data: ')) continue;
+      const data = trimmed.slice(6);
+
+      try {
+        const parsed = JSON.parse(data) as {
+          type: string;
+          delta?: { type: string; text?: string };
+        };
+        if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+          accumulated += parsed.delta.text;
+          onChunk(accumulated);
+        }
+      } catch { /* skip */ }
+    }
+  }
+
+  return accumulated || '';
 }
 
-async function callGrok(msgs: Message[], key: string, system: string): Promise<string> {
-  const r = await fetch('https://api.x.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'grok-2-1212',
-      messages: [{ role: 'system', content: system }, ...msgs],
-      max_tokens: 2048,
-    }),
-  });
-  if (!r.ok) throw new Error(`Grok ${r.status}: ${await r.text().catch(() => '')}`);
-  return ((await r.json()) as any).choices[0].message.content;
-}
+// ── Provider streaming map ────────────────────────────────────────────────────
 
-async function callOpenRouter(msgs: Message[], key: string, system: string): Promise<string> {
-  const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'anthropic/claude-3-haiku',
-      messages: [{ role: 'system', content: system }, ...msgs],
-      max_tokens: 2048,
-    }),
-  });
-  if (!r.ok) throw new Error(`OpenRouter ${r.status}: ${await r.text().catch(() => '')}`);
-  return ((await r.json()) as any).choices[0].message.content;
-}
+// Providers confirmed to support stream=true well
+const STREAMING_PROVIDERS: Partial<Record<AiProvider, {
+  stream: (msgs: Message[], key: string, system: string, onChunk: StreamCallback) => Promise<string>;
+  call:   (msgs: Message[], key: string, system: string) => Promise<string>;
+}>> = {
+  cerebras: {
+    stream: (m, k, s, cb) => streamOpenAICompat('https://api.cerebras.ai/v1', k, 'llama-3.3-70b', m, s, 'Cerebras', cb),
+    call:   (m, k, s)     => callOpenAICompat('https://api.cerebras.ai/v1', k, 'llama-3.3-70b', m, s, 'Cerebras'),
+  },
+  groq: {
+    stream: (m, k, s, cb) => streamOpenAICompat('https://api.groq.com/openai/v1', k, 'llama-3.3-70b-versatile', m, s, 'Groq', cb),
+    call:   (m, k, s)     => callOpenAICompat('https://api.groq.com/openai/v1', k, 'llama-3.3-70b-versatile', m, s, 'Groq'),
+  },
+  deepseek: {
+    stream: (m, k, s, cb) => streamOpenAICompat('https://api.deepseek.com/v1', k, 'deepseek-chat', m, s, 'DeepSeek', cb),
+    call:   (m, k, s)     => callOpenAICompat('https://api.deepseek.com/v1', k, 'deepseek-chat', m, s, 'DeepSeek'),
+  },
+  grok: {
+    stream: (m, k, s, cb) => streamOpenAICompat('https://api.x.ai/v1', k, 'grok-2-1212', m, s, 'Grok', cb),
+    call:   (m, k, s)     => callOpenAICompat('https://api.x.ai/v1', k, 'grok-2-1212', m, s, 'Grok'),
+  },
+  openrouter: {
+    stream: (m, k, s, cb) => streamOpenAICompat('https://openrouter.ai/api/v1', k, 'anthropic/claude-3-haiku', m, s, 'OpenRouter', cb),
+    call:   (m, k, s)     => callOpenAICompat('https://openrouter.ai/api/v1', k, 'anthropic/claude-3-haiku', m, s, 'OpenRouter'),
+  },
+  claude: {
+    stream: (m, k, s, cb) => streamClaude(m, k, s, cb),
+    call:   (m, k, s)     => callOpenAICompat('https://api.anthropic.com/v1', k, 'claude-3-haiku-20240307', m, s, 'Claude'),
+  },
+  // Non-streaming (use call only, onChunk gets full result at end)
+  gemini: {
+    stream: async (m, k, s, cb) => { const r = await callGemini(m, k, s); cb(r); return r; },
+    call:   (m, k, s)           => callGemini(m, k, s),
+  },
+  sambanova: {
+    stream: async (m, k, s, cb) => streamOpenAICompat('https://api.sambanova.ai/v1', k, 'Meta-Llama-3.3-70B-Instruct', m, s, 'SambaNova', cb),
+    call:   (m, k, s)           => callOpenAICompat('https://api.sambanova.ai/v1', k, 'Meta-Llama-3.3-70B-Instruct', m, s, 'SambaNova'),
+  },
+  together: {
+    stream: async (m, k, s, cb) => streamOpenAICompat('https://api.together.xyz/v1', k, 'meta-llama/Llama-3-70b-chat-hf', m, s, 'Together', cb),
+    call:   (m, k, s)           => callOpenAICompat('https://api.together.xyz/v1', k, 'meta-llama/Llama-3-70b-chat-hf', m, s, 'Together'),
+  },
+};
 
-async function callSambanova(msgs: Message[], key: string, system: string): Promise<string> {
-  const r = await fetch('https://api.sambanova.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'Meta-Llama-3.3-70B-Instruct',
-      messages: [{ role: 'system', content: system }, ...msgs],
-      max_tokens: 2048,
-    }),
-  });
-  if (!r.ok) throw new Error(`SambaNova ${r.status}: ${await r.text().catch(() => '')}`);
-  return ((await r.json()) as any).choices[0].message.content;
-}
+// Priority order
+const FALLBACK_ORDER: AiProvider[] = ['cerebras','groq','sambanova','together','gemini','deepseek','grok','openrouter','claude'];
+const BYOK_ORDER:     AiProvider[] = ['cerebras','groq','gemini','deepseek','claude','grok','openrouter'];
 
-async function callTogether(msgs: Message[], key: string, system: string): Promise<string> {
-  const r = await fetch('https://api.together.xyz/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'meta-llama/Llama-3-70b-chat-hf',
-      messages: [{ role: 'system', content: system }, ...msgs],
-      max_tokens: 2048,
-    }),
-  });
-  if (!r.ok) throw new Error(`Together ${r.status}: ${await r.text().catch(() => '')}`);
-  return ((await r.json()) as any).choices[0].message.content;
-}
+// ── Public API ────────────────────────────────────────────────────────────────
 
-// ── Main chat function ────────────────────────────────────────────────────────
-
+/**
+ * Non-streaming chat. Used for commands, tools, background tasks.
+ */
 export async function chat(
   uid: number,
   messages: Message[],
@@ -179,124 +284,112 @@ export async function chat(
 ): Promise<string> {
   const errors: string[] = [];
 
-  // 1. User's own API keys take highest priority (BYOK)
-  const userProviders: Array<[string, () => Promise<string>]> = [];
-
-  const uCerebras = getUserApiKey(uid, 'cerebras');
-  if (uCerebras) userProviders.push(['cerebras', () => callCerebras(messages, uCerebras, system)]);
-
-  const uGroq = getUserApiKey(uid, 'groq');
-  if (uGroq) userProviders.push(['groq', () => callGroq(messages, uGroq, system)]);
-
-  const uGemini = getUserApiKey(uid, 'gemini');
-  if (uGemini) userProviders.push(['gemini', () => callGemini(messages, uGemini, system, hasImage)]);
-
-  const uDeepSeek = getUserApiKey(uid, 'deepseek');
-  if (uDeepSeek) userProviders.push(['deepseek', () => callDeepSeek(messages, uDeepSeek, system)]);
-
-  const uClaude = getUserApiKey(uid, 'claude');
-  if (uClaude) userProviders.push(['claude', () => callClaude(messages, uClaude, system)]);
-
-  const uGrok = getUserApiKey(uid, 'grok');
-  if (uGrok) userProviders.push(['grok', () => callGrok(messages, uGrok, system)]);
-
-  const uOR = getUserApiKey(uid, 'openrouter');
-  if (uOR) userProviders.push(['openrouter', () => callOpenRouter(messages, uOR, system)]);
-
-  for (const [name, fn] of userProviders) {
+  // 1. BYOK first
+  for (const provider of BYOK_ORDER) {
+    const key = getUserApiKey(uid, provider);
+    if (!key) continue;
+    const p = STREAMING_PROVIDERS[provider];
+    if (!p) continue;
+    // For vision, only Gemini
+    if (hasImage && provider !== 'gemini') continue;
     try {
-      console.log(`[ai] byok provider=${name} uid=${uid}`);
-      return await fn();
-    } catch (e: any) {
-      errors.push(`byok_${name}: ${e.message?.slice(0, 60)}`);
+      log.debug(`BYOK call uid=${uid} provider=${provider}`);
+      return await p.call(messages, key, system);
+    } catch (e) {
+      errors.push(`byok_${provider}: ${(e as Error).message?.slice(0, 60)}`);
     }
   }
 
-  // 2. Vision path (images need Gemini)
+  // 2. Vision → Gemini only
   if (hasImage) {
-    const gKey = getKey('gemini');
-    if (gKey) {
-      try { return await callGemini(messages, gKey, system, true); }
-      catch (e: any) { errors.push(`sys_gemini_vision: ${e.message?.slice(0, 60)}`); }
+    const k = getProviderKey('gemini');
+    if (k) {
+      try { return await callGemini(messages, k, system, true); }
+      catch (e) { errors.push(`gemini_vision: ${(e as Error).message?.slice(0, 60)}`); }
     }
-    // Fall through to text-only with image stripped
     const textMsgs = messages.map(m => ({
       ...m,
       content: Array.isArray(m.content)
-        ? (m.content as any[]).filter((c: any) => c.type === 'text').map((c: any) => c.text).join(' ')
+        ? (m.content as ContentPart[]).filter(c => c.type === 'text').map(c => c.text ?? '').join(' ')
         : m.content,
     }));
     return chat(uid, textMsgs, system, false);
   }
 
-  // 3. System key fallback chain (fastest to most capable)
-  const systemProviders: Array<[string, () => Promise<string>]> = [];
-
-  const cbKey = getKey('cerebras');
-  if (cbKey) systemProviders.push(['cerebras', () => callCerebras(messages, cbKey, system)]);
-
-  const grKey = getKey('groq');
-  if (grKey) systemProviders.push(['groq', () => callGroq(messages, grKey, system)]);
-
-  const snKey = getKey('sambanova');
-  if (snKey) systemProviders.push(['sambanova', () => callSambanova(messages, snKey, system)]);
-
-  const toKey = getKey('together');
-  if (toKey) systemProviders.push(['together', () => callTogether(messages, toKey, system)]);
-
-  const gKey2 = getKey('gemini');
-  if (gKey2) systemProviders.push(['gemini', () => callGemini(messages, gKey2, system)]);
-
-  const dsKey = getKey('deepseek');
-  if (dsKey) systemProviders.push(['deepseek', () => callDeepSeek(messages, dsKey, system)]);
-
-  const gkKey = getKey('grok');
-  if (gkKey) systemProviders.push(['grok', () => callGrok(messages, gkKey, system)]);
-
-  const orKey = getKey('openrouter');
-  if (orKey) systemProviders.push(['openrouter', () => callOpenRouter(messages, orKey, system)]);
-
-  const clKey = getKey('claude');
-  if (clKey) systemProviders.push(['claude', () => callClaude(messages, clKey, system)]);
-
-  for (const [name, fn] of systemProviders) {
+  // 3. System fallback
+  for (const provider of FALLBACK_ORDER) {
+    const key = getProviderKey(provider);
+    if (!key) continue;
+    const p = STREAMING_PROVIDERS[provider];
+    if (!p) continue;
     try {
-      console.log(`[ai] sys provider=${name} uid=${uid}`);
-      return await fn();
-    } catch (e: any) {
-      errors.push(`sys_${name}: ${e.message?.slice(0, 60)}`);
+      log.debug(`SYS call uid=${uid} provider=${provider}`);
+      return await p.call(messages, key, system);
+    } catch (e) {
+      errors.push(`sys_${provider}: ${(e as Error).message?.slice(0, 60)}`);
     }
   }
 
-  // All failed
-  const errSummary = errors.slice(-3).join('; ');
-  throw new Error(`All AI providers failed. Last errors: ${errSummary}`);
+  throw new Error(`All AI providers unavailable. ${errors.slice(-3).join('; ')}`);
 }
 
-// ── Streaming wrapper (simulated — polls completion) ─────────────────────────
-// Real token streaming is complex across providers; we simulate with a single call
-// and invoke the callback once with the full result.
-
+/**
+ * Real SSE streaming chat.
+ * onChunk is called with ACCUMULATED text after each token — not deltas.
+ * Telegram edits in-place → text grows visibly, OpenClaw-style.
+ */
 export async function chatStreaming(
   uid: number,
   messages: Message[],
   system: string,
-  onUpdate: StreamCallback
+  onChunk: StreamCallback
 ): Promise<string> {
-  const result = await chat(uid, messages, system, false);
-  // Simulate progressive streaming for better UX
-  const words = result.split(' ');
-  let accumulated = '';
-  const chunkSize = Math.max(5, Math.floor(words.length / 10));
+  const errors: string[] = [];
 
-  for (let i = 0; i < words.length; i += chunkSize) {
-    accumulated = words.slice(0, i + chunkSize).join(' ');
-    onUpdate(accumulated);
-    if (i + chunkSize < words.length) {
-      await new Promise(r => setTimeout(r, 80));
+  // 1. BYOK first
+  for (const provider of BYOK_ORDER) {
+    const key = getUserApiKey(uid, provider);
+    if (!key) continue;
+    const p = STREAMING_PROVIDERS[provider];
+    if (!p) continue;
+    try {
+      log.debug(`BYOK stream uid=${uid} provider=${provider}`);
+      return await p.stream(messages, key, system, onChunk);
+    } catch (e) {
+      errors.push(`byok_${provider}: ${(e as Error).message?.slice(0, 60)}`);
     }
   }
 
-  onUpdate(result);
-  return result;
+  // 2. System fallback with streaming
+  for (const provider of FALLBACK_ORDER) {
+    const key = getProviderKey(provider);
+    if (!key) continue;
+    const p = STREAMING_PROVIDERS[provider];
+    if (!p) continue;
+    try {
+      log.debug(`SYS stream uid=${uid} provider=${provider}`);
+      return await p.stream(messages, key, system, onChunk);
+    } catch (e) {
+      errors.push(`sys_${provider}: ${(e as Error).message?.slice(0, 60)}`);
+    }
+  }
+
+  throw new Error(`All AI providers unavailable. ${errors.slice(-3).join('; ')}`);
+}
+
+// ── Post-processing: fix common model formatting issues ───────────────────────
+
+/**
+ * Fix formatting issues that models produce but Telegram renders wrong.
+ * - "* item" (single asterisk bullets) → "- item"
+ * - Trim excessive blank lines
+ */
+export function fixTelegramFormatting(text: string): string {
+  return text
+    // Single * at start of line used as bullet → replace with -
+    // But NOT ** (bold) and NOT * inside text
+    .replace(/^(\s*)\* /gm, '$1- ')
+    // Max 2 consecutive blank lines
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }

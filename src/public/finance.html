@@ -2,149 +2,569 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Finance — NEXUM</title>
+<link rel="stylesheet" href="shared/design-system.css">
 <style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  :root{
-    --bg:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--border:#222;
-    --text:#f0f0f0;--muted:#888;--accent:#6366f1;
-    --green:#22c55e;--red:#ef4444;--radius:14px;
-    --font:-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,sans-serif;
+  /* ── Finance-specific styles ─────────────────────────────────── */
+  .type-toggle {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    background: var(--bg-surface);
+    border-radius: var(--radius-md);
+    margin-bottom: 16px;
   }
-  body{background:var(--bg);color:var(--text);font-family:var(--font);padding:20px 16px;max-width:480px;margin:0 auto}
-  h2{font-size:22px;font-weight:700;margin-bottom:4px}
-  .subtitle{color:var(--muted);font-size:14px;margin-bottom:20px}
-  .summary{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
-  .sum-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
-  .sum-card .label{font-size:12px;color:var(--muted);margin-bottom:4px}
-  .sum-card .val{font-size:22px;font-weight:700}
-  .val.inc{color:var(--green)}
-  .val.exp{color:var(--red)}
-  .form{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:20px}
-  .form h3{font-size:15px;font-weight:600;margin-bottom:12px}
-  .tabs{display:flex;gap:6px;margin-bottom:12px}
-  .tab{flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--muted);font-size:13px;cursor:pointer;transition:.15s}
-  .tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
-  input,select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 12px;font-size:14px;margin-bottom:8px;font-family:inherit}
-  input::placeholder{color:var(--muted)}
-  input:focus,select:focus{outline:none;border-color:var(--accent)}
-  .btn{width:100%;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:11px;font-size:14px;font-weight:600;cursor:pointer}
-  .btn:active{opacity:.85}
-  .list{display:flex;flex-direction:column;gap:8px}
-  .item{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;justify-content:space-between;align-items:center}
-  .item-left{}
-  .item-cat{font-size:12px;color:var(--muted)}
-  .item-note{font-size:14px;font-weight:500;margin-top:2px}
-  .item-date{font-size:11px;color:var(--muted);margin-top:2px}
-  .item-amount{font-size:18px;font-weight:700}
-  .inc-tag{color:var(--green)}
-  .exp-tag{color:var(--red)}
-  .del{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px;opacity:.6}
-  .del:hover{opacity:1;color:var(--red)}
-  .empty{color:var(--muted);text-align:center;padding:32px 0;font-size:14px}
+  .type-toggle-btn {
+    flex: 1;
+    padding: 10px 12px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-align: center;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition);
+    cursor: pointer;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: transparent;
+    border: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .type-toggle-btn:active { opacity: 0.7; }
+  .type-toggle-btn.active {
+    box-shadow: var(--shadow-sm);
+    color: var(--accent-text);
+  }
+  .type-toggle-btn.active.income-active {
+    background: var(--success);
+  }
+  .type-toggle-btn.active.expense-active {
+    background: var(--danger);
+  }
+  .type-toggle-btn svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .tx-amount {
+    font-size: 15px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .tx-amount.income { color: var(--success); }
+  .tx-amount.expense { color: var(--danger); }
+
+  .list-item-icon.income-icon {
+    background: var(--success-subtle);
+    color: var(--success);
+  }
+  .list-item-icon.expense-icon {
+    background: var(--danger-subtle);
+    color: var(--danger);
+  }
+
+  .tx-delete {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    transition: all var(--transition);
+    cursor: pointer;
+    background: none;
+    border: none;
+    flex-shrink: 0;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .tx-delete:active {
+    background: var(--danger-subtle);
+    color: var(--danger);
+  }
+
+  .section-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    margin-top: 20px;
+  }
+  .section-label:first-child {
+    margin-top: 0;
+  }
+
+  .summary-card-icon {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    margin: 0 auto 6px;
+  }
+  .summary-card-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+  .summary-card-icon.balance-icon {
+    background: var(--accent-subtle);
+    color: var(--accent);
+  }
+  .summary-card-icon.income-icon {
+    background: var(--success-subtle);
+    color: var(--success);
+  }
+  .summary-card-icon.expense-icon {
+    background: var(--danger-subtle);
+    color: var(--danger);
+  }
+
+  .tx-right {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
 </style>
 </head>
 <body>
-<h2>💰 Finance</h2>
-<p class="subtitle">Track income & expenses</p>
+<script src="shared/icons.js"></script>
+<script src="shared/app-shell.js"></script>
 
-<div class="summary">
-  <div class="sum-card"><div class="label">Income</div><div class="val inc" id="totalInc">0</div></div>
-  <div class="sum-card"><div class="label">Expenses</div><div class="val exp" id="totalExp">0</div></div>
-</div>
+<div class="app-container" id="app" style="display:none">
+  <!-- Header -->
+  <header class="app-header">
+    <span class="app-header-title" id="headerTitle"></span>
+    <button class="app-header-action" id="addBtn" aria-label="Add transaction"></button>
+  </header>
 
-<div class="form">
-  <h3>Add Transaction</h3>
-  <div class="tabs">
-    <button class="tab active" data-type="income" onclick="setType('income',this)">+ Income</button>
-    <button class="tab" data-type="expense" onclick="setType('expense',this)">− Expense</button>
-  </div>
-  <input type="number" id="amount" placeholder="Amount" min="0" step="0.01">
-  <select id="category">
-    <option value="salary">Salary</option>
-    <option value="freelance">Freelance</option>
-    <option value="food">Food</option>
-    <option value="transport">Transport</option>
-    <option value="shopping">Shopping</option>
-    <option value="health">Health</option>
-    <option value="entertainment">Entertainment</option>
-    <option value="bills">Bills</option>
-    <option value="other">Other</option>
-  </select>
-  <input type="text" id="note" placeholder="Note (optional)">
-  <button class="btn" onclick="addTx()">Add</button>
-</div>
+  <!-- Content -->
+  <main class="app-content">
+    <!-- Loading state -->
+    <div class="loading-container" id="loadingState">
+      <div class="spinner"></div>
+    </div>
 
-<div class="list" id="list"><div class="empty">No transactions yet</div></div>
-
-<script>
-const uid = new URLSearchParams(location.search).get('uid') || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) || 0;
-let type = 'income';
-let transactions = [];
-
-function setType(t, btn) {
-  type = t;
-  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-}
-
-async function load() {
-  if (!uid) return;
-  try {
-    const r = await fetch(`/api/finance?uid=${uid}`);
-    const d = await r.json();
-    transactions = d.transactions || [];
-    const inc = (d.summary || []).find(s => s.type === 'income')?.total || 0;
-    const exp = (d.summary || []).find(s => s.type === 'expense')?.total || 0;
-    document.getElementById('totalInc').textContent = fmt(inc);
-    document.getElementById('totalExp').textContent = fmt(exp);
-    render();
-  } catch(e) { console.error(e); }
-}
-
-function fmt(n) { return Number(n).toLocaleString(); }
-
-function render() {
-  const el = document.getElementById('list');
-  if (!transactions.length) { el.innerHTML = '<div class="empty">No transactions yet</div>'; return; }
-  el.innerHTML = transactions.map(t => `
-    <div class="item">
-      <div class="item-left">
-        <div class="item-cat">${t.category}</div>
-        <div class="item-note">${t.note || '—'}</div>
-        <div class="item-date">${t.created_at?.slice(0,10)}</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <div class="item-amount ${t.type === 'income' ? 'inc-tag' : 'exp-tag'}">
-          ${t.type === 'income' ? '+' : '−'}${fmt(t.amount)}
+    <!-- Main content (hidden until loaded) -->
+    <div id="mainContent" class="hidden">
+      <!-- Summary cards -->
+      <div class="summary-cards" id="summaryCards">
+        <div class="summary-card">
+          <div class="summary-card-icon balance-icon" id="balanceIcon"></div>
+          <div class="summary-card-label" id="balanceLabel"></div>
+          <div class="summary-card-value" id="balanceValue">0</div>
         </div>
-        <button class="del" onclick="del(${t.id})">×</button>
+        <div class="summary-card">
+          <div class="summary-card-icon income-icon" id="incomeIcon"></div>
+          <div class="summary-card-label" id="incomeLabel"></div>
+          <div class="summary-card-value income" id="incomeValue">0</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-card-icon expense-icon" id="expenseIcon"></div>
+          <div class="summary-card-label" id="expenseLabel"></div>
+          <div class="summary-card-value expense" id="expenseValue">0</div>
+        </div>
+      </div>
+
+      <!-- Transaction list section -->
+      <div id="txSection"></div>
+    </div>
+  </main>
+</div>
+
+<!-- Add transaction modal -->
+<div class="modal-overlay" id="modal">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title" id="modalTitle"></span>
+      <button class="app-header-action" id="modalClose" aria-label="Close"></button>
+    </div>
+    <div class="modal-body">
+      <!-- Type toggle -->
+      <div class="type-toggle" id="typeToggle">
+        <button class="type-toggle-btn active income-active" id="toggleIncome" data-type="income"></button>
+        <button class="type-toggle-btn" id="toggleExpense" data-type="expense"></button>
+      </div>
+
+      <!-- Amount -->
+      <div class="form-group">
+        <label class="form-label" id="amountLabel"></label>
+        <input type="number" class="form-input" id="inputAmount" inputmode="decimal" min="0" step="0.01" placeholder="0.00">
+      </div>
+
+      <!-- Category -->
+      <div class="form-group">
+        <label class="form-label" id="categoryLabel"></label>
+        <select class="form-select" id="inputCategory"></select>
+      </div>
+
+      <!-- Note -->
+      <div class="form-group">
+        <label class="form-label" id="noteLabel"></label>
+        <input type="text" class="form-input" id="inputNote" maxlength="200">
       </div>
     </div>
-  `).join('');
-}
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="btnCancel" style="flex:1"></button>
+      <button class="btn btn-primary" id="btnSave" style="flex:2"></button>
+    </div>
+  </div>
+</div>
 
-async function addTx() {
-  const amount = parseFloat(document.getElementById('amount').value);
-  if (!amount || amount <= 0) { alert('Enter a valid amount'); return; }
-  const category = document.getElementById('category').value;
-  const note = document.getElementById('note').value.trim();
-  await fetch('/api/finance', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ uid: parseInt(uid), type, amount, category, note })
+<script>
+(function() {
+  'use strict';
+
+  // ── State ────────────────────────────────────────────────
+  var state = {
+    uid: '0',
+    lang: 'en',
+    T: {},
+    transactions: [],
+    txType: 'income',
+    loading: true
+  };
+
+  var incomeCategories = ['salary', 'freelance', 'investment', 'other'];
+  var expenseCategories = ['food', 'transport', 'shopping', 'health', 'entertainment', 'other'];
+
+  // ── DOM refs ─────────────────────────────────────────────
+  var $app = document.getElementById('app');
+  var $loading = document.getElementById('loadingState');
+  var $main = document.getElementById('mainContent');
+  var $modal = document.getElementById('modal');
+  var $txSection = document.getElementById('txSection');
+  var $inputAmount = document.getElementById('inputAmount');
+  var $inputCategory = document.getElementById('inputCategory');
+  var $inputNote = document.getElementById('inputNote');
+  var $toggleIncome = document.getElementById('toggleIncome');
+  var $toggleExpense = document.getElementById('toggleExpense');
+
+  // ── Init ─────────────────────────────────────────────────
+  initApp().then(function(ctx) {
+    state.uid = ctx.uid;
+    state.lang = ctx.lang;
+    state.T = APP_TRANSLATIONS[ctx.lang] || APP_TRANSLATIONS.en;
+
+    applyLabels();
+    $app.style.display = '';
+    $app.classList.add('fade-in');
+    loadData();
   });
-  document.getElementById('amount').value = '';
-  document.getElementById('note').value = '';
-  load();
-}
 
-async function del(id) {
-  await fetch(`/api/finance/${id}`, { method:'DELETE' });
-  load();
-}
+  // ── Localization ─────────────────────────────────────────
+  function t(key, params) {
+    return tr(state.T, key, params);
+  }
 
-load();
+  function applyLabels() {
+    var T = state.T;
+    // Header
+    document.getElementById('headerTitle').textContent = t('finance');
+    document.getElementById('addBtn').innerHTML = Icons.plus;
+
+    // Summary icons
+    document.getElementById('balanceIcon').innerHTML = icon('wallet', 16);
+    document.getElementById('incomeIcon').innerHTML = icon('arrowUp', 16);
+    document.getElementById('expenseIcon').innerHTML = icon('arrowDown', 16);
+
+    // Summary labels
+    document.getElementById('balanceLabel').textContent = t('balance');
+    document.getElementById('incomeLabel').textContent = t('income');
+    document.getElementById('expenseLabel').textContent = t('expenses');
+
+    // Modal
+    document.getElementById('modalTitle').textContent = t('add_transaction');
+    document.getElementById('modalClose').innerHTML = Icons.x;
+    document.getElementById('amountLabel').textContent = t('amount');
+    document.getElementById('categoryLabel').textContent = t('category');
+    document.getElementById('noteLabel').textContent = t('note');
+    document.getElementById('btnCancel').textContent = t('cancel');
+    document.getElementById('btnSave').textContent = t('save');
+
+    // Input placeholders
+    $inputAmount.placeholder = '0.00';
+    $inputNote.placeholder = t('note') + '...';
+
+    // Type toggle
+    $toggleIncome.innerHTML = icon('arrowUp', 16) + ' ' + t('type_income');
+    $toggleExpense.innerHTML = icon('arrowDown', 16) + ' ' + t('type_expense');
+
+    // Build category options
+    buildCategoryOptions();
+  }
+
+  function buildCategoryOptions() {
+    var cats = state.txType === 'income' ? incomeCategories : expenseCategories;
+    var html = '';
+    for (var i = 0; i < cats.length; i++) {
+      html += '<option value="' + cats[i] + '">' + t(cats[i]) + '</option>';
+    }
+    $inputCategory.innerHTML = html;
+  }
+
+  // ── Data loading ─────────────────────────────────────────
+  async function loadData() {
+    state.loading = true;
+    showLoading(true);
+
+    try {
+      var resp = await fetch('/api/finance?uid=' + encodeURIComponent(state.uid));
+      if (!resp.ok) throw new Error('Network error');
+      var data = await resp.json();
+
+      state.transactions = data.transactions || [];
+      var incSummary = (data.summary || []).find(function(s) { return s.type === 'income'; });
+      var expSummary = (data.summary || []).find(function(s) { return s.type === 'expense'; });
+      var incTotal = incSummary ? incSummary.total : 0;
+      var expTotal = expSummary ? expSummary.total : 0;
+
+      updateSummary(incTotal, expTotal);
+      renderTransactions();
+    } catch (e) {
+      console.error('Failed to load finance data:', e);
+      renderTransactions();
+    } finally {
+      state.loading = false;
+      showLoading(false);
+    }
+  }
+
+  function showLoading(show) {
+    if (show) {
+      $loading.classList.remove('hidden');
+      $main.classList.add('hidden');
+    } else {
+      $loading.classList.add('hidden');
+      $main.classList.remove('hidden');
+      $main.classList.add('fade-in');
+    }
+  }
+
+  // ── Summary ──────────────────────────────────────────────
+  function formatAmount(n) {
+    return Number(n || 0).toLocaleString(state.lang === 'ru' ? 'ru-RU' : 'en-US', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+    });
+  }
+
+  function updateSummary(income, expense) {
+    var balance = (income || 0) - (expense || 0);
+    document.getElementById('balanceValue').textContent = formatAmount(balance);
+    document.getElementById('incomeValue').textContent = '+' + formatAmount(income);
+    document.getElementById('expenseValue').textContent = '-' + formatAmount(expense);
+
+    // Color balance based on sign
+    var balEl = document.getElementById('balanceValue');
+    balEl.className = 'summary-card-value';
+    if (balance > 0) balEl.classList.add('income');
+    else if (balance < 0) balEl.classList.add('expense');
+  }
+
+  // ── Render transactions ──────────────────────────────────
+  function renderTransactions() {
+    if (!state.transactions.length) {
+      $txSection.innerHTML =
+        '<div class="empty-state">' +
+          '<div class="empty-state-icon">' + icon('wallet', 28) + '</div>' +
+          '<div class="empty-state-title">' + t('no_transactions') + '</div>' +
+          '<div class="empty-state-desc">' + t('start_tracking') + '</div>' +
+          '<button class="btn btn-primary" id="emptyAddBtn">' + icon('plus', 16) + ' ' + t('add_transaction') + '</button>' +
+        '</div>';
+      document.getElementById('emptyAddBtn').addEventListener('click', openModal);
+      return;
+    }
+
+    var html = '<div class="section-label">' + t('all') + ' (' + state.transactions.length + ')</div>';
+    html += '<div class="list">';
+
+    for (var i = 0; i < state.transactions.length; i++) {
+      var tx = state.transactions[i];
+      var isIncome = tx.type === 'income';
+      var iconName = isIncome ? 'arrowUp' : 'arrowDown';
+      var iconClass = isIncome ? 'income-icon' : 'expense-icon';
+      var amountClass = isIncome ? 'income' : 'expense';
+      var sign = isIncome ? '+' : '-';
+      var dateStr = tx.created_at ? tx.created_at.slice(0, 10) : '';
+      var categoryLabel = t(tx.category) || tx.category;
+      var noteText = tx.note || '';
+
+      html +=
+        '<div class="list-item">' +
+          '<div class="list-item-icon ' + iconClass + '">' + icon(iconName, 18) + '</div>' +
+          '<div class="list-item-content">' +
+            '<div class="list-item-title">' + escapeHtml(categoryLabel) + '</div>' +
+            '<div class="list-item-subtitle">' + escapeHtml(noteText || categoryLabel) + (dateStr ? ' &middot; ' + formatDate(dateStr) : '') + '</div>' +
+          '</div>' +
+          '<div class="tx-right">' +
+            '<span class="tx-amount ' + amountClass + '">' + sign + formatAmount(tx.amount) + '</span>' +
+            '<button class="tx-delete" data-id="' + tx.id + '" aria-label="' + t('delete') + '">' + icon('trash', 16) + '</button>' +
+          '</div>' +
+        '</div>';
+    }
+
+    html += '</div>';
+    $txSection.innerHTML = html;
+
+    // Attach delete handlers
+    var deleteBtns = $txSection.querySelectorAll('.tx-delete');
+    for (var j = 0; j < deleteBtns.length; j++) {
+      deleteBtns[j].addEventListener('click', handleDelete);
+    }
+  }
+
+  function formatDate(dateStr) {
+    if (!dateStr) return '';
+    try {
+      var parts = dateStr.split('-');
+      var d = new Date(parts[0], parts[1] - 1, parts[2]);
+      return d.toLocaleDateString(state.lang === 'ru' ? 'ru-RU' : 'en-US', {
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch (e) {
+      return dateStr;
+    }
+  }
+
+  function escapeHtml(text) {
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // ── Delete transaction ───────────────────────────────────
+  async function handleDelete(e) {
+    var btn = e.currentTarget;
+    var id = btn.getAttribute('data-id');
+    if (!id) return;
+
+    btn.style.opacity = '0.4';
+    btn.style.pointerEvents = 'none';
+
+    try {
+      await fetch('/api/finance/' + id, { method: 'DELETE' });
+      await loadData();
+    } catch (err) {
+      console.error('Delete failed:', err);
+      btn.style.opacity = '';
+      btn.style.pointerEvents = '';
+    }
+  }
+
+  // ── Modal ────────────────────────────────────────────────
+  function openModal() {
+    state.txType = 'income';
+    updateTypeToggle();
+    buildCategoryOptions();
+    $inputAmount.value = '';
+    $inputNote.value = '';
+    $inputCategory.selectedIndex = 0;
+    $modal.classList.add('active');
+    // Focus amount after animation
+    setTimeout(function() { $inputAmount.focus(); }, 350);
+  }
+
+  function closeModal() {
+    $modal.classList.remove('active');
+  }
+
+  function updateTypeToggle() {
+    if (state.txType === 'income') {
+      $toggleIncome.classList.add('active', 'income-active');
+      $toggleIncome.classList.remove('expense-active');
+      $toggleExpense.classList.remove('active', 'income-active', 'expense-active');
+    } else {
+      $toggleExpense.classList.add('active', 'expense-active');
+      $toggleExpense.classList.remove('income-active');
+      $toggleIncome.classList.remove('active', 'income-active', 'expense-active');
+    }
+  }
+
+  function setTxType(type) {
+    state.txType = type;
+    updateTypeToggle();
+    buildCategoryOptions();
+  }
+
+  // ── Save transaction ─────────────────────────────────────
+  async function saveTransaction() {
+    var amount = parseFloat($inputAmount.value);
+    if (!amount || amount <= 0) {
+      $inputAmount.focus();
+      $inputAmount.style.borderColor = 'var(--danger)';
+      setTimeout(function() { $inputAmount.style.borderColor = ''; }, 1500);
+      return;
+    }
+
+    var category = $inputCategory.value;
+    var note = $inputNote.value.trim();
+    var $saveBtn = document.getElementById('btnSave');
+
+    $saveBtn.disabled = true;
+    $saveBtn.textContent = t('loading');
+
+    try {
+      await fetch('/api/finance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: parseInt(state.uid, 10) || 0,
+          type: state.txType,
+          amount: amount,
+          category: category,
+          note: note
+        })
+      });
+      closeModal();
+      await loadData();
+    } catch (err) {
+      console.error('Save failed:', err);
+    } finally {
+      $saveBtn.disabled = false;
+      $saveBtn.textContent = t('save');
+    }
+  }
+
+  // ── Event listeners ──────────────────────────────────────
+  document.getElementById('addBtn').addEventListener('click', openModal);
+  document.getElementById('modalClose').addEventListener('click', closeModal);
+  document.getElementById('btnCancel').addEventListener('click', closeModal);
+  document.getElementById('btnSave').addEventListener('click', saveTransaction);
+
+  $toggleIncome.addEventListener('click', function() { setTxType('income'); });
+  $toggleExpense.addEventListener('click', function() { setTxType('expense'); });
+
+  // Close modal on overlay click
+  $modal.addEventListener('click', function(e) {
+    if (e.target === $modal) closeModal();
+  });
+
+  // Submit on Enter in amount field
+  $inputAmount.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      $inputCategory.focus();
+    }
+  });
+
+  $inputNote.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveTransaction();
+    }
+  });
+
+})();
 </script>
 </body>
 </html>

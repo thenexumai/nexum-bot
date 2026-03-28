@@ -1,178 +1,169 @@
-// NEXUM Agent Executor — routes messages through tools and LLM
+/**
+ * NEXUM Agent Executor
+ * Central pipeline: rate limit → intent detect → tool detect → context build → LLM → memory save
+ */
 
-import { config } from '../core/config';
+import { getTariffConfig, hasFeature, canSendMessage } from '../core/billing';
 import { db } from '../core/db';
 import { getHistory, saveMessage, buildMemoryContext, autoExtract } from './memory';
-import { chat } from './router';
-import { hasFeature, canSendMessage, getTariffConfig } from '../core/billing';
+import { chat, chatStreaming, type Message, type StreamCallback } from './router';
+import { buildSystemPrompt } from './persona';
 import { webSearch } from '../tools/search';
+import { detectIntent, formatAmount, type FinanceIntent } from './intents';
+import { createLogger } from '../infra/logger';
 
-export interface ExecuteOptions {
-  bot?: any;
-  isGroup?: boolean;
-  skipLimitCheck?: boolean;
-}
+export { chatStreaming, type StreamCallback };
+
+const log = createLogger('executor');
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
-export function buildSystemPrompt(uid: number, isGroup = false): string {
+export function buildPrompt(uid: number, isGroup = false): string {
   const tariff = getTariffConfig(uid);
-  const memCtx = hasFeature(uid, 'hasMemory') ? buildMemoryContext(uid) : '';
-
-  const base = `You are NEXUM — a powerful AI assistant inside Telegram.
-You are helpful, concise, and smart. You respond in the same language the user writes in.
-Current user plan: ${tariff.plan.toUpperCase()}.
-${tariff.hasPcAgent ? 'User has PC Agent available.' : ''}
-${tariff.hasBYOK ? 'User has brought their own API keys.' : ''}`;
-
-  const groupNote = isGroup
-    ? '\n\nYou are in a group chat. Be brief and relevant. Only respond when directly addressed.'
-    : '';
-
-  return base + groupNote + memCtx;
+  const memoryContext = hasFeature(uid, 'hasMemory') ? buildMemoryContext(uid) : '';
+  return buildSystemPrompt({ tariff, memoryContext, isGroup, uid });
 }
 
-// ── Tool detector ─────────────────────────────────────────────────────────────
+// ── Search intent detection ───────────────────────────────────────────────────
 
-interface ToolCall {
-  tool: string;
-  args: string;
+function detectSearch(text: string): string | null {
+  const lo = text.toLowerCase();
+  const triggers = ['search ', 'find ', 'look up ', 'google ', 'what is the latest', 'current news'];
+  if (!triggers.some(t => lo.includes(t))) return null;
+  return text.replace(/^(search|find|google)\s+/i, '')
+             .replace(/search for\s+/i, '')
+             .replace(/look up\s+/i, '').trim();
 }
 
-function detectToolCall(text: string): ToolCall | null {
-  const lower = text.toLowerCase();
+// ── Finance intent handler ────────────────────────────────────────────────────
 
-  // Web search triggers
-  if (
-    lower.startsWith('search ') ||
-    lower.startsWith('find ') ||
-    lower.includes('search for ') ||
-    lower.includes('look up ') ||
-    lower.includes('what is the latest') ||
-    lower.includes('current news') ||
-    lower.includes('google ')
-  ) {
-    const query = text
-      .replace(/^(search|find|google)\s+/i, '')
-      .replace(/search for\s+/i, '')
-      .replace(/look up\s+/i, '')
-      .trim();
-    return { tool: 'search', args: query };
+function handleFinanceIntent(uid: number, intent: FinanceIntent): string {
+  try {
+    db.prepare(`
+      INSERT INTO finance (uid, type, amount, category, note, currency)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(uid, intent.financeType, intent.amount, intent.category, intent.note, intent.currency);
+
+    const sign = intent.financeType === 'income' ? '+' : '-';
+    const formattedAmount = formatAmount(intent.amount, intent.currency);
+    const categoryLabel = intent.category === 'other' ? '' : ` (${intent.category})`;
+
+    log.info(`Finance recorded uid=${uid} type=${intent.financeType} amount=${intent.amount} ${intent.currency}`);
+
+    return `✅ Записал в финансы: ${sign}${formattedAmount}${categoryLabel}`;
+  } catch (e) {
+    log.error(`Finance insert error: ${(e as Error).message}`);
+    return '❌ Не удалось записать в финансы. Попробуй снова.';
   }
-
-  return null;
 }
 
-// ── Main execute function ─────────────────────────────────────────────────────
+// ── Main execute ──────────────────────────────────────────────────────────────
+
+export interface ExecuteOptions {
+  isGroup?: boolean;
+  skipLimitCheck?: boolean;
+}
 
 export async function execute(
   uid: number,
   userMessage: string,
   options: ExecuteOptions = {}
 ): Promise<string> {
-  const { bot, isGroup = false, skipLimitCheck = false } = options;
+  const { isGroup = false, skipLimitCheck = false } = options;
 
-  // Check rate limit
   if (!skipLimitCheck) {
     const limit = canSendMessage(uid);
     if (!limit.ok) return limit.reason!;
   }
 
-  // Detect and handle tool calls
-  const toolCall = detectToolCall(userMessage);
-  if (toolCall) {
-    if (toolCall.tool === 'search') {
-      try {
-        const results = await webSearch(toolCall.args);
-        if (results) {
-          // Pass search results to LLM for summarization
-          const searchPrompt = `User asked: "${userMessage}"\n\nSearch results:\n${results}\n\nPlease provide a helpful, well-organized response based on these search results.`;
-          const history = getHistory(uid, 10);
-          const messages = [
-            ...history.map(h => ({ role: h.role as any, content: h.content })),
-            { role: 'user' as const, content: searchPrompt },
-          ];
-          const system = buildSystemPrompt(uid, isGroup);
-          const response = await chat(uid, messages, system);
-          saveMessage(uid, 'user', userMessage);
-          saveMessage(uid, 'assistant', response);
-          return response;
-        }
-      } catch (e: any) {
-        console.error('[executor] search error:', e.message);
-        // Fall through to regular chat
+  // ── Intent detection ───────────────────────────────────────────────────────
+  const intent = detectIntent(userMessage);
+
+  if (intent.type === 'finance') {
+    const response = handleFinanceIntent(uid, intent);
+    saveMessage(uid, 'user', userMessage);
+    saveMessage(uid, 'assistant', response);
+    return response;
+  }
+
+  // ── Tool: web search ───────────────────────────────────────────────────────
+  const searchQuery = detectSearch(userMessage);
+  if (searchQuery) {
+    try {
+      const results = await webSearch(searchQuery);
+      if (results) {
+        const prompt = `User asked: "${userMessage}"\n\nSearch results:\n${results}\n\nProvide a helpful, concise response.`;
+        const history = getHistory(uid, 10);
+        const messages: Message[] = [
+          ...history.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
+          { role: 'user', content: prompt },
+        ];
+        const response = await chat(uid, messages, buildPrompt(uid, isGroup));
+        saveMessage(uid, 'user', userMessage);
+        saveMessage(uid, 'assistant', response);
+        return response;
       }
+    } catch (e) {
+      log.warn(`Search error: ${(e as Error).message}`);
     }
   }
 
-  // Regular chat
+  // ── Regular chat ───────────────────────────────────────────────────────────
   const history = getHistory(uid, 20);
-  const messages = [
-    ...history.map(h => ({ role: h.role as any, content: h.content })),
-    { role: 'user' as const, content: userMessage },
+  const messages: Message[] = [
+    ...history.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
+    { role: 'user', content: userMessage },
   ];
-  const system = buildSystemPrompt(uid, isGroup);
 
-  const response = await chat(uid, messages, system);
+  const response = await chat(uid, messages, buildPrompt(uid, isGroup));
   saveMessage(uid, 'user', userMessage);
   saveMessage(uid, 'assistant', response);
 
-  if (hasFeature(uid, 'hasMemory')) {
-    autoExtract(uid, userMessage);
-  }
+  if (hasFeature(uid, 'hasMemory')) autoExtract(uid, userMessage);
 
   return response;
 }
 
-// ── Background subagent ───────────────────────────────────────────────────────
+// ── Background subagents ──────────────────────────────────────────────────────
 
-export interface SubagentResult {
+export interface SubagentRun {
   id: string;
-  status: 'done' | 'error';
+  task: string;
+  status: 'pending' | 'running' | 'done' | 'error';
   result?: string;
   error?: string;
+  started_at: string;
 }
 
-export async function runSubagent(
-  uid: number,
-  task: string
-): Promise<{ id: string }> {
+export async function runSubagent(uid: number, task: string): Promise<{ id: string }> {
   if (!hasFeature(uid, 'hasSubagents')) {
-    throw new Error('Subagents require Pro plan. See /tariffs');
+    throw new Error('Background tasks require Pro plan — /tariffs');
   }
 
   const id = `sa_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  db.prepare(`INSERT INTO subagent_runs (id, uid, task, status) VALUES (?, ?, ?, 'pending')`).run(id, uid, task);
 
-  (db as any).prepare(
-    `INSERT INTO subagent_runs (id, uid, task, status) VALUES (?,?,?,'pending')`
-  ).run(id, uid, task);
-
-  // Run async
   (async () => {
     try {
-      const system = `You are a background AI task executor. Complete the following task thoroughly and return a detailed result.\nTask: ${task}`;
-      const messages = [{ role: 'user' as const, content: `Please complete this task: ${task}` }];
-      const result = await chat(uid, messages, system);
-
-      (db as any).prepare(
-        `UPDATE subagent_runs SET status='done', result=?, finished_at=datetime('now') WHERE id=?`
-      ).run(result, id);
-    } catch (e: any) {
-      (db as any).prepare(
-        `UPDATE subagent_runs SET status='error', error=?, finished_at=datetime('now') WHERE id=?`
-      ).run(e.message, id);
+      db.prepare(`UPDATE subagent_runs SET status='running' WHERE id=?`).run(id);
+      const system = `You are a background task executor. Complete the task and return a clear, structured result.`;
+      const result = await chat(uid, [{ role: 'user', content: task }], system);
+      db.prepare(`UPDATE subagent_runs SET status='done', result=?, finished_at=datetime('now') WHERE id=?`).run(result, id);
+    } catch (e) {
+      db.prepare(`UPDATE subagent_runs SET status='error', error=?, finished_at=datetime('now') WHERE id=?`)
+        .run((e as Error).message, id);
     }
   })();
 
   return { id };
 }
 
-export function getSubagentResult(id: string): any {
-  return (db as any).prepare(`SELECT * FROM subagent_runs WHERE id=?`).get(id);
+export function getSubagentResult(id: string): SubagentRun | undefined {
+  return db.prepare(`SELECT * FROM subagent_runs WHERE id=?`).get(id) as SubagentRun | undefined;
 }
 
-export function listSubagents(uid: number): any[] {
-  return (db as any).prepare(
+export function listSubagents(uid: number): SubagentRun[] {
+  return db.prepare(
     `SELECT id, task, status, started_at FROM subagent_runs WHERE uid=? ORDER BY started_at DESC LIMIT 10`
-  ).all(uid) as any[] || [];
+  ).all(uid) as SubagentRun[];
 }

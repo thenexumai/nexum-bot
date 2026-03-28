@@ -1,37 +1,8 @@
-# Dependencies
 node_modules/
-
-# Build output
 dist/
-
-# Database & data
-data/
-*.db
-*.sqlite
-*.sqlite3
-
-# Logs
-*.log
-logs/
-
-# Environment — NEVER commit this
 .env
-.env.local
-.env.production
-.env.*
-!.env.example
-
-# OS files
+data/*.db
+data/*.db-shm
+data/*.db-wal
+*.log
 .DS_Store
-Thumbs.db
-
-# Editor
-.vscode/
-.idea/
-*.swp
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-pc_agent/__pycache__/

@@ -2,103 +2,566 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Notes — NEXUM</title>
+<link rel="stylesheet" href="shared/design-system.css">
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--border:#222;
-  --text:#f0f0f0;--muted:#888;--accent:#6366f1;--radius:14px;
-  --font:-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,sans-serif;
-}
-body{background:var(--bg);color:var(--text);font-family:var(--font);padding:20px 16px;max-width:480px;margin:0 auto}
-h2{font-size:22px;font-weight:700;margin-bottom:4px}
-.subtitle{color:var(--muted);font-size:14px;margin-bottom:20px}
-.new-note{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:16px}
-.new-note input{width:100%;background:transparent;border:none;color:var(--text);font-size:15px;font-weight:600;margin-bottom:8px;font-family:inherit}
-.new-note input:focus{outline:none}
-.new-note input::placeholder{color:var(--muted)}
-.new-note textarea{width:100%;background:transparent;border:none;color:var(--text);font-size:14px;resize:none;min-height:80px;line-height:1.5;font-family:inherit}
-.new-note textarea:focus{outline:none}
-.new-note textarea::placeholder{color:var(--muted)}
-.new-note .actions{display:flex;justify-content:flex-end;margin-top:8px}
-.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.note{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;cursor:pointer;position:relative}
-.note.pinned{border-color:var(--accent)}
-.note-title{font-size:13px;font-weight:600;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.note-body{font-size:12px;color:var(--muted);line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical}
-.note-date{font-size:11px;color:var(--muted);margin-top:8px}
-.note-actions{position:absolute;top:8px;right:8px;display:flex;gap:4px;opacity:0}
-.note:hover .note-actions{opacity:1}
-.icon-btn{background:var(--surface2);border:none;border-radius:6px;color:var(--muted);font-size:13px;padding:3px 6px;cursor:pointer}
-.icon-btn:hover{color:var(--text)}
-.empty{color:var(--muted);text-align:center;padding:32px 0;font-size:14px;grid-column:span 2}
+  .char-count {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: right;
+    margin-top: 4px;
+  }
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .section-label svg {
+    width: 14px;
+    height: 14px;
+  }
+  .pinned-section {
+    margin-bottom: 16px;
+  }
+  .modal-actions-row {
+    display: flex;
+    gap: 8px;
+  }
+  .modal-actions-row .btn {
+    flex: 1;
+  }
+  .note-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 4px;
+  }
+  .note-card-pin {
+    flex-shrink: 0;
+    color: var(--accent);
+    width: 14px;
+    height: 14px;
+    margin-top: 1px;
+  }
+  .note-card-pin svg {
+    width: 14px;
+    height: 14px;
+  }
+  .note-card-date {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 8px;
+  }
+  .modal-delete-row {
+    padding: 0 16px 12px;
+  }
 </style>
 </head>
 <body>
-<h2>📝 Notes</h2>
-<p class="subtitle">Capture ideas fast</p>
-<div class="new-note">
-  <input id="noteTitle" placeholder="Title (optional)">
-  <textarea id="noteBody" placeholder="Write a note..."></textarea>
-  <div class="actions"><button class="btn" onclick="addNote()">Save</button></div>
-</div>
-<div class="grid" id="grid"><div class="empty">No notes yet</div></div>
-<script>
-const uid = new URLSearchParams(location.search).get('uid') || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) || 0;
-let notes = [];
+<div class="app-container">
 
-async function load() {
-  if (!uid) return;
-  const r = await fetch('/api/notes?uid=' + uid);
-  notes = await r.json();
-  render();
-}
+  <!-- Header -->
+  <header class="app-header">
+    <span class="app-header-title" id="headerTitle"></span>
+    <button class="app-header-action" id="btnAdd" aria-label="Add note"></button>
+  </header>
 
-function render() {
-  const el = document.getElementById('grid');
-  if (!notes.length) { el.innerHTML = '<div class="empty">No notes yet</div>'; return; }
-  el.innerHTML = notes.map(n => `
-    <div class="note ${n.pinned ? 'pinned' : ''}">
-      <div class="note-actions">
-        <button class="icon-btn" onclick="pin(${n.id},${n.pinned})" title="Pin">${n.pinned ? '★' : '☆'}</button>
-        <button class="icon-btn" onclick="del(${n.id})" title="Delete" style="color:#ef4444">×</button>
-      </div>
-      ${n.title ? '<div class="note-title">'+n.title+'</div>' : ''}
-      <div class="note-body">${n.content}</div>
-      <div class="note-date">${n.updated_at?.slice(0,10)}</div>
+  <!-- Content -->
+  <main class="app-content" id="appContent">
+    <!-- Loading state -->
+    <div class="loading-container" id="loadingState">
+      <div class="spinner"></div>
     </div>
-  `).join('');
-}
 
-async function addNote() {
-  const title = document.getElementById('noteTitle').value.trim();
-  const content = document.getElementById('noteBody').value.trim();
-  if (!content) return;
-  await fetch('/api/notes', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ uid: parseInt(uid), title, content })
+    <!-- Main content (hidden until loaded) -->
+    <div id="mainContent" class="hidden">
+      <!-- Search bar -->
+      <div class="search-bar" id="searchBar"></div>
+
+      <!-- Pinned section -->
+      <div id="pinnedSection" class="pinned-section hidden"></div>
+
+      <!-- All notes grid -->
+      <div id="notesGrid" class="note-grid"></div>
+
+      <!-- Empty state -->
+      <div class="empty-state hidden" id="emptyState">
+        <div class="empty-state-icon" id="emptyIcon"></div>
+        <div class="empty-state-title" id="emptyTitle"></div>
+        <div class="empty-state-desc" id="emptyDesc"></div>
+        <button class="btn btn-primary" id="emptyAddBtn"></button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="noteModal">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title" id="modalTitle"></span>
+      <button class="btn btn-ghost btn-sm" id="modalClose"></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label" id="labelTitle"></label>
+        <input class="form-input" type="text" id="inputTitle" maxlength="200">
+      </div>
+      <div class="form-group">
+        <label class="form-label" id="labelContent"></label>
+        <textarea class="form-textarea" id="inputContent" rows="6" maxlength="5000"></textarea>
+        <div class="char-count" id="charCount">0 / 5000</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" id="labelTags"></label>
+        <input class="form-input" type="text" id="inputTags">
+        <div class="form-hint" id="tagsHint"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div class="modal-actions-row" style="width:100%">
+        <button class="btn btn-ghost" id="modalPinBtn"></button>
+        <button class="btn btn-primary" id="modalSaveBtn" style="flex:2"></button>
+      </div>
+    </div>
+    <div class="modal-delete-row hidden" id="deleteRow">
+      <button class="btn btn-danger btn-full btn-sm" id="modalDeleteBtn"></button>
+    </div>
+  </div>
+</div>
+
+<script src="shared/icons.js"></script>
+<script src="shared/app-shell.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  // ── i18n ──────────────────────────────────────────────────────────────
+  var T = {
+    en: Object.assign({}, APP_TRANSLATIONS.en, {
+      'notes_title': 'Notes',
+      'add_note': 'Add Note',
+      'edit_note': 'Edit Note',
+      'search_notes': 'Search notes...',
+      'pinned': 'Pinned',
+      'title': 'Title',
+      'content': 'Content',
+      'tags': 'Tags',
+      'tags_hint': 'Comma-separated, e.g. work, ideas',
+      'no_notes': 'No notes yet',
+      'create_first_note': 'Create your first note to get started',
+      'characters': 'characters',
+      'save': 'Save',
+      'cancel': 'Cancel',
+      'delete': 'Delete',
+      'close': 'Close',
+      'pin': 'Pin',
+      'unpin': 'Unpin',
+      'delete_confirm': 'Delete this note?',
+      'no_results': 'No notes match your search',
+      'try_different': 'Try a different search term',
+    }),
+    ru: Object.assign({}, APP_TRANSLATIONS.ru, {
+      'notes_title': 'Заметки',
+      'add_note': 'Новая заметка',
+      'edit_note': 'Редактировать',
+      'search_notes': 'Поиск заметок...',
+      'pinned': 'Закреплённые',
+      'title': 'Название',
+      'content': 'Содержание',
+      'tags': 'Теги',
+      'tags_hint': 'Через запятую, напр. работа, идеи',
+      'no_notes': 'Нет заметок',
+      'create_first_note': 'Создайте первую заметку',
+      'characters': 'символов',
+      'save': 'Сохранить',
+      'cancel': 'Отмена',
+      'delete': 'Удалить',
+      'close': 'Закрыть',
+      'pin': 'Закрепить',
+      'unpin': 'Открепить',
+      'delete_confirm': 'Удалить эту заметку?',
+      'no_results': 'Ничего не найдено',
+      'try_different': 'Попробуйте другой запрос',
+    })
+  };
+
+  // ── State ─────────────────────────────────────────────────────────────
+  var state = {
+    uid: '0',
+    lang: 'en',
+    notes: [],
+    searchQuery: '',
+    editingNote: null, // null = new, object = editing
+    isPinned: false
+  };
+
+  // ── Helper ────────────────────────────────────────────────────────────
+  function t(key, params) {
+    return tr(T[state.lang] || T.en, key, params);
+  }
+
+  function esc(str) {
+    if (!str) return '';
+    var d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  function formatDate(dateStr) {
+    if (!dateStr) return '';
+    try {
+      var d = new Date(dateStr);
+      return d.toLocaleDateString(state.lang === 'ru' ? 'ru-RU' : 'en-US', {
+        month: 'short', day: 'numeric'
+      });
+    } catch (e) {
+      return dateStr.slice(0, 10);
+    }
+  }
+
+  // ── DOM refs ──────────────────────────────────────────────────────────
+  var $headerTitle = document.getElementById('headerTitle');
+  var $btnAdd = document.getElementById('btnAdd');
+  var $loadingState = document.getElementById('loadingState');
+  var $mainContent = document.getElementById('mainContent');
+  var $searchBar = document.getElementById('searchBar');
+  var $pinnedSection = document.getElementById('pinnedSection');
+  var $notesGrid = document.getElementById('notesGrid');
+  var $emptyState = document.getElementById('emptyState');
+  var $emptyIcon = document.getElementById('emptyIcon');
+  var $emptyTitle = document.getElementById('emptyTitle');
+  var $emptyDesc = document.getElementById('emptyDesc');
+  var $emptyAddBtn = document.getElementById('emptyAddBtn');
+  var $noteModal = document.getElementById('noteModal');
+  var $modalTitle = document.getElementById('modalTitle');
+  var $modalClose = document.getElementById('modalClose');
+  var $labelTitle = document.getElementById('labelTitle');
+  var $inputTitle = document.getElementById('inputTitle');
+  var $labelContent = document.getElementById('labelContent');
+  var $inputContent = document.getElementById('inputContent');
+  var $charCount = document.getElementById('charCount');
+  var $labelTags = document.getElementById('labelTags');
+  var $inputTags = document.getElementById('inputTags');
+  var $tagsHint = document.getElementById('tagsHint');
+  var $modalPinBtn = document.getElementById('modalPinBtn');
+  var $modalSaveBtn = document.getElementById('modalSaveBtn');
+  var $modalDeleteBtn = document.getElementById('modalDeleteBtn');
+  var $deleteRow = document.getElementById('deleteRow');
+
+  // ── API ───────────────────────────────────────────────────────────────
+  function apiGet() {
+    return fetch('/api/notes?uid=' + state.uid)
+      .then(function(r) { return r.ok ? r.json() : []; })
+      .catch(function() { return []; });
+  }
+
+  function apiCreate(data) {
+    return fetch('/api/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+  }
+
+  function apiUpdate(id, data) {
+    return fetch('/api/notes/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+  }
+
+  function apiDelete(id) {
+    return fetch('/api/notes/' + id, { method: 'DELETE' });
+  }
+
+  // ── Data loading ──────────────────────────────────────────────────────
+  function loadNotes() {
+    if (!state.uid || state.uid === '0') {
+      state.notes = [];
+      showContent();
+      render();
+      return;
+    }
+    apiGet().then(function(notes) {
+      state.notes = Array.isArray(notes) ? notes : [];
+      showContent();
+      render();
+    });
+  }
+
+  function showContent() {
+    $loadingState.classList.add('hidden');
+    $mainContent.classList.remove('hidden');
+    $mainContent.classList.add('fade-in');
+  }
+
+  // ── Filtering ─────────────────────────────────────────────────────────
+  function getFilteredNotes() {
+    var q = state.searchQuery.toLowerCase().trim();
+    if (!q) return state.notes;
+    return state.notes.filter(function(n) {
+      var title = (n.title || '').toLowerCase();
+      var content = (n.content || '').toLowerCase();
+      var tags = (n.tags || '').toLowerCase();
+      return title.indexOf(q) !== -1 || content.indexOf(q) !== -1 || tags.indexOf(q) !== -1;
+    });
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────
+  function render() {
+    var filtered = getFilteredNotes();
+    var pinned = filtered.filter(function(n) { return n.pinned === 1 || n.pinned === true; });
+    var unpinned = filtered.filter(function(n) { return n.pinned !== 1 && n.pinned !== true; });
+
+    // Show/hide search bar only if there are notes
+    if (state.notes.length > 0) {
+      $searchBar.classList.remove('hidden');
+    } else {
+      $searchBar.classList.add('hidden');
+    }
+
+    // Empty state
+    if (state.notes.length === 0) {
+      $pinnedSection.classList.add('hidden');
+      $notesGrid.classList.add('hidden');
+      $emptyState.classList.remove('hidden');
+      $emptyTitle.textContent = t('no_notes');
+      $emptyDesc.textContent = t('create_first_note');
+      $emptyAddBtn.textContent = t('add_note');
+      return;
+    }
+
+    // No search results
+    if (filtered.length === 0) {
+      $pinnedSection.classList.add('hidden');
+      $notesGrid.classList.add('hidden');
+      $emptyState.classList.remove('hidden');
+      $emptyTitle.textContent = t('no_results');
+      $emptyDesc.textContent = t('try_different');
+      $emptyAddBtn.textContent = t('add_note');
+      return;
+    }
+
+    $emptyState.classList.add('hidden');
+
+    // Pinned section
+    if (pinned.length > 0) {
+      $pinnedSection.classList.remove('hidden');
+      var pinnedHtml = '<div class="section-label">' + icon('pin', 14) + ' ' + esc(t('pinned')) + '</div>';
+      pinnedHtml += '<div class="note-grid">';
+      pinnedHtml += pinned.map(function(n) { return renderNoteCard(n); }).join('');
+      pinnedHtml += '</div>';
+      $pinnedSection.innerHTML = pinnedHtml;
+    } else {
+      $pinnedSection.classList.add('hidden');
+      $pinnedSection.innerHTML = '';
+    }
+
+    // Unpinned grid
+    if (unpinned.length > 0) {
+      $notesGrid.classList.remove('hidden');
+      $notesGrid.innerHTML = unpinned.map(function(n) { return renderNoteCard(n); }).join('');
+    } else {
+      $notesGrid.classList.remove('hidden');
+      $notesGrid.innerHTML = '';
+    }
+  }
+
+  function renderNoteCard(note) {
+    var isPinned = note.pinned === 1 || note.pinned === true;
+    var tags = parseTags(note.tags);
+    var tagsHtml = '';
+    if (tags.length > 0) {
+      tagsHtml = '<div class="note-card-tags">' +
+        tags.map(function(tg) { return '<span class="note-card-tag">' + esc(tg) + '</span>'; }).join('') +
+        '</div>';
+    }
+    var titleHtml = note.title
+      ? '<div class="note-card-header"><span class="note-card-title">' + esc(note.title) + '</span>' +
+        (isPinned ? '<span class="note-card-pin">' + icon('pin', 14) + '</span>' : '') +
+        '</div>'
+      : (isPinned ? '<div class="note-card-header"><span></span><span class="note-card-pin">' + icon('pin', 14) + '</span></div>' : '');
+
+    return '<div class="note-card' + (isPinned ? ' pinned' : '') + ' fade-in" data-id="' + note.id + '" onclick="window.__openNote(' + note.id + ')">' +
+      titleHtml +
+      '<div class="note-card-content">' + esc(note.content) + '</div>' +
+      tagsHtml +
+      '<div class="note-card-date">' + formatDate(note.updated_at || note.created_at) + '</div>' +
+      '</div>';
+  }
+
+  function parseTags(tagsStr) {
+    if (!tagsStr) return [];
+    return tagsStr.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+  }
+
+  // ── Modal ─────────────────────────────────────────────────────────────
+  function openModal(note) {
+    state.editingNote = note || null;
+    state.isPinned = note ? (note.pinned === 1 || note.pinned === true) : false;
+
+    $modalTitle.textContent = note ? t('edit_note') : t('add_note');
+    $inputTitle.value = note ? (note.title || '') : '';
+    $inputContent.value = note ? (note.content || '') : '';
+    $inputTags.value = note ? (note.tags || '') : '';
+    updateCharCount();
+    updatePinButton();
+
+    if (note) {
+      $deleteRow.classList.remove('hidden');
+    } else {
+      $deleteRow.classList.add('hidden');
+    }
+
+    $noteModal.classList.add('active');
+    setTimeout(function() { $inputTitle.focus(); }, 300);
+  }
+
+  function closeModal() {
+    $noteModal.classList.remove('active');
+    state.editingNote = null;
+    state.isPinned = false;
+  }
+
+  function updateCharCount() {
+    var len = ($inputContent.value || '').length;
+    $charCount.textContent = len + ' / 5000 ' + t('characters');
+  }
+
+  function updatePinButton() {
+    $modalPinBtn.innerHTML = icon('pin', 16) + ' ' + (state.isPinned ? t('unpin') : t('pin'));
+  }
+
+  function togglePin() {
+    state.isPinned = !state.isPinned;
+    updatePinButton();
+  }
+
+  function saveNote() {
+    var title = $inputTitle.value.trim();
+    var content = $inputContent.value.trim();
+    var tags = $inputTags.value.trim();
+
+    if (!content && !title) return;
+
+    var data = {
+      uid: parseInt(state.uid),
+      title: title,
+      content: content,
+      pinned: state.isPinned ? 1 : 0,
+      tags: tags
+    };
+
+    var promise;
+    if (state.editingNote) {
+      promise = apiUpdate(state.editingNote.id, data);
+    } else {
+      promise = apiCreate(data);
+    }
+
+    promise.then(function() {
+      closeModal();
+      loadNotes();
+    }).catch(function(err) {
+      console.error('Save failed:', err);
+    });
+  }
+
+  function deleteNote() {
+    if (!state.editingNote) return;
+    var confirmed = confirm(t('delete_confirm'));
+    if (!confirmed) return;
+    apiDelete(state.editingNote.id).then(function() {
+      closeModal();
+      loadNotes();
+    });
+  }
+
+  // ── Search ────────────────────────────────────────────────────────────
+  function onSearchInput(e) {
+    state.searchQuery = e.target.value;
+    render();
+  }
+
+  // ── Open note (exposed globally for onclick) ──────────────────────────
+  window.__openNote = function(id) {
+    var note = state.notes.find(function(n) { return n.id === id; });
+    if (note) openModal(note);
+  };
+
+  // ── Setup UI ──────────────────────────────────────────────────────────
+  function setupUI() {
+    // Header
+    $headerTitle.textContent = t('notes_title');
+    $btnAdd.innerHTML = icon('plus', 20);
+    $btnAdd.onclick = function() { openModal(null); };
+
+    // Search bar
+    $searchBar.innerHTML = icon('search', 18) +
+      '<input class="form-input" type="text" id="searchInput" autocomplete="off">';
+    var $searchInput = document.getElementById('searchInput');
+    $searchInput.placeholder = t('search_notes');
+    $searchInput.addEventListener('input', onSearchInput);
+
+    // Empty state icon
+    $emptyIcon.innerHTML = icon('notes', 28);
+    $emptyAddBtn.onclick = function() { openModal(null); };
+
+    // Modal labels
+    $labelTitle.textContent = t('title');
+    $labelContent.textContent = t('content');
+    $labelTags.textContent = t('tags');
+    $tagsHint.textContent = t('tags_hint');
+    $inputTitle.placeholder = t('title');
+    $inputContent.placeholder = t('content');
+
+    // Modal close
+    $modalClose.innerHTML = icon('x', 18);
+    $modalClose.onclick = closeModal;
+
+    // Modal actions
+    $modalSaveBtn.textContent = t('save');
+    $modalSaveBtn.onclick = saveNote;
+    $modalPinBtn.onclick = togglePin;
+    $modalDeleteBtn.innerHTML = icon('trash', 16) + ' ' + t('delete');
+    $modalDeleteBtn.onclick = deleteNote;
+
+    // Character count
+    $inputContent.addEventListener('input', updateCharCount);
+
+    // Close modal on overlay click
+    $noteModal.addEventListener('click', function(e) {
+      if (e.target === $noteModal) closeModal();
+    });
+
+    // Close modal on Escape
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && $noteModal.classList.contains('active')) {
+        closeModal();
+      }
+    });
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────
+  initApp().then(function(app) {
+    state.uid = app.uid;
+    state.lang = app.lang || 'en';
+
+    setupUI();
+    loadNotes();
   });
-  document.getElementById('noteTitle').value = '';
-  document.getElementById('noteBody').value = '';
-  load();
-}
 
-async function pin(id, current) {
-  await fetch('/api/notes/' + id, {
-    method:'PATCH', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ pinned: !current })
-  });
-  load();
-}
-
-async function del(id) {
-  await fetch('/api/notes/' + id, { method:'DELETE' });
-  load();
-}
-
-load();
+})();
 </script>
 </body>
 </html>

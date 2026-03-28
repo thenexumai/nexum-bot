@@ -2,49 +2,138 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>NEXUM</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  :root{
-    --bg:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--border:#222;
-    --text:#f0f0f0;--muted:#888;--accent:#6366f1;--accent2:#818cf8;
-    --green:#22c55e;--red:#ef4444;--yellow:#eab308;--radius:14px;
-    --font:-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,sans-serif;
-  }
-  body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;padding:24px 16px}
-  .logo{text-align:center;margin-bottom:32px}
-  .logo h1{font-size:32px;font-weight:700;letter-spacing:-0.5px}
-  .logo h1 span{color:var(--accent)}
-  .logo p{color:var(--muted);font-size:15px;margin-top:6px}
-  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;max-width:420px;margin:0 auto}
-  .card{
-    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-    padding:20px 16px;text-align:center;cursor:pointer;text-decoration:none;color:inherit;
-    transition:background .15s,transform .1s;display:block;
-  }
-  .card:hover{background:var(--surface2);transform:translateY(-1px)}
-  .card:active{transform:scale(.97)}
-  .card .icon{font-size:28px;margin-bottom:8px}
-  .card .label{font-size:14px;font-weight:600}
-  .card .desc{font-size:12px;color:var(--muted);margin-top:3px}
-  .footer{text-align:center;margin-top:32px;color:var(--muted);font-size:13px}
-</style>
+<link rel="stylesheet" href="shared/design-system.css">
+<script src="shared/icons.js"></script>
+<script src="shared/app-shell.js"></script>
 </head>
 <body>
-<div class="logo">
-  <h1>NEX<span>UM</span></h1>
-  <p>Your AI Superagent</p>
+
+<div class="app-container" id="app" style="display:none">
+  <!-- Header -->
+  <header class="app-header">
+    <span class="app-header-title" id="greeting"></span>
+    <button class="app-header-action" id="themeToggle" aria-label="Toggle theme"></button>
+  </header>
+
+  <!-- Content -->
+  <main class="app-content">
+    <div class="grid-2 fade-in" id="appGrid"></div>
+  </main>
 </div>
-<div class="grid">
-  <a class="card" href="/finance"><div class="icon">💰</div><div class="label">Finance</div><div class="desc">Track income & expenses</div></a>
-  <a class="card" href="/tasks"><div class="icon">✅</div><div class="label">Tasks</div><div class="desc">Manage your to-dos</div></a>
-  <a class="card" href="/notes"><div class="icon">📝</div><div class="label">Notes</div><div class="desc">Quick notes & ideas</div></a>
-  <a class="card" href="/habits"><div class="icon">🔥</div><div class="label">Habits</div><div class="desc">Build daily streaks</div></a>
-  <a class="card" href="/calendar"><div class="icon">📅</div><div class="label">Calendar</div><div class="desc">Events & schedule</div></a>
-  <a class="card" href="/contacts"><div class="icon">👤</div><div class="label">Contacts</div><div class="desc">People & connections</div></a>
-  <a class="card" href="/agent" style="grid-column:span 2"><div class="icon">🤖</div><div class="label">AI Agent</div><div class="desc">NEXUM Agent panel</div></a>
+
+<!-- Loading state -->
+<div class="loading-container" id="loader">
+  <div class="spinner"></div>
 </div>
-<div class="footer">NEXUM v1.0</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ── App definitions ──────────────────────────────────────────
+  var APPS = [
+    { id: 'finance',  icon: 'wallet',   nameKey: 'finance',  descKey: 'track_income',     path: '/finance' },
+    { id: 'tasks',    icon: 'tasks',     nameKey: 'tasks',    descKey: 'manage_tasks',     path: '/tasks' },
+    { id: 'notes',    icon: 'notes',     nameKey: 'notes',    descKey: 'quick_notes',      path: '/notes' },
+    { id: 'habits',   icon: 'habits',    nameKey: 'habits',   descKey: 'build_habits',     path: '/habits' },
+    { id: 'calendar', icon: 'calendar',  nameKey: 'calendar', descKey: 'events_schedule',  path: '/calendar' },
+    { id: 'contacts', icon: 'contacts',  nameKey: 'contacts', descKey: 'your_contacts',    path: '/contacts' },
+    { id: 'settings', icon: 'settings',  nameKey: 'settings', descKey: 'preferences',      path: '/settings',  alwaysOpen: true },
+    { id: 'agent',    icon: 'bot',       nameKey: 'agent',    descKey: 'agent_status',     path: '/agent',     alwaysOpen: true }
+  ];
+
+  // ── Additional i18n keys for this page ───────────────────────
+  var HOME_I18N = {
+    en: { 'agent': 'Agent', 'hello_name': 'Hello, {name}!', 'hello_anon': 'Hello!' },
+    ru: { 'agent': 'Агент', 'hello_name': 'Привет, {name}!', 'hello_anon': 'Привет!' }
+  };
+
+  // ── Merge translations ───────────────────────────────────────
+  function getTranslations(lang) {
+    var base = APP_TRANSLATIONS[lang] || APP_TRANSLATIONS.en;
+    var extra = HOME_I18N[lang] || HOME_I18N.en;
+    var merged = {};
+    var k;
+    for (k in base) { if (base.hasOwnProperty(k)) merged[k] = base[k]; }
+    for (k in extra) { if (extra.hasOwnProperty(k)) merged[k] = extra[k]; }
+    return merged;
+  }
+
+  // ── Build greeting ───────────────────────────────────────────
+  function buildGreeting(t, firstName) {
+    if (firstName && firstName.trim()) {
+      return tr(t, 'hello_name', { name: firstName.trim() });
+    }
+    return tr(t, 'hello_anon');
+  }
+
+  // ── Build app grid ───────────────────────────────────────────
+  function buildGrid(uid, plan, t) {
+    var grid = document.getElementById('appGrid');
+    var isFree = plan === 'free';
+    var html = '';
+
+    for (var i = 0; i < APPS.length; i++) {
+      var app = APPS[i];
+      var locked = isFree && !app.alwaysOpen;
+      var href = app.path + '?uid=' + encodeURIComponent(uid);
+      var appName = tr(t, app.nameKey);
+      var appDesc = tr(t, app.descKey);
+      var lockBadge = locked
+        ? '<span class="badge badge-warning" style="margin-top:4px">' + tr(t, 'upgrade_unlock') + '</span>'
+        : '';
+
+      html += '<a href="' + (locked ? '#' : href) + '" class="app-grid-item' + (locked ? ' locked' : '') + '" data-app="' + app.id + '">'
+            + '<div class="app-grid-icon">' + icon(app.icon) + '</div>'
+            + '<div class="app-grid-name">' + appName + '</div>'
+            + '<div class="app-grid-desc">' + appDesc + '</div>'
+            + lockBadge
+            + '</a>';
+    }
+
+    grid.innerHTML = html;
+  }
+
+  // ── Theme toggle ─────────────────────────────────────────────
+  function setupThemeToggle(currentTheme) {
+    var btn = document.getElementById('themeToggle');
+    var theme = currentTheme;
+
+    function updateIcon() {
+      btn.innerHTML = theme === 'dark' ? icon('sun') : icon('moon');
+    }
+
+    updateIcon();
+
+    btn.addEventListener('click', function() {
+      theme = theme === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', theme);
+      updateIcon();
+    });
+  }
+
+  // ── Init ─────────────────────────────────────────────────────
+  initApp().then(function(ctx) {
+    var t = getTranslations(ctx.lang);
+    var firstName = (ctx.prefs && ctx.prefs.first_name) || '';
+    var plan = (ctx.prefs && ctx.prefs.plan) || 'free';
+
+    // Set greeting
+    document.getElementById('greeting').textContent = buildGreeting(t, firstName);
+
+    // Build app grid
+    buildGrid(ctx.uid, plan, t);
+
+    // Theme toggle
+    setupThemeToggle(ctx.theme);
+
+    // Show app, hide loader
+    document.getElementById('loader').style.display = 'none';
+    document.getElementById('app').style.display = '';
+  });
+})();
+</script>
 </body>
 </html>

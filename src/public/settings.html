@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Settings — NEXUM</title>
+<link rel="stylesheet" href="shared/design-system.css">
+<style>
+  .profile-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 16px;
+    gap: 8px;
+  }
+  .profile-name {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-top: 4px;
+  }
+  .profile-username {
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+  .section-gap {
+    margin-bottom: 24px;
+  }
+  .list-item {
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .list-item-meta .toggle {
+    pointer-events: none;
+  }
+  .theme-icon-container {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .clear-memory-btn {
+    margin-top: 8px;
+    margin-left: 48px;
+    margin-right: 16px;
+    margin-bottom: 4px;
+  }
+  .version-text {
+    text-align: center;
+    padding: 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+</style>
+</head>
+<body>
+<div class="app-container" id="app">
+
+  <!-- Loading state -->
+  <div class="loading-container" id="loader">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- Main content (hidden until loaded) -->
+  <div id="content" class="hidden">
+
+    <!-- Header -->
+    <header class="app-header">
+      <span class="app-header-title" id="headerTitle">Settings</span>
+    </header>
+
+    <div class="app-content fade-in">
+
+      <!-- Account / Profile -->
+      <div class="profile-section">
+        <div class="avatar avatar-xl" id="avatarInitials">--</div>
+        <div class="profile-name" id="profileName">...</div>
+        <div class="profile-username" id="profileUsername"></div>
+        <span class="badge badge-accent" id="planBadge">Free</span>
+      </div>
+
+      <!-- Appearance -->
+      <div class="section-gap">
+        <div class="list-section-title" id="sectionAppearance">Appearance</div>
+        <div class="list">
+          <div class="list-item" id="themeRow" onclick="toggleTheme()">
+            <div class="list-item-icon" id="themeIcon"></div>
+            <div class="list-item-content">
+              <div class="list-item-title" id="themeLabel">Theme</div>
+              <div class="list-item-subtitle" id="themeValue">Dark</div>
+            </div>
+            <div class="list-item-meta">
+              <div class="toggle" id="themeToggle"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Language -->
+      <div class="section-gap">
+        <div class="list-section-title" id="sectionLanguage">Language</div>
+        <div class="list">
+          <div class="list-item" id="langRow" onclick="toggleLang()">
+            <div class="list-item-icon" id="langIcon"></div>
+            <div class="list-item-content">
+              <div class="list-item-title" id="langLabel">Language</div>
+              <div class="list-item-subtitle" id="langValue">English</div>
+            </div>
+            <div class="list-item-meta">
+              <span class="badge badge-accent" id="langBadge">EN</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Voice -->
+      <div class="section-gap">
+        <div class="list-section-title" id="sectionVoice">Voice</div>
+        <div class="list">
+          <div class="list-item" id="voiceRow" onclick="toggleVoice()">
+            <div class="list-item-icon" id="voiceIcon"></div>
+            <div class="list-item-content">
+              <div class="list-item-title" id="voiceLabel">Voice</div>
+              <div class="list-item-subtitle" id="voiceValue">Off</div>
+            </div>
+            <div class="list-item-meta">
+              <div class="toggle" id="voiceToggle"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- API Keys -->
+      <div class="section-gap">
+        <div class="list-section-title" id="sectionApiKeys">API Keys</div>
+        <div class="list">
+          <div class="list-item" id="apiKeysRow">
+            <div class="list-item-icon" id="apiKeysIcon"></div>
+            <div class="list-item-content">
+              <div class="list-item-title" id="apiKeysLabel">API Keys (BYOK)</div>
+              <div class="list-item-subtitle" id="apiKeysSubtitle">Manage keys in bot</div>
+            </div>
+            <div class="list-item-meta" id="apiKeysMeta"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Plan -->
+      <div class="section-gap">
+        <div class="list-section-title" id="sectionPlan">Plan</div>
+        <div class="list">
+          <div class="list-item" id="planRow">
+            <div class="list-item-icon" id="planIcon"></div>
+            <div class="list-item-content">
+              <div class="list-item-title" id="planLabel">Plan</div>
+              <div class="list-item-subtitle" id="planValue">Free</div>
+            </div>
+            <div class="list-item-meta">
+              <span class="badge badge-success" id="planStatusBadge">Free</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Memory -->
+      <div class="section-gap">
+        <div class="list-section-title" id="sectionMemory">Memory</div>
+        <div class="list">
+          <div class="list-item" id="memoryRow">
+            <div class="list-item-icon" id="memoryIcon"></div>
+            <div class="list-item-content">
+              <div class="list-item-title" id="memoryLabel">Memory</div>
+              <div class="list-item-subtitle" id="memoryValue">-- facts</div>
+            </div>
+            <div class="list-item-meta">
+              <button class="btn btn-danger btn-sm" id="clearMemoryBtn" onclick="clearMemory()">Clear</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PC Agent -->
+      <div class="section-gap">
+        <div class="list-section-title" id="sectionPcAgent">PC Agent</div>
+        <div class="list">
+          <div class="list-item" id="pcAgentRow">
+            <div class="list-item-icon" id="pcAgentIcon"></div>
+            <div class="list-item-content">
+              <div class="list-item-title" id="pcAgentLabel">PC Agent</div>
+              <div class="list-item-subtitle" id="pcAgentValue">Not connected</div>
+            </div>
+            <div class="list-item-meta">
+              <span class="badge" id="pcAgentBadge">Offline</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- About -->
+      <div class="section-gap">
+        <div class="list-section-title" id="sectionAbout">About</div>
+        <div class="list">
+          <div class="list-item" id="aboutRow">
+            <div class="list-item-icon" id="aboutIcon"></div>
+            <div class="list-item-content">
+              <div class="list-item-title">NEXUM</div>
+              <div class="list-item-subtitle" id="aboutVersion">Version 1.0.0</div>
+            </div>
+            <div class="list-item-meta">
+              <span class="text-secondary text-sm">v1.0.0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="version-text">NEXUM v1.0.0</div>
+
+    </div>
+  </div>
+</div>
+
+<script src="shared/icons.js"></script>
+<script src="shared/app-shell.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  /* ── i18n translations ─────────────────────────────────────────────── */
+  var T = {
+    en: Object.assign({}, APP_TRANSLATIONS.en, {
+      'settings_title': 'Settings',
+      'section_appearance': 'APPEARANCE',
+      'section_language': 'LANGUAGE',
+      'section_voice': 'VOICE',
+      'section_api_keys': 'API KEYS',
+      'section_plan': 'PLAN',
+      'section_memory': 'MEMORY',
+      'section_pc_agent': 'PC AGENT',
+      'section_about': 'ABOUT',
+      'theme_label': 'Theme',
+      'language_label': 'Language',
+      'voice_label': 'Voice Mode',
+      'api_keys_label': 'API Keys (BYOK)',
+      'api_keys_subtitle': 'Manage keys in bot',
+      'plan_label': 'Current Plan',
+      'memory_label_title': 'Memory',
+      'memory_facts': '{count} facts',
+      'clear_memory_btn': 'Clear Memory',
+      'clear_confirm_msg': 'Clear all memory? This cannot be undone.',
+      'memory_cleared': 'Memory cleared',
+      'pc_agent_label': 'PC Agent',
+      'pc_not_connected': 'Not connected',
+      'pc_offline': 'Offline',
+      'about_label': 'About',
+      'about_version': 'Version 1.0.0',
+      'dark_theme': 'Dark',
+      'light_theme': 'Light',
+      'lang_en': 'English',
+      'lang_ru': 'Russian',
+      'voice_on': 'On',
+      'voice_off': 'Off',
+      'free_plan': 'Free',
+      'pro_plan': 'Pro',
+    }),
+    ru: Object.assign({}, APP_TRANSLATIONS.ru, {
+      'settings_title': 'Настройки',
+      'section_appearance': 'ВНЕШНИЙ ВИД',
+      'section_language': 'ЯЗЫК',
+      'section_voice': 'ГОЛОС',
+      'section_api_keys': 'API КЛЮЧИ',
+      'section_plan': 'ТАРИФ',
+      'section_memory': 'ПАМЯТЬ',
+      'section_pc_agent': 'PC АГЕНТ',
+      'section_about': 'О ПРИЛОЖЕНИИ',
+      'theme_label': 'Тема',
+      'language_label': 'Язык',
+      'voice_label': 'Голосовой режим',
+      'api_keys_label': 'API Ключи (BYOK)',
+      'api_keys_subtitle': 'Управление ключами в боте',
+      'plan_label': 'Текущий тариф',
+      'memory_label_title': 'Память',
+      'memory_facts': '{count} фактов',
+      'clear_memory_btn': 'Очистить память',
+      'clear_confirm_msg': 'Очистить всю память? Это нельзя отменить.',
+      'memory_cleared': 'Память очищена',
+      'pc_agent_label': 'PC Агент',
+      'pc_not_connected': 'Не подключён',
+      'pc_offline': 'Офлайн',
+      'about_label': 'О приложении',
+      'about_version': 'Версия 1.0.0',
+      'dark_theme': 'Тёмная',
+      'light_theme': 'Светлая',
+      'lang_en': 'English',
+      'lang_ru': 'Русский',
+      'voice_on': 'Вкл',
+      'voice_off': 'Выкл',
+      'free_plan': 'Free',
+      'pro_plan': 'Pro',
+    })
+  };
+
+  /* ── State ─────────────────────────────────────────────────────────── */
+  var state = {
+    uid: '0',
+    lang: 'en',
+    theme: 'dark',
+    voice: 'off',
+    plan: 'free',
+    username: '',
+    firstName: '',
+    memoryCount: 0
+  };
+
+  /* ── Helpers ───────────────────────────────────────────────────────── */
+  function t(key, params) {
+    return tr(T[state.lang] || T.en, key, params);
+  }
+
+  function getInitials(name) {
+    if (!name) return '??';
+    var parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  }
+
+  function capitalize(str) {
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1);
+  }
+
+  /* ── Save preference to server ─────────────────────────────────────── */
+  async function savePref(data) {
+    if (!state.uid || state.uid === '0') return;
+    try {
+      await fetch('/api/user-prefs/' + state.uid, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+    } catch (e) {
+      console.warn('Failed to save pref:', e);
+    }
+  }
+
+  /* ── Render all UI text ────────────────────────────────────────────── */
+  function renderUI() {
+    // Header
+    document.getElementById('headerTitle').textContent = t('settings_title');
+
+    // Profile
+    document.getElementById('avatarInitials').textContent = getInitials(state.firstName || state.username);
+    document.getElementById('profileName').textContent = state.firstName || state.username || 'User';
+    document.getElementById('profileUsername').textContent = state.username ? '@' + state.username : '';
+
+    var planDisplay = state.plan === 'pro' ? t('pro_plan') : t('free_plan');
+    document.getElementById('planBadge').textContent = planDisplay;
+    document.getElementById('planBadge').className = state.plan === 'pro' ? 'badge badge-accent' : 'badge badge-success';
+
+    // Section titles
+    document.getElementById('sectionAppearance').textContent = t('section_appearance');
+    document.getElementById('sectionLanguage').textContent = t('section_language');
+    document.getElementById('sectionVoice').textContent = t('section_voice');
+    document.getElementById('sectionApiKeys').textContent = t('section_api_keys');
+    document.getElementById('sectionPlan').textContent = t('section_plan');
+    document.getElementById('sectionMemory').textContent = t('section_memory');
+    document.getElementById('sectionPcAgent').textContent = t('section_pc_agent');
+    document.getElementById('sectionAbout').textContent = t('section_about');
+
+    // Icons
+    document.getElementById('themeIcon').innerHTML = state.theme === 'dark' ? Icons.moon : Icons.sun;
+    document.getElementById('langIcon').innerHTML = Icons.globe;
+    document.getElementById('voiceIcon').innerHTML = Icons.voice;
+    document.getElementById('apiKeysIcon').innerHTML = Icons.key;
+    document.getElementById('planIcon').innerHTML = Icons.billing;
+    document.getElementById('memoryIcon').innerHTML = Icons.memory;
+    document.getElementById('pcAgentIcon').innerHTML = Icons.computer;
+    document.getElementById('aboutIcon').innerHTML = Icons.info;
+    document.getElementById('apiKeysMeta').innerHTML = Icons.chevronRight;
+
+    // Theme row
+    document.getElementById('themeLabel').textContent = t('theme_label');
+    document.getElementById('themeValue').textContent = state.theme === 'dark' ? t('dark_theme') : t('light_theme');
+    var themeToggle = document.getElementById('themeToggle');
+    if (state.theme === 'light') {
+      themeToggle.classList.add('active');
+    } else {
+      themeToggle.classList.remove('active');
+    }
+
+    // Language row
+    document.getElementById('langLabel').textContent = t('language_label');
+    document.getElementById('langValue').textContent = state.lang === 'en' ? t('lang_en') : t('lang_ru');
+    document.getElementById('langBadge').textContent = state.lang.toUpperCase();
+
+    // Voice row
+    document.getElementById('voiceLabel').textContent = t('voice_label');
+    document.getElementById('voiceValue').textContent = state.voice === 'on' ? t('voice_on') : t('voice_off');
+    var voiceToggle = document.getElementById('voiceToggle');
+    if (state.voice === 'on') {
+      voiceToggle.classList.add('active');
+    } else {
+      voiceToggle.classList.remove('active');
+    }
+
+    // API Keys row
+    document.getElementById('apiKeysLabel').textContent = t('api_keys_label');
+    document.getElementById('apiKeysSubtitle').textContent = t('api_keys_subtitle');
+
+    // Plan row
+    document.getElementById('planLabel').textContent = t('plan_label');
+    document.getElementById('planValue').textContent = capitalize(state.plan || 'free');
+    document.getElementById('planStatusBadge').textContent = planDisplay;
+    document.getElementById('planStatusBadge').className = state.plan === 'pro' ? 'badge badge-accent' : 'badge badge-success';
+
+    // Memory row
+    document.getElementById('memoryLabel').textContent = t('memory_label_title');
+    document.getElementById('memoryValue').textContent = t('memory_facts', { count: state.memoryCount });
+    document.getElementById('clearMemoryBtn').textContent = t('clear_memory_btn');
+
+    // PC Agent row
+    document.getElementById('pcAgentLabel').textContent = t('pc_agent_label');
+    document.getElementById('pcAgentValue').textContent = t('pc_not_connected');
+    document.getElementById('pcAgentBadge').textContent = t('pc_offline');
+
+    // About row
+    document.getElementById('aboutVersion').textContent = t('about_version');
+  }
+
+  /* ── Toggle handlers ───────────────────────────────────────────────── */
+  window.toggleTheme = function() {
+    state.theme = state.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', state.theme);
+    savePref({ theme: state.theme });
+    renderUI();
+  };
+
+  window.toggleLang = function() {
+    state.lang = state.lang === 'en' ? 'ru' : 'en';
+    savePref({ lang: state.lang });
+    renderUI();
+  };
+
+  window.toggleVoice = function() {
+    state.voice = state.voice === 'on' ? 'off' : 'on';
+    savePref({ voice: state.voice });
+    renderUI();
+  };
+
+  /* ── Memory ────────────────────────────────────────────────────────── */
+  async function loadMemoryCount() {
+    if (!state.uid || state.uid === '0') return;
+    try {
+      var resp = await fetch('/api/memory/' + state.uid);
+      if (resp.ok) {
+        var data = await resp.json();
+        state.memoryCount = Array.isArray(data) ? data.length : 0;
+        renderUI();
+      }
+    } catch (e) {
+      console.warn('Failed to load memory:', e);
+    }
+  }
+
+  window.clearMemory = async function() {
+    if (!confirm(t('clear_confirm_msg'))) return;
+    if (!state.uid || state.uid === '0') return;
+    try {
+      var resp = await fetch('/api/memory/all/' + state.uid, { method: 'DELETE' });
+      if (resp.ok) {
+        state.memoryCount = 0;
+        renderUI();
+      }
+    } catch (e) {
+      console.warn('Failed to clear memory:', e);
+    }
+  };
+
+  /* ── Init ──────────────────────────────────────────────────────────── */
+  async function init() {
+    try {
+      var app = await initApp();
+
+      state.uid = app.uid;
+      state.lang = app.lang || 'en';
+      state.theme = app.theme || 'dark';
+      state.voice = (app.prefs && app.prefs.voice) || 'off';
+      state.plan = (app.prefs && app.prefs.plan) || 'free';
+      state.username = (app.prefs && app.prefs.username) || '';
+      state.firstName = (app.prefs && app.prefs.first_name) || '';
+
+      document.documentElement.setAttribute('data-theme', state.theme);
+
+      renderUI();
+
+      document.getElementById('loader').classList.add('hidden');
+      document.getElementById('content').classList.remove('hidden');
+
+      loadMemoryCount();
+    } catch (e) {
+      console.error('Settings init failed:', e);
+      document.getElementById('loader').classList.add('hidden');
+      document.getElementById('content').classList.remove('hidden');
+      renderUI();
+    }
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

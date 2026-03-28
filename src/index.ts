@@ -1,29 +1,39 @@
-import { config } from './core/config';
+/**
+ * NEXUM — Entry Point
+ * Boot order: HTTP server first → then Telegram bot.
+ * Railway health check pings /health immediately on deploy.
+ */
 
-// ── Start HTTP server FIRST (unconditionally) ─────────────────────────────────
-// Railway healthcheck hits /health — this must respond regardless of bot status
-import('./apps/server').then(({ startServer }) => {
-  const app = startServer();
-  (global as any).__nexumApp = app;
-  console.log(`[nexum] HTTP server up on port ${config.port}`);
-}).catch((err) => {
-  console.error('[nexum] FATAL: HTTP server failed to start:', err.message);
-  process.exit(1);
-});
+import { config, validateConfig } from './core/config';
+import { db } from './core/db';
+import { startServer } from './apps/server';
+import { createLogger } from './infra/logger';
 
-// ── Bot setup ─────────────────────────────────────────────────────────────────
+const log = createLogger('nexum');
+
+// ── Startup ───────────────────────────────────────────────────────────────────
+
+const { ok, warnings } = validateConfig();
+for (const w of warnings) log.warn(w);
+
+// 1. HTTP server — always starts (Railway health check)
+startServer();
+log.info(`HTTP server ready on port ${config.port}`);
+
+// 2. Telegram bot — starts if BOT_TOKEN is set
 if (!config.botToken) {
-  console.warn('[nexum] BOT_TOKEN not set — HTTP-only mode. Set it in Railway Variables.');
+  log.warn('BOT_TOKEN not set — HTTP-only mode');
 } else {
-  startBot().catch((err) => {
-    console.error('[nexum] Bot startup error:', err.message);
-    // Don't exit — keep HTTP server alive for healthcheck
+  startBot().catch(err => {
+    log.error(`Bot startup failed: ${err.message}`);
+    // Keep HTTP alive even if bot fails
   });
 }
 
-async function startBot() {
-  const { Bot } = await import('grammy');
-  const { db } = await import('./core/db');
+// ── Bot startup ───────────────────────────────────────────────────────────────
+
+async function startBot(): Promise<void> {
+  const { Bot }   = await import('grammy');
   const { setupCommands, setupExecApprovalCallbacks } = await import('./telegram/commands');
   const {
     handleTextMessage,
@@ -34,50 +44,49 @@ async function startBot() {
   const cron = (await import('node-cron')).default;
 
   const bot = new Bot(config.botToken);
-  console.log('[nexum] Bot initializing...');
+
+  log.info('Initializing Telegram bot…');
 
   setupCommands(bot);
   setupExecApprovalCallbacks(bot);
 
-  bot.on('message:text',     (ctx: any) => handleTextMessage(ctx, bot));
-  bot.on('message:voice',    (ctx: any) => handleVoiceMessage(ctx, bot));
-  bot.on('message:photo',    (ctx: any) => handlePhotoMessage(ctx, bot));
-  bot.on('message:document', (ctx: any) => handleDocumentMessage(ctx, bot));
+  bot.on('message:text',     ctx => handleTextMessage(ctx, bot));
+  bot.on('message:voice',    ctx => handleVoiceMessage(ctx, bot));
+  bot.on('message:photo',    ctx => handlePhotoMessage(ctx, bot));
+  bot.on('message:document', ctx => handleDocumentMessage(ctx, bot));
 
-  bot.catch((err: any) => console.error('[bot]', err.message));
+  bot.catch(err => log.error(`Bot error: ${err.message}`));
 
-  // Reminders cron
+  // ── Reminder cron ─────────────────────────────────────────────────────────
   cron.schedule('* * * * *', async () => {
     try {
-      const due = (db as any).prepare(
-        `SELECT * FROM reminders WHERE done=0 AND fire_at<=datetime('now')`
-      ).all() as any[];
-      if (!due?.length) return;
+      const due = db.prepare(
+        `SELECT * FROM reminders WHERE done=0 AND fire_at <= datetime('now')`
+      ).all() as { id: number; chat_id: number; text: string }[];
+
       for (const r of due) {
-        try { await bot.api.sendMessage(r.chat_id, `⏰ Reminder: ${r.text}`); } catch {}
-        (db as any).prepare('UPDATE reminders SET done=1 WHERE id=?').run(r.id);
+        try { await bot.api.sendMessage(r.chat_id, `⏰ ${r.text}`); } catch {}
+        db.prepare('UPDATE reminders SET done=1 WHERE id=?').run(r.id);
       }
-    } catch {}
+    } catch { /* non-critical */ }
   });
 
-  (global as any).__nexumBot = bot;
-
-  const adminId = config.adminIds[0];
+  // ── Expose globally for server.ts notifications ───────────────────────────
+  (global as { __nexumBot?: typeof bot }).__nexumBot = bot;
 
   await bot.start({
-    onStart: async (info: any) => {
-      const providers = Object.entries(config.ai)
-        .filter(([, k]) => (k as string[]).length)
-        .map(([p]) => p)
-        .join(', ');
+    onStart: async info => {
+      const providers = (Object.entries(config.ai) as [string, readonly string[]][])
+        .filter(([, k]) => k.length).map(([p]) => p).join(', ');
 
-      console.log(`[nexum] @${info.username} online`);
-      console.log(`[nexum] Providers: ${providers || 'none'}`);
+      log.info(`@${info.username} is online`);
+      log.info(`AI providers: ${providers || 'none'}`);
 
+      const adminId = config.adminIds[0];
       if (adminId) {
         await bot.api.sendMessage(
           adminId,
-          `✅ NEXUM started\n@${info.username}\nProviders: ${providers || 'none'}`
+          `✅ NEXUM started\n@${info.username}\nProviders: ${providers || 'none configured'}`
         ).catch(() => {});
       }
     },

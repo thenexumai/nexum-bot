@@ -1,87 +1,129 @@
-// NEXUM Draft Stream — throttled progressive message updates (OpenClaw pattern)
+/**
+ * NEXUM Draft Stream — token-by-token editing like Claude/ChatGPT/OpenClaw
+ *
+ * The key insight: Telegram allows ~3 edits/second per message.
+ * We edit every 300ms so text visibly grows chunk by chunk.
+ *
+ * No "…" placeholder. First message sends when first tokens arrive (~5 chars).
+ * Each subsequent edit adds more text until the full response is shown.
+ */
 
-interface DraftStreamOptions {
-  api: any;
+import { Api } from 'grammy';
+
+interface Options {
+  api: Api;
   chatId: number;
-  warn?: (msg: string) => void;
-  throttleMs?: number;
 }
 
-interface DraftStream {
-  update: (text: string) => void;
-  stop: () => Promise<void>;
-  messageId: () => number | null;
+export interface DraftStream {
+  update(accumulated: string): void;
+  stop(): Promise<void>;
+  messageId(): number | null;
 }
 
-export function createDraftStream(opts: DraftStreamOptions): DraftStream {
-  const { api, chatId, warn, throttleMs = 1200 } = opts;
+// Edit every 300ms — fast enough to see text growing, safe for Telegram limits
+// Telegram limit is ~20 edits/min per message = 1 per 3s officially,
+// but in practice 2-3/sec works fine for short bursts
+const EDIT_INTERVAL_MS = 300;
 
-  let msgId: number | null = null;
-  let lastSent = '';
-  let pending: string | null = null;
-  let timer: NodeJS.Timeout | null = null;
-  let stopped = false;
+// Send first message when this many chars are accumulated
+const MIN_FIRST_CHARS = 5;
 
-  async function sendOrEdit(text: string): Promise<void> {
-    if (!text?.trim()) return;
+export function createDraftStream({ api, chatId }: Options): DraftStream {
+  let msgId:      number | null = null;
+  let lastSent    = '';
+  let pendingText = '';
+  let busy        = false; // prevent overlapping edits
+  let interval:   ReturnType<typeof setInterval> | null = null;
+  let stopped     = false;
 
-    // Telegram max message length
-    const chunk = text.slice(0, 4096);
+  // ── Interval-based edit loop ───────────────────────────────────────────────
+  // Runs every 300ms, sends edit if text changed
+  interval = setInterval(async () => {
+    if (busy || stopped || !pendingText || pendingText === lastSent) return;
+    busy = true;
 
-    try {
-      if (msgId === null) {
-        const sent = await api.sendMessage(chatId, chunk, { parse_mode: 'Markdown' });
-        msgId = sent.message_id;
-        lastSent = chunk;
-      } else if (chunk !== lastSent) {
-        await api.editMessageText(chatId, msgId, chunk, { parse_mode: 'Markdown' });
-        lastSent = chunk;
-      }
-    } catch (e: any) {
-      // If Markdown fails, try plain
+    const content = pendingText.slice(0, 4096);
+
+    if (msgId === null) {
+      // First send — only if we have enough text
+      if (content.length < MIN_FIRST_CHARS) { busy = false; return; }
       try {
-        if (msgId === null) {
-          const sent = await api.sendMessage(chatId, chunk);
-          msgId = sent.message_id;
-          lastSent = chunk;
-        } else if (chunk !== lastSent) {
-          await api.editMessageText(chatId, msgId, chunk);
-          lastSent = chunk;
-        }
-      } catch (e2: any) {
-        warn?.(`[draft] edit failed: ${e2.message?.slice(0, 80)}`);
+        const msg = await api.sendMessage(chatId, content, { parse_mode: 'Markdown' });
+        msgId    = msg.message_id;
+        lastSent = content;
+      } catch {
+        try {
+          const msg = await api.sendMessage(chatId, content);
+          msgId    = msg.message_id;
+          lastSent = content;
+        } catch { /* will retry next interval */ }
+      }
+    } else {
+      // Edit existing message
+      try {
+        await api.editMessageText(chatId, msgId, content, { parse_mode: 'Markdown' });
+        lastSent = content;
+      } catch {
+        try {
+          await api.editMessageText(chatId, msgId, content);
+          lastSent = content;
+        } catch { /* ignore transient errors */ }
       }
     }
-  }
 
-  function scheduleFlush(): void {
-    if (timer) return;
-    timer = setTimeout(async () => {
-      timer = null;
-      if (pending !== null && !stopped) {
-        const text = pending;
-        pending = null;
-        await sendOrEdit(text);
-      }
-    }, throttleMs);
-  }
+    busy = false;
+  }, EDIT_INTERVAL_MS);
 
   return {
-    update(text: string) {
-      if (stopped) return;
-      pending = text;
-      scheduleFlush();
+    update(accumulated: string): void {
+      if (!accumulated || stopped) return;
+      pendingText = accumulated;
     },
 
-    async stop() {
+    async stop(): Promise<void> {
       stopped = true;
-      if (timer) { clearTimeout(timer); timer = null; }
-      if (pending !== null) {
-        await sendOrEdit(pending);
-        pending = null;
+
+      // Stop the interval
+      if (interval) { clearInterval(interval); interval = null; }
+
+      // Wait for any in-progress edit to finish
+      while (busy) await new Promise(r => setTimeout(r, 20));
+
+      const content = pendingText.slice(0, 4096);
+      if (!content) return;
+
+      if (msgId === null) {
+        // Never sent anything — send full text now
+        try {
+          const msg = await api.sendMessage(chatId, content, { parse_mode: 'Markdown' });
+          msgId = msg.message_id;
+          lastSent = content;
+        } catch {
+          try {
+            const msg = await api.sendMessage(chatId, content);
+            msgId = msg.message_id;
+            lastSent = content;
+          } catch { /* nothing we can do */ }
+        }
+      } else if (content !== lastSent) {
+        // Final edit with complete text
+        try {
+          await api.editMessageText(chatId, msgId, content, { parse_mode: 'Markdown' });
+          lastSent = content;
+        } catch {
+          try {
+            await api.editMessageText(chatId, msgId, content);
+            lastSent = content;
+          } catch {
+            // Absolute last resort — send as new message
+            await api.sendMessage(chatId, content, { parse_mode: 'Markdown' })
+              .catch(() => api.sendMessage(chatId, content).catch(() => {}));
+          }
+        }
       }
     },
 
-    messageId() { return msgId; },
+    messageId(): number | null { return msgId; },
   };
 }
