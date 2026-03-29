@@ -1,0 +1,165 @@
+version: 1.0.0
+description: NEXUM capability registry — defines all available capabilities and their access requirements
+
+capabilities:
+
+  # ── AI Chat ─────────────────────────────────────────────────────────────────
+  ai_chat:
+    name: AI Chat
+    description: Conversational AI with multi-provider routing
+    class: safe
+    plans: [free, middle, pro]
+    rate_limited: true
+
+  web_search:
+    name: Web Search
+    description: Real-time web search via Serper API
+    class: safe
+    plans: [free, middle, pro]
+    requires_env: SERPER_KEY
+
+  # ── Memory ───────────────────────────────────────────────────────────────────
+  long_term_memory:
+    name: Long-term Memory
+    description: Remember user preferences and context across sessions
+    class: safe
+    plans: [middle, pro]
+
+  # ── Mini Apps ─────────────────────────────────────────────────────────────────
+  finance_tracker:
+    name: Finance Tracker
+    description: Track income/expenses with intent detection
+    class: safe
+    plans: [free, middle, pro]
+
+  task_manager:
+    name: Task Manager
+    description: Create and manage tasks via natural language
+    class: safe
+    plans: [free, middle, pro]
+
+  calendar:
+    name: Calendar
+    description: Schedule events with natural language detection
+    class: safe
+    plans: [middle, pro]
+
+  notes:
+    name: Notes
+    description: Create and search personal notes
+    class: safe
+    plans: [middle, pro]
+
+  contacts:
+    name: Contacts
+    description: Manage personal contacts
+    class: safe
+    plans: [middle, pro]
+
+  habits:
+    name: Habit Tracker
+    description: Track daily habits and streaks
+    class: safe
+    plans: [middle, pro]
+
+  # ── Voice ─────────────────────────────────────────────────────────────────────
+  voice_input:
+    name: Voice Input (STT)
+    description: Transcribe voice messages to text via Groq Whisper
+    class: safe
+    plans: [free, middle, pro]
+
+  voice_output:
+    name: Voice Output (TTS)
+    description: Respond with synthesized voice via Groq TTS
+    class: safe
+    plans: [middle, pro]
+
+  # ── PC Agent ──────────────────────────────────────────────────────────────────
+  screenshot:
+    name: Screenshot
+    description: Take a screenshot of the PC screen
+    class: safe
+    plans: [pro]
+    requires_pc_agent: true
+    requires_confirmation: false
+
+  sysinfo:
+    name: System Info
+    description: Get CPU/RAM/disk information
+    class: safe
+    plans: [pro]
+    requires_pc_agent: true
+    requires_confirmation: false
+
+  file_read:
+    name: File Read
+    description: Read contents of a file
+    class: safe
+    plans: [pro]
+    requires_pc_agent: true
+    requires_confirmation: false
+
+  file_list:
+    name: File List
+    description: List files in a directory
+    class: safe
+    plans: [pro]
+    requires_pc_agent: true
+    requires_confirmation: false
+
+  file_write:
+    name: File Write
+    description: Write content to a file
+    class: sensitive
+    plans: [pro]
+    requires_pc_agent: true
+    requires_confirmation: true
+
+  mouse_control:
+    name: Mouse Control
+    description: Move mouse and click
+    class: sensitive
+    plans: [pro]
+    requires_pc_agent: true
+    requires_confirmation: true
+
+  keyboard_input:
+    name: Keyboard Input
+    description: Type text on the PC
+    class: sensitive
+    plans: [pro]
+    requires_pc_agent: true
+    requires_confirmation: true
+
+  browser_automation:
+    name: Browser Automation
+    description: Navigate and interact with web pages
+    class: sensitive
+    plans: [pro]
+    requires_pc_agent: true
+    requires_confirmation: false
+
+  shell_exec:
+    name: Shell Execution
+    description: Run shell commands on the PC
+    class: dangerous
+    plans: [pro]
+    requires_pc_agent: true
+    requires_confirmation: true
+    max_timeout: 30
+
+  file_delete:
+    name: File Delete
+    description: Delete files from the PC
+    class: dangerous
+    plans: [pro]
+    requires_pc_agent: true
+    requires_confirmation: true
+
+  # ── BYOK ─────────────────────────────────────────────────────────────────────
+  byok:
+    name: Bring Your Own Keys
+    description: Use personal API keys for AI providers
+    class: safe
+    plans: [pro]

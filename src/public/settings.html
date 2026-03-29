@@ -2,511 +2,211 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Settings — NEXUM</title>
-<link rel="stylesheet" href="shared/design-system.css">
+<link rel="stylesheet" href="/shared/design-system.css">
 <style>
-  .profile-section {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 24px 16px 16px;
-    gap: 8px;
+  .settings-section { margin-bottom: 20px; }
+  .settings-title { font-size: .72rem; font-weight: 800; color: var(--text3); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 8px; padding: 0 4px; }
+  .settings-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 14px; background: var(--surface); border: 1px solid var(--border);
+    margin-bottom: 2px; cursor: pointer; transition: background .1s;
   }
-  .profile-name {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-top: 4px;
+  .settings-row:first-of-type { border-radius: var(--radius) var(--radius) 0 0; }
+  .settings-row:last-of-type  { border-radius: 0 0 var(--radius) var(--radius); margin-bottom: 0; }
+  .settings-row:only-of-type  { border-radius: var(--radius); }
+  .settings-row:hover { background: var(--surface2); }
+  .row-left  { display: flex; align-items: center; gap: 12px; }
+  .row-icon  { font-size: 1.1rem; width: 28px; text-align: center; }
+  .row-label { font-weight: 600; font-size: .9rem; }
+  .row-sub   { font-size: .75rem; color: var(--text2); margin-top: 1px; }
+  .row-right { color: var(--text3); font-size: .85rem; }
+  /* Toggle */
+  .toggle { position: relative; width: 44px; height: 24px; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle-track {
+    position: absolute; inset: 0;
+    background: var(--border2); border-radius: 12px;
+    transition: background .2s; cursor: pointer;
   }
-  .profile-username {
-    font-size: 14px;
-    color: var(--text-secondary);
+  .toggle-thumb {
+    position: absolute; top: 3px; left: 3px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #fff; transition: transform .2s;
   }
-  .section-gap {
-    margin-bottom: 24px;
-  }
-  .list-item {
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .list-item-meta .toggle {
-    pointer-events: none;
-  }
-  .theme-icon-container {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .clear-memory-btn {
-    margin-top: 8px;
-    margin-left: 48px;
-    margin-right: 16px;
-    margin-bottom: 4px;
-  }
-  .version-text {
-    text-align: center;
-    padding: 16px;
-    font-size: 13px;
-    color: var(--text-muted);
-  }
+  .toggle input:checked + .toggle-track { background: var(--accent); }
+  .toggle input:checked ~ .toggle-thumb { transform: translateX(20px); }
+
+  .plan-row { background: linear-gradient(135deg,var(--accent-dim),rgba(156,85,255,.1)); border-color: rgba(108,99,255,.3); }
 </style>
 </head>
 <body>
-<div class="app-container" id="app">
-
-  <!-- Loading state -->
-  <div class="loading-container" id="loader">
-    <div class="spinner"></div>
+<header class="app-header">
+  <div class="header-logo">
+    <div class="logo-dot">⚙️</div>
+    <h1>Settings</h1>
   </div>
+</header>
 
-  <!-- Main content (hidden until loaded) -->
-  <div id="content" class="hidden">
+<div class="page">
 
-    <!-- Header -->
-    <header class="app-header">
-      <span class="app-header-title" id="headerTitle">Settings</span>
-    </header>
-
-    <div class="app-content fade-in">
-
-      <!-- Account / Profile -->
-      <div class="profile-section">
-        <div class="avatar avatar-xl" id="avatarInitials">--</div>
-        <div class="profile-name" id="profileName">...</div>
-        <div class="profile-username" id="profileUsername"></div>
-        <span class="badge badge-accent" id="planBadge">Free</span>
+  <!-- Account -->
+  <div class="settings-section">
+    <div class="settings-title">Account</div>
+    <div class="settings-row plan-row" onclick="showPlan()">
+      <div class="row-left">
+        <div class="row-icon">💎</div>
+        <div><div class="row-label">Plan</div><div class="row-sub" id="planSub">Loading...</div></div>
       </div>
-
-      <!-- Appearance -->
-      <div class="section-gap">
-        <div class="list-section-title" id="sectionAppearance">Appearance</div>
-        <div class="list">
-          <div class="list-item" id="themeRow" onclick="toggleTheme()">
-            <div class="list-item-icon" id="themeIcon"></div>
-            <div class="list-item-content">
-              <div class="list-item-title" id="themeLabel">Theme</div>
-              <div class="list-item-subtitle" id="themeValue">Dark</div>
-            </div>
-            <div class="list-item-meta">
-              <div class="toggle" id="themeToggle"></div>
-            </div>
-          </div>
-        </div>
+      <div class="row-right">Upgrade →</div>
+    </div>
+    <div class="settings-row" onclick="showUsage()">
+      <div class="row-left">
+        <div class="row-icon">📊</div>
+        <div><div class="row-label">Usage</div><div class="row-sub" id="usageSub">— / — messages today</div></div>
       </div>
-
-      <!-- Language -->
-      <div class="section-gap">
-        <div class="list-section-title" id="sectionLanguage">Language</div>
-        <div class="list">
-          <div class="list-item" id="langRow" onclick="toggleLang()">
-            <div class="list-item-icon" id="langIcon"></div>
-            <div class="list-item-content">
-              <div class="list-item-title" id="langLabel">Language</div>
-              <div class="list-item-subtitle" id="langValue">English</div>
-            </div>
-            <div class="list-item-meta">
-              <span class="badge badge-accent" id="langBadge">EN</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Voice -->
-      <div class="section-gap">
-        <div class="list-section-title" id="sectionVoice">Voice</div>
-        <div class="list">
-          <div class="list-item" id="voiceRow" onclick="toggleVoice()">
-            <div class="list-item-icon" id="voiceIcon"></div>
-            <div class="list-item-content">
-              <div class="list-item-title" id="voiceLabel">Voice</div>
-              <div class="list-item-subtitle" id="voiceValue">Off</div>
-            </div>
-            <div class="list-item-meta">
-              <div class="toggle" id="voiceToggle"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- API Keys -->
-      <div class="section-gap">
-        <div class="list-section-title" id="sectionApiKeys">API Keys</div>
-        <div class="list">
-          <div class="list-item" id="apiKeysRow">
-            <div class="list-item-icon" id="apiKeysIcon"></div>
-            <div class="list-item-content">
-              <div class="list-item-title" id="apiKeysLabel">API Keys (BYOK)</div>
-              <div class="list-item-subtitle" id="apiKeysSubtitle">Manage keys in bot</div>
-            </div>
-            <div class="list-item-meta" id="apiKeysMeta"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Plan -->
-      <div class="section-gap">
-        <div class="list-section-title" id="sectionPlan">Plan</div>
-        <div class="list">
-          <div class="list-item" id="planRow">
-            <div class="list-item-icon" id="planIcon"></div>
-            <div class="list-item-content">
-              <div class="list-item-title" id="planLabel">Plan</div>
-              <div class="list-item-subtitle" id="planValue">Free</div>
-            </div>
-            <div class="list-item-meta">
-              <span class="badge badge-success" id="planStatusBadge">Free</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Memory -->
-      <div class="section-gap">
-        <div class="list-section-title" id="sectionMemory">Memory</div>
-        <div class="list">
-          <div class="list-item" id="memoryRow">
-            <div class="list-item-icon" id="memoryIcon"></div>
-            <div class="list-item-content">
-              <div class="list-item-title" id="memoryLabel">Memory</div>
-              <div class="list-item-subtitle" id="memoryValue">-- facts</div>
-            </div>
-            <div class="list-item-meta">
-              <button class="btn btn-danger btn-sm" id="clearMemoryBtn" onclick="clearMemory()">Clear</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- PC Agent -->
-      <div class="section-gap">
-        <div class="list-section-title" id="sectionPcAgent">PC Agent</div>
-        <div class="list">
-          <div class="list-item" id="pcAgentRow">
-            <div class="list-item-icon" id="pcAgentIcon"></div>
-            <div class="list-item-content">
-              <div class="list-item-title" id="pcAgentLabel">PC Agent</div>
-              <div class="list-item-subtitle" id="pcAgentValue">Not connected</div>
-            </div>
-            <div class="list-item-meta">
-              <span class="badge" id="pcAgentBadge">Offline</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- About -->
-      <div class="section-gap">
-        <div class="list-section-title" id="sectionAbout">About</div>
-        <div class="list">
-          <div class="list-item" id="aboutRow">
-            <div class="list-item-icon" id="aboutIcon"></div>
-            <div class="list-item-content">
-              <div class="list-item-title">NEXUM</div>
-              <div class="list-item-subtitle" id="aboutVersion">Version 1.0.0</div>
-            </div>
-            <div class="list-item-meta">
-              <span class="text-secondary text-sm">v1.0.0</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="version-text">NEXUM v1.0.0</div>
-
+      <div class="row-right">›</div>
     </div>
   </div>
+
+  <!-- AI Preferences -->
+  <div class="settings-section">
+    <div class="settings-title">AI Settings</div>
+    <div class="settings-row">
+      <div class="row-left">
+        <div class="row-icon">🌐</div>
+        <div><div class="row-label">Language</div><div class="row-sub">Response language</div></div>
+      </div>
+      <select class="input" id="langSelect" style="width:auto;padding:4px 8px;font-size:.85rem" onchange="saveLang()">
+        <option value="en">English</option>
+        <option value="ru">Русский</option>
+      </select>
+    </div>
+    <div class="settings-row" onclick="toggleVoice()">
+      <div class="row-left">
+        <div class="row-icon">🔊</div>
+        <div><div class="row-label">Voice Replies</div><div class="row-sub">Reply with audio</div></div>
+      </div>
+      <label class="toggle" onclick="event.stopPropagation()">
+        <input type="checkbox" id="voiceToggle" onchange="toggleVoice()">
+        <div class="toggle-track"></div>
+        <div class="toggle-thumb"></div>
+      </label>
+    </div>
+    <div class="settings-row" onclick="toggleFocus()">
+      <div class="row-left">
+        <div class="row-icon">🎯</div>
+        <div><div class="row-label">Focus Mode</div><div class="row-sub">Shorter, direct responses</div></div>
+      </div>
+      <label class="toggle" onclick="event.stopPropagation()">
+        <input type="checkbox" id="focusToggle" onchange="toggleFocus()">
+        <div class="toggle-track"></div>
+        <div class="toggle-thumb"></div>
+      </label>
+    </div>
+    <div class="settings-row">
+      <div class="row-left">
+        <div class="row-icon">🤖</div>
+        <div><div class="row-label">AI Provider</div><div class="row-sub">Model preference</div></div>
+      </div>
+      <select class="input" id="providerSelect" style="width:auto;padding:4px 8px;font-size:.85rem" onchange="saveProvider()">
+        <option value="auto">Auto (Best)</option>
+        <option value="groq">Groq (Fast)</option>
+        <option value="deepseek">DeepSeek</option>
+        <option value="gemini">Gemini</option>
+        <option value="claude">Claude</option>
+        <option value="openrouter">OpenRouter</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Privacy -->
+  <div class="settings-section">
+    <div class="settings-title">Privacy & Data</div>
+    <div class="settings-row" onclick="clearMemory()">
+      <div class="row-left">
+        <div class="row-icon">🧠</div>
+        <div><div class="row-label">Clear Memory</div><div class="row-sub">Remove long-term context</div></div>
+      </div>
+      <div class="row-right" style="color:var(--red)">Clear</div>
+    </div>
+    <div class="settings-row" onclick="clearHistory()">
+      <div class="row-left">
+        <div class="row-icon">💬</div>
+        <div><div class="row-label">Clear Chat History</div><div class="row-sub">Reset conversation sessions</div></div>
+      </div>
+      <div class="row-right" style="color:var(--red)">Clear</div>
+    </div>
+  </div>
+
+  <!-- About -->
+  <div class="settings-section">
+    <div class="settings-title">About</div>
+    <div class="settings-row">
+      <div class="row-left"><div class="row-icon">⚡</div><div><div class="row-label">NEXUM</div><div class="row-sub">v1.0.0</div></div></div>
+      <div class="row-right badge badge-accent">Latest</div>
+    </div>
+    <div class="settings-row" onclick="window.open('https://t.me/nexum_support')">
+      <div class="row-left"><div class="row-icon">💬</div><div><div class="row-label">Support</div><div class="row-sub">@nexum_support</div></div></div>
+      <div class="row-right">›</div>
+    </div>
+  </div>
+
 </div>
 
-<script src="shared/icons.js"></script>
-<script src="shared/app-shell.js"></script>
+<div class="toast" id="toast"></div>
+
 <script>
-(function() {
-  'use strict';
+const uid = new URLSearchParams(location.search).get('uid') || 0;
+const API = '/api';
 
-  /* ── i18n translations ─────────────────────────────────────────────── */
-  var T = {
-    en: Object.assign({}, APP_TRANSLATIONS.en, {
-      'settings_title': 'Settings',
-      'section_appearance': 'APPEARANCE',
-      'section_language': 'LANGUAGE',
-      'section_voice': 'VOICE',
-      'section_api_keys': 'API KEYS',
-      'section_plan': 'PLAN',
-      'section_memory': 'MEMORY',
-      'section_pc_agent': 'PC AGENT',
-      'section_about': 'ABOUT',
-      'theme_label': 'Theme',
-      'language_label': 'Language',
-      'voice_label': 'Voice Mode',
-      'api_keys_label': 'API Keys (BYOK)',
-      'api_keys_subtitle': 'Manage keys in bot',
-      'plan_label': 'Current Plan',
-      'memory_label_title': 'Memory',
-      'memory_facts': '{count} facts',
-      'clear_memory_btn': 'Clear Memory',
-      'clear_confirm_msg': 'Clear all memory? This cannot be undone.',
-      'memory_cleared': 'Memory cleared',
-      'pc_agent_label': 'PC Agent',
-      'pc_not_connected': 'Not connected',
-      'pc_offline': 'Offline',
-      'about_label': 'About',
-      'about_version': 'Version 1.0.0',
-      'dark_theme': 'Dark',
-      'light_theme': 'Light',
-      'lang_en': 'English',
-      'lang_ru': 'Russian',
-      'voice_on': 'On',
-      'voice_off': 'Off',
-      'free_plan': 'Free',
-      'pro_plan': 'Pro',
-    }),
-    ru: Object.assign({}, APP_TRANSLATIONS.ru, {
-      'settings_title': 'Настройки',
-      'section_appearance': 'ВНЕШНИЙ ВИД',
-      'section_language': 'ЯЗЫК',
-      'section_voice': 'ГОЛОС',
-      'section_api_keys': 'API КЛЮЧИ',
-      'section_plan': 'ТАРИФ',
-      'section_memory': 'ПАМЯТЬ',
-      'section_pc_agent': 'PC АГЕНТ',
-      'section_about': 'О ПРИЛОЖЕНИИ',
-      'theme_label': 'Тема',
-      'language_label': 'Язык',
-      'voice_label': 'Голосовой режим',
-      'api_keys_label': 'API Ключи (BYOK)',
-      'api_keys_subtitle': 'Управление ключами в боте',
-      'plan_label': 'Текущий тариф',
-      'memory_label_title': 'Память',
-      'memory_facts': '{count} фактов',
-      'clear_memory_btn': 'Очистить память',
-      'clear_confirm_msg': 'Очистить всю память? Это нельзя отменить.',
-      'memory_cleared': 'Память очищена',
-      'pc_agent_label': 'PC Агент',
-      'pc_not_connected': 'Не подключён',
-      'pc_offline': 'Офлайн',
-      'about_label': 'О приложении',
-      'about_version': 'Версия 1.0.0',
-      'dark_theme': 'Тёмная',
-      'light_theme': 'Светлая',
-      'lang_en': 'English',
-      'lang_ru': 'Русский',
-      'voice_on': 'Вкл',
-      'voice_off': 'Выкл',
-      'free_plan': 'Free',
-      'pro_plan': 'Pro',
-    })
-  };
+async function loadSettings() {
+  try {
+    const [status, prefs] = await Promise.all([
+      fetch(`${API}/status?uid=${uid}`).then(r=>r.json()),
+      fetch(`${API}/preferences?uid=${uid}`).then(r=>r.json()).catch(()=>({})),
+    ]);
+    document.getElementById('planSub').textContent = (status.plan||'free').toUpperCase() + ' Plan';
+    document.getElementById('usageSub').textContent = `${status.messagesUsedToday||0} / ${status.dailyLimit||70} messages today`;
+    if (prefs.lang) document.getElementById('langSelect').value = prefs.lang;
+    if (prefs.voice_mode) document.getElementById('voiceToggle').checked = true;
+    if (prefs.focus_mode) document.getElementById('focusToggle').checked = true;
+    if (prefs.provider) document.getElementById('providerSelect').value = prefs.provider;
+  } catch {}
+}
 
-  /* ── State ─────────────────────────────────────────────────────────── */
-  var state = {
-    uid: '0',
-    lang: 'en',
-    theme: 'dark',
-    voice: 'off',
-    plan: 'free',
-    username: '',
-    firstName: '',
-    memoryCount: 0
-  };
+async function savePref(key, val) {
+  await fetch(`${API}/preferences`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ uid, [key]: val }) }).catch(()=>{});
+}
 
-  /* ── Helpers ───────────────────────────────────────────────────────── */
-  function t(key, params) {
-    return tr(T[state.lang] || T.en, key, params);
-  }
+function saveLang()     { savePref('lang', document.getElementById('langSelect').value); showToast('✅ Saved'); }
+function saveProvider() { savePref('provider', document.getElementById('providerSelect').value); showToast('✅ Saved'); }
+function toggleVoice()  { const v=document.getElementById('voiceToggle').checked; savePref('voice_mode',v); showToast(v?'🔊 Voice on':'🔇 Voice off'); }
+function toggleFocus()  { const v=document.getElementById('focusToggle').checked; savePref('focus_mode',v); showToast(v?'🎯 Focus on':'Focus off'); }
 
-  function getInitials(name) {
-    if (!name) return '??';
-    var parts = name.trim().split(/\s+/);
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return name.substring(0, 2).toUpperCase();
-  }
+async function clearMemory() {
+  if (!confirm('Clear all long-term memory?')) return;
+  await fetch(`${API}/memory?uid=${uid}`, { method:'DELETE' }).catch(()=>{});
+  showToast('🧠 Memory cleared');
+}
 
-  function capitalize(str) {
-    if (!str) return '';
-    return str.charAt(0).toUpperCase() + str.slice(1);
-  }
+async function clearHistory() {
+  if (!confirm('Clear all conversation history?')) return;
+  await fetch(`${API}/sessions?uid=${uid}`, { method:'DELETE' }).catch(()=>{});
+  showToast('💬 History cleared');
+}
 
-  /* ── Save preference to server ─────────────────────────────────────── */
-  async function savePref(data) {
-    if (!state.uid || state.uid === '0') return;
-    try {
-      await fetch('/api/user-prefs/' + state.uid, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-    } catch (e) {
-      console.warn('Failed to save pref:', e);
-    }
-  }
+function showPlan()  { showToast('💎 Contact @nexum_support to upgrade'); }
+function showUsage() { showToast('📊 Check /status in Telegram'); }
 
-  /* ── Render all UI text ────────────────────────────────────────────── */
-  function renderUI() {
-    // Header
-    document.getElementById('headerTitle').textContent = t('settings_title');
+function showToast(msg,ms=2000) {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),ms);
+}
 
-    // Profile
-    document.getElementById('avatarInitials').textContent = getInitials(state.firstName || state.username);
-    document.getElementById('profileName').textContent = state.firstName || state.username || 'User';
-    document.getElementById('profileUsername').textContent = state.username ? '@' + state.username : '';
-
-    var planDisplay = state.plan === 'pro' ? t('pro_plan') : t('free_plan');
-    document.getElementById('planBadge').textContent = planDisplay;
-    document.getElementById('planBadge').className = state.plan === 'pro' ? 'badge badge-accent' : 'badge badge-success';
-
-    // Section titles
-    document.getElementById('sectionAppearance').textContent = t('section_appearance');
-    document.getElementById('sectionLanguage').textContent = t('section_language');
-    document.getElementById('sectionVoice').textContent = t('section_voice');
-    document.getElementById('sectionApiKeys').textContent = t('section_api_keys');
-    document.getElementById('sectionPlan').textContent = t('section_plan');
-    document.getElementById('sectionMemory').textContent = t('section_memory');
-    document.getElementById('sectionPcAgent').textContent = t('section_pc_agent');
-    document.getElementById('sectionAbout').textContent = t('section_about');
-
-    // Icons
-    document.getElementById('themeIcon').innerHTML = state.theme === 'dark' ? Icons.moon : Icons.sun;
-    document.getElementById('langIcon').innerHTML = Icons.globe;
-    document.getElementById('voiceIcon').innerHTML = Icons.voice;
-    document.getElementById('apiKeysIcon').innerHTML = Icons.key;
-    document.getElementById('planIcon').innerHTML = Icons.billing;
-    document.getElementById('memoryIcon').innerHTML = Icons.memory;
-    document.getElementById('pcAgentIcon').innerHTML = Icons.computer;
-    document.getElementById('aboutIcon').innerHTML = Icons.info;
-    document.getElementById('apiKeysMeta').innerHTML = Icons.chevronRight;
-
-    // Theme row
-    document.getElementById('themeLabel').textContent = t('theme_label');
-    document.getElementById('themeValue').textContent = state.theme === 'dark' ? t('dark_theme') : t('light_theme');
-    var themeToggle = document.getElementById('themeToggle');
-    if (state.theme === 'light') {
-      themeToggle.classList.add('active');
-    } else {
-      themeToggle.classList.remove('active');
-    }
-
-    // Language row
-    document.getElementById('langLabel').textContent = t('language_label');
-    document.getElementById('langValue').textContent = state.lang === 'en' ? t('lang_en') : t('lang_ru');
-    document.getElementById('langBadge').textContent = state.lang.toUpperCase();
-
-    // Voice row
-    document.getElementById('voiceLabel').textContent = t('voice_label');
-    document.getElementById('voiceValue').textContent = state.voice === 'on' ? t('voice_on') : t('voice_off');
-    var voiceToggle = document.getElementById('voiceToggle');
-    if (state.voice === 'on') {
-      voiceToggle.classList.add('active');
-    } else {
-      voiceToggle.classList.remove('active');
-    }
-
-    // API Keys row
-    document.getElementById('apiKeysLabel').textContent = t('api_keys_label');
-    document.getElementById('apiKeysSubtitle').textContent = t('api_keys_subtitle');
-
-    // Plan row
-    document.getElementById('planLabel').textContent = t('plan_label');
-    document.getElementById('planValue').textContent = capitalize(state.plan || 'free');
-    document.getElementById('planStatusBadge').textContent = planDisplay;
-    document.getElementById('planStatusBadge').className = state.plan === 'pro' ? 'badge badge-accent' : 'badge badge-success';
-
-    // Memory row
-    document.getElementById('memoryLabel').textContent = t('memory_label_title');
-    document.getElementById('memoryValue').textContent = t('memory_facts', { count: state.memoryCount });
-    document.getElementById('clearMemoryBtn').textContent = t('clear_memory_btn');
-
-    // PC Agent row
-    document.getElementById('pcAgentLabel').textContent = t('pc_agent_label');
-    document.getElementById('pcAgentValue').textContent = t('pc_not_connected');
-    document.getElementById('pcAgentBadge').textContent = t('pc_offline');
-
-    // About row
-    document.getElementById('aboutVersion').textContent = t('about_version');
-  }
-
-  /* ── Toggle handlers ───────────────────────────────────────────────── */
-  window.toggleTheme = function() {
-    state.theme = state.theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', state.theme);
-    savePref({ theme: state.theme });
-    renderUI();
-  };
-
-  window.toggleLang = function() {
-    state.lang = state.lang === 'en' ? 'ru' : 'en';
-    savePref({ lang: state.lang });
-    renderUI();
-  };
-
-  window.toggleVoice = function() {
-    state.voice = state.voice === 'on' ? 'off' : 'on';
-    savePref({ voice: state.voice });
-    renderUI();
-  };
-
-  /* ── Memory ────────────────────────────────────────────────────────── */
-  async function loadMemoryCount() {
-    if (!state.uid || state.uid === '0') return;
-    try {
-      var resp = await fetch('/api/memory/' + state.uid);
-      if (resp.ok) {
-        var data = await resp.json();
-        state.memoryCount = Array.isArray(data) ? data.length : 0;
-        renderUI();
-      }
-    } catch (e) {
-      console.warn('Failed to load memory:', e);
-    }
-  }
-
-  window.clearMemory = async function() {
-    if (!confirm(t('clear_confirm_msg'))) return;
-    if (!state.uid || state.uid === '0') return;
-    try {
-      var resp = await fetch('/api/memory/all/' + state.uid, { method: 'DELETE' });
-      if (resp.ok) {
-        state.memoryCount = 0;
-        renderUI();
-      }
-    } catch (e) {
-      console.warn('Failed to clear memory:', e);
-    }
-  };
-
-  /* ── Init ──────────────────────────────────────────────────────────── */
-  async function init() {
-    try {
-      var app = await initApp();
-
-      state.uid = app.uid;
-      state.lang = app.lang || 'en';
-      state.theme = app.theme || 'dark';
-      state.voice = (app.prefs && app.prefs.voice) || 'off';
-      state.plan = (app.prefs && app.prefs.plan) || 'free';
-      state.username = (app.prefs && app.prefs.username) || '';
-      state.firstName = (app.prefs && app.prefs.first_name) || '';
-
-      document.documentElement.setAttribute('data-theme', state.theme);
-
-      renderUI();
-
-      document.getElementById('loader').classList.add('hidden');
-      document.getElementById('content').classList.remove('hidden');
-
-      loadMemoryCount();
-    } catch (e) {
-      console.error('Settings init failed:', e);
-      document.getElementById('loader').classList.add('hidden');
-      document.getElementById('content').classList.remove('hidden');
-      renderUI();
-    }
-  }
-
-  init();
-})();
+loadSettings();
 </script>
 </body>
 </html>

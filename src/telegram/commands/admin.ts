@@ -1,269 +1,184 @@
-import type { Bot, Context } from 'grammy';
-import { config, isAdmin } from '../../core/config';
-import { db } from '../../core/db';
-import { setUserTariff, getUserTariff, type TariffPlan } from '../../core/billing';
-import { t } from '../../i18n/index';
+import { Bot } from 'grammy';
+import { grantPlan, revokePlan, getUserPlan } from '../../core/billing';
+import { getPreferences } from '../../core/preferences';
+import { config } from '../../core/config';
+import t from '../../i18n';
+import db from '../../core/db';
+import logger from '../../infra/logger';
 
-// ── Subscription helpers ──────────────────────────────────────────────────────
+const ADMIN = config.adminUid;
 
-interface SubscriptionRow {
-  tariff: string;
-  sub_expires_at: string | null;
-  username: string | null;
-  first_name: string | null;
-}
+function isAdmin(uid: number) { return uid === ADMIN; }
 
-/** Ensure the sub_expires_at column exists (idempotent migration). */
-function ensureSubExpires(): void {
-  try {
-    db.prepare(`ALTER TABLE users ADD COLUMN sub_expires_at TEXT`).run();
-  } catch {
-    // Column already exists — ignore
-  }
-}
+export function setupAdminCommands(bot: Bot) {
 
-function grantSubscription(targetUid: number, plan: TariffPlan, days: number): void {
-  ensureSubExpires();
-  const expiresAt = new Date(Date.now() + days * 86_400_000).toISOString();
-  setUserTariff(targetUid, plan);
-  db.prepare(`
-    UPDATE users SET sub_expires_at = ?, updated_at = datetime('now') WHERE uid = ?
-  `).run(expiresAt, targetUid);
-  // Ensure user row exists even if they haven't started the bot yet
-  db.prepare(`
-    INSERT INTO users (uid, tariff, sub_expires_at)
-    VALUES (?, ?, ?)
-    ON CONFLICT(uid) DO UPDATE SET
-      tariff = excluded.tariff,
-      sub_expires_at = excluded.sub_expires_at,
-      updated_at = datetime('now')
-  `).run(targetUid, plan, expiresAt);
-}
+  // /grant USER_ID PLAN DAYS
+  bot.command('grant', async (ctx) => {
+    if (!isAdmin(ctx.from!.id)) { await ctx.reply(t('ru', 'admin_only')); return; }
+    const parts = ctx.match?.trim().split(/\s+/) ?? [];
+    if (parts.length < 3) { await ctx.reply('Usage: /grant USER_ID [free|middle|pro] DAYS'); return; }
+    const [uidStr, plan, daysStr] = parts;
+    const uid  = parseInt(uidStr);
+    const days = parseInt(daysStr);
+    if (isNaN(uid) || isNaN(days)) { await ctx.reply('❌ Invalid uid or days'); return; }
+    if (!['free','middle','pro'].includes(plan)) { await ctx.reply('❌ Plan must be free|middle|pro'); return; }
 
-function revokeSubscription(targetUid: number): void {
-  ensureSubExpires();
-  setUserTariff(targetUid, 'free');
-  db.prepare(`
-    UPDATE users SET sub_expires_at = NULL, updated_at = datetime('now') WHERE uid = ?
-  `).run(targetUid);
-}
-
-function getSubscriptionInfo(targetUid: number): SubscriptionRow | undefined {
-  ensureSubExpires();
-  return db.prepare(`
-    SELECT tariff, sub_expires_at, username, first_name FROM users WHERE uid = ?
-  `).get(targetUid) as SubscriptionRow | undefined;
-}
-
-function formatExpiry(expiresAt: string | null): string {
-  if (!expiresAt) return 'без срока';
-  const d = new Date(expiresAt);
-  const now = new Date();
-  if (d < now) return `истекла (${d.toLocaleDateString('ru-RU')})`;
-  const days = Math.ceil((d.getTime() - now.getTime()) / 86_400_000);
-  return `до ${d.toLocaleDateString('ru-RU')} (ещё ${days} д.)`;
-}
-
-// ── Register commands ─────────────────────────────────────────────────────────
-
-export function registerAdminCommands(bot: Bot): void {
-
-  // ── /admin_stats ─────────────────────────────────────────────────────────
-  bot.command('admin_stats', async (ctx: Context) => {
-    const uid = ctx.from?.id ?? 0;
-    if (!isAdmin(uid)) return;
-    const today  = new Date().toISOString().split('T')[0];
-    const users  = (db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c;
-    const msgs   = (db.prepare('SELECT COUNT(*) AS c FROM conversations').get() as { c: number }).c;
-    const active = (db.prepare(`SELECT COUNT(DISTINCT uid) AS c FROM conversations WHERE date(created_at)=?`).get(today) as { c: number }).c;
-    const plans  = db.prepare('SELECT tariff, COUNT(*) AS c FROM users GROUP BY tariff').all() as { tariff: string; c: number }[];
-
-    await ctx.reply(
-      `${t(uid, 'admin.stats.title')}\n\n` +
-      `${t(uid, 'admin.stats.users', { total: String(users), active: String(active) })}\n` +
-      `${t(uid, 'admin.stats.messages', { count: String(msgs) })}\n` +
-      `Plans: ${plans.map(p => `${p.tariff}:${p.c}`).join(' | ')}`,
-      { parse_mode: 'Markdown' }
-    );
-  });
-
-  // ── /broadcast ───────────────────────────────────────────────────────────
-  bot.command('broadcast', async (ctx: Context) => {
-    const uid = ctx.from?.id ?? 0;
-    if (!isAdmin(uid)) return;
-    const text = (ctx.message?.text ?? '').replace('/broadcast', '').trim();
-    if (!text) { await ctx.reply(t(uid, 'admin.broadcast.usage')); return; }
-
-    const users = db.prepare('SELECT uid FROM users').all() as { uid: number }[];
-    let sent = 0, failed = 0;
-    for (const u of users) {
-      try { await bot.api.sendMessage(u.uid, text); sent++; }
-      catch { failed++; }
-      await new Promise(r => setTimeout(r, 50));
-    }
-    await ctx.reply(t(uid, 'admin.broadcast.done', { sent: String(sent), failed: String(failed) }));
-  });
-
-  // ── /approve (legacy, keep for compatibility) ─────────────────────────────
-  bot.command('approve', async (ctx: Context) => {
-    const uid = ctx.from?.id ?? 0;
-    if (!isAdmin(uid)) return;
-    const parts = (ctx.message?.text ?? '').split(' ');
-    if (parts.length < 3) { await ctx.reply(t(uid, 'admin.approve.usage')); return; }
-
-    const targetUid = parseInt(parts[1], 10);
-    const plan      = parts[2] as TariffPlan;
-    if (isNaN(targetUid)) { await ctx.reply(t(uid, 'admin.approve.invalid_uid')); return; }
-    if (!['free', 'middle', 'pro'].includes(plan)) { await ctx.reply(t(uid, 'admin.approve.invalid_plan')); return; }
-
-    setUserTariff(targetUid, plan);
-    await ctx.reply(`✅ ${t(uid, 'admin.approve.done', { uid: String(targetUid), plan })}`, { parse_mode: 'Markdown' });
-    await bot.api.sendMessage(targetUid, t(targetUid, 'admin.approve.notify', { plan: plan.toUpperCase() }), { parse_mode: 'Markdown' }).catch(() => {});
-  });
-
-  // ── /admin_keys ───────────────────────────────────────────────────────────
-  bot.command('admin_keys', async (ctx: Context) => {
-    const uid = ctx.from?.id ?? 0;
-    if (!isAdmin(uid)) return;
-    const providers = (Object.entries(config.ai) as [string, readonly string[]][])
-      .filter(([, k]) => k.length).map(([p, k]) => `${p}: ${k.length}`);
-    const serper = `serper: ${config.serper.length}`;
-    await ctx.reply(`${t(uid, 'admin.keys.title')}\n\n${[...providers, serper].join('\n')}`, { parse_mode: 'Markdown' });
-  });
-
-  // ── /grant USER_ID PLAN DAYS ──────────────────────────────────────────────
-  bot.command('grant', async (ctx: Context) => {
-    const uid = ctx.from?.id ?? 0;
-    if (!isAdmin(uid)) return;
-
-    const parts = (ctx.message?.text ?? '').trim().split(/\s+/);
-    // parts: ['/grant', 'USER_ID', 'PLAN', 'DAYS']
-    if (parts.length < 4) {
-      await ctx.reply(
-        '❌ *Использование:* `/grant USER_ID PLAN DAYS`\n\n' +
-        'Планы: `free` | `middle` | `pro`\n' +
-        'Пример: `/grant 123456789 pro 30`',
-        { parse_mode: 'Markdown' }
-      );
-      return;
-    }
-
-    const targetUid = parseInt(parts[1], 10);
-    const plan      = parts[2].toLowerCase() as TariffPlan;
-    const days      = parseInt(parts[3], 10);
-
-    if (isNaN(targetUid) || targetUid <= 0) {
-      await ctx.reply('❌ Некорректный USER_ID.'); return;
-    }
-    if (!['free', 'middle', 'pro'].includes(plan)) {
-      await ctx.reply('❌ Некорректный план. Доступны: `free`, `middle`, `pro`', { parse_mode: 'Markdown' }); return;
-    }
-    if (isNaN(days) || days <= 0) {
-      await ctx.reply('❌ Количество дней должно быть положительным числом.'); return;
-    }
-
-    grantSubscription(targetUid, plan, days);
-
-    const expiresAt = new Date(Date.now() + days * 86_400_000).toLocaleDateString('ru-RU');
-    await ctx.reply(
-      `✅ Подписка выдана\n\n` +
-      `👤 UID: \`${targetUid}\`\n` +
-      `📦 План: *${plan.toUpperCase()}*\n` +
-      `📅 До: ${expiresAt} (${days} дн.)`,
-      { parse_mode: 'Markdown' }
-    );
+    grantPlan(uid, plan as 'free'|'middle'|'pro', days);
 
     // Notify the user
-    await bot.api.sendMessage(
-      targetUid,
-      `🎉 Вам выдана подписка *${plan.toUpperCase()}* на ${days} дней!\n\nДействует до ${expiresAt}.\nПриятного использования NEXUM! 🚀`,
-      { parse_mode: 'Markdown' }
-    ).catch(() => {}); // user may not have started the bot
-  });
-
-  // ── /revoke USER_ID ───────────────────────────────────────────────────────
-  bot.command('revoke', async (ctx: Context) => {
-    const uid = ctx.from?.id ?? 0;
-    if (!isAdmin(uid)) return;
-
-    const parts = (ctx.message?.text ?? '').trim().split(/\s+/);
-    if (parts.length < 2) {
-      await ctx.reply('❌ *Использование:* `/revoke USER_ID`', { parse_mode: 'Markdown' });
-      return;
-    }
-
-    const targetUid = parseInt(parts[1], 10);
-    if (isNaN(targetUid) || targetUid <= 0) {
-      await ctx.reply('❌ Некорректный USER_ID.'); return;
-    }
-
-    const info = getSubscriptionInfo(targetUid);
-    const prevPlan = info?.tariff ?? 'free';
-
-    revokeSubscription(targetUid);
-
-    await ctx.reply(
-      `✅ Подписка отменена\n\n` +
-      `👤 UID: \`${targetUid}\`\n` +
-      `📦 Был план: *${prevPlan.toUpperCase()}* → теперь *FREE*`,
-      { parse_mode: 'Markdown' }
-    );
-
-    await bot.api.sendMessage(
-      targetUid,
-      `ℹ️ Ваша подписка была отменена администратором.\nПлан изменён на *FREE*.\n\nПо вопросам — обратитесь в поддержку.`,
-      { parse_mode: 'Markdown' }
-    ).catch(() => {});
-  });
-
-  // ── /check USER_ID ────────────────────────────────────────────────────────
-  bot.command('check', async (ctx: Context) => {
-    const uid = ctx.from?.id ?? 0;
-    if (!isAdmin(uid)) return;
-
-    const parts = (ctx.message?.text ?? '').trim().split(/\s+/);
-    if (parts.length < 2) {
-      await ctx.reply('❌ *Использование:* `/check USER_ID`', { parse_mode: 'Markdown' });
-      return;
-    }
-
-    const targetUid = parseInt(parts[1], 10);
-    if (isNaN(targetUid) || targetUid <= 0) {
-      await ctx.reply('❌ Некорректный USER_ID.'); return;
-    }
-
-    const info = getSubscriptionInfo(targetUid);
-    if (!info) {
-      await ctx.reply(
-        `👤 UID: \`${targetUid}\`\n❌ Пользователь не найден в базе.`,
+    try {
+      await ctx.api.sendMessage(uid,
+        plan === 'pro'
+          ? `🚀 Вам выдана *PRO* подписка на *${days}* дней!\n\nПолный доступ ко всем функциям NEXUM.`
+          : `💼 Вам выдана *${plan.toUpperCase()}* подписка на *${days}* дней!`,
         { parse_mode: 'Markdown' }
       );
-      return;
-    }
+    } catch { /* user may have blocked bot */ }
 
-    const plan = info.tariff ?? 'free';
-    const expiry = formatExpiry(info.sub_expires_at);
-    const name = [info.first_name, info.username ? `@${info.username}` : null]
-      .filter(Boolean).join(' ') || '—';
+    await ctx.reply(t('ru', 'grant_success', { uid, plan, days }));
+    logger.info('admin', `Grant: uid=${uid} plan=${plan} days=${days}`);
+  });
 
-    // Count today's messages
-    const today = new Date().toISOString().split('T')[0];
-    const msgsToday = (db.prepare(
-      `SELECT COUNT(*) AS c FROM conversations WHERE uid=? AND date(created_at)=? AND role='user'`
-    ).get(targetUid, today) as { c: number }).c;
+  // /revoke USER_ID
+  bot.command('revoke', async (ctx) => {
+    if (!isAdmin(ctx.from!.id)) { await ctx.reply(t('ru', 'admin_only')); return; }
+    const uid = parseInt(ctx.match?.trim() ?? '');
+    if (isNaN(uid)) { await ctx.reply('Usage: /revoke USER_ID'); return; }
+    revokePlan(uid);
+    await ctx.reply(t('ru', 'revoke_success', { uid }));
+    logger.info('admin', `Revoke: uid=${uid}`);
+  });
 
-    const msgsTotal = (db.prepare(
-      `SELECT COUNT(*) AS c FROM conversations WHERE uid=?`
-    ).get(targetUid) as { c: number }).c;
+  // /check USER_ID
+  bot.command('check', async (ctx) => {
+    if (!isAdmin(ctx.from!.id)) { await ctx.reply(t('ru', 'admin_only')); return; }
+    const uid = parseInt(ctx.match?.trim() ?? '');
+    if (isNaN(uid)) { await ctx.reply('Usage: /check USER_ID'); return; }
+
+    const user = db.prepare('SELECT * FROM users WHERE uid = ?').get(uid) as Record<string, unknown> | undefined;
+    if (!user) { await ctx.reply(t('ru', 'user_not_found')); return; }
+
+    const plan = getUserPlan(uid);
+    await ctx.reply(
+      `👤 *User ${uid}*\n` +
+      `Username: @${user.username ?? 'none'}\n` +
+      `Name: ${user.first_name ?? '—'}\n` +
+      `Plan: *${plan.toUpperCase()}*\n` +
+      `Expires: ${user.subscription_expires_at ?? 'N/A'}\n` +
+      `Messages today: ${user.msg_count_today ?? 0}\n` +
+      `Lang: ${user.lang}\n` +
+      `Joined: ${user.created_at}`,
+      { parse_mode: 'Markdown' }
+    );
+  });
+
+  // /admin_stats
+  bot.command('admin_stats', async (ctx) => {
+    if (!isAdmin(ctx.from!.id)) { await ctx.reply(t('ru', 'admin_only')); return; }
+
+    const total = (db.prepare('SELECT COUNT(*) as c FROM users').get() as { c: number }).c;
+    const today = new Date().toISOString().slice(0, 10);
+    const active = (db.prepare(
+      "SELECT COUNT(*) as c FROM users WHERE msg_date = ?"
+    ).get(today) as { c: number }).c;
+    const proCount = (db.prepare(
+      "SELECT COUNT(*) as c FROM users WHERE subscription_plan = 'pro'"
+    ).get() as { c: number }).c;
+    const middleCount = (db.prepare(
+      "SELECT COUNT(*) as c FROM users WHERE subscription_plan = 'middle'"
+    ).get() as { c: number }).c;
+    const totalMsgs = (db.prepare(
+      'SELECT SUM(msg_count_today) as s FROM users'
+    ).get() as { s: number | null }).s ?? 0;
 
     await ctx.reply(
-      `📋 *Статус пользователя*\n\n` +
-      `👤 UID: \`${targetUid}\`\n` +
-      `🏷️ Имя: ${name}\n` +
-      `📦 План: *${plan.toUpperCase()}*\n` +
-      `📅 Подписка: ${expiry}\n` +
-      `💬 Сообщений сегодня: ${msgsToday}\n` +
-      `💬 Всего сообщений: ${msgsTotal}`,
+      `📊 *NEXUM Stats*\n\n` +
+      `👥 Total users: *${total}*\n` +
+      `🟢 Active today: *${active}*\n` +
+      `🚀 PRO: *${proCount}*\n` +
+      `💼 MIDDLE: *${middleCount}*\n` +
+      `🆓 FREE: *${total - proCount - middleCount}*\n` +
+      `💬 Messages today: *${totalMsgs}*`,
+      { parse_mode: 'Markdown' }
+    );
+  });
+
+  // /broadcast MESSAGE
+  bot.command('broadcast', async (ctx) => {
+    if (!isAdmin(ctx.from!.id)) { await ctx.reply(t('ru', 'admin_only')); return; }
+    const message = ctx.match?.trim();
+    if (!message) { await ctx.reply('Usage: /broadcast Your message here'); return; }
+
+    const users = db.prepare('SELECT uid FROM users').all() as { uid: number }[];
+    let sent = 0;
+    for (const u of users) {
+      try {
+        await ctx.api.sendMessage(u.uid, message, { parse_mode: 'Markdown' });
+        sent++;
+        await new Promise(r => setTimeout(r, 50)); // rate limit
+      } catch { /* skip blocked users */ }
+    }
+    await ctx.reply(t('ru', 'broadcast_success', { count: sent }));
+    logger.info('admin', `Broadcast sent to ${sent}/${users.length} users`);
+  });
+
+  // /pending_fixes
+  bot.command('pending_fixes', async (ctx) => {
+    if (!isAdmin(ctx.from!.id)) { await ctx.reply(t('ru', 'admin_only')); return; }
+    const fixes = db.prepare(
+      "SELECT id, error_msg, file_path, created_at FROM evolution_fixes WHERE status = 'pending' ORDER BY created_at DESC LIMIT 10"
+    ).all() as { id: number; error_msg: string; file_path: string; created_at: string }[];
+
+    if (!fixes.length) { await ctx.reply('✅ No pending fixes'); return; }
+    const list = fixes.map(f =>
+      `#${f.id} — \`${f.file_path}\`\n${f.error_msg?.slice(0, 80)}\n${f.created_at}`
+    ).join('\n\n');
+    await ctx.reply(`🔧 *Pending fixes:*\n\n${list}`, { parse_mode: 'Markdown' });
+  });
+
+  // /approve_fix ID
+  bot.command('approve_fix', async (ctx) => {
+    if (!isAdmin(ctx.from!.id)) { await ctx.reply(t('ru', 'admin_only')); return; }
+    const id = parseInt(ctx.match?.trim() ?? '');
+    if (isNaN(id)) { await ctx.reply('Usage: /approve_fix FIX_ID'); return; }
+
+    const fix = db.prepare('SELECT * FROM evolution_fixes WHERE id = ?').get(id) as
+      { id: number; diff_patch: string; explanation: string } | undefined;
+    if (!fix) { await ctx.reply('❌ Fix not found'); return; }
+
+    db.prepare(
+      "UPDATE evolution_fixes SET status = 'approved', resolved_at = datetime('now') WHERE id = ?"
+    ).run(id);
+
+    await ctx.reply(`✅ Fix #${id} approved!\n\n${fix.explanation}\n\n_Deploy will be triggered if git is configured._`, {
+      parse_mode: 'Markdown',
+    });
+    logger.info('admin', `Fix #${id} approved`);
+  });
+
+  // /reject_fix ID
+  bot.command('reject_fix', async (ctx) => {
+    if (!isAdmin(ctx.from!.id)) { await ctx.reply(t('ru', 'admin_only')); return; }
+    const id = parseInt(ctx.match?.trim() ?? '');
+    if (isNaN(id)) { await ctx.reply('Usage: /reject_fix FIX_ID'); return; }
+
+    db.prepare(
+      "UPDATE evolution_fixes SET status = 'rejected', resolved_at = datetime('now') WHERE id = ?"
+    ).run(id);
+    await ctx.reply(`❌ Fix #${id} rejected.`);
+    logger.info('admin', `Fix #${id} rejected`);
+  });
+
+  // /evolution_status
+  bot.command('evolution_status', async (ctx) => {
+    if (!isAdmin(ctx.from!.id)) { await ctx.reply(t('ru', 'admin_only')); return; }
+    const total    = (db.prepare("SELECT COUNT(*) as c FROM evolution_fixes").get() as { c: number }).c;
+    const pending  = (db.prepare("SELECT COUNT(*) as c FROM evolution_fixes WHERE status='pending'").get() as { c: number }).c;
+    const approved = (db.prepare("SELECT COUNT(*) as c FROM evolution_fixes WHERE status='approved'").get() as { c: number }).c;
+    const rejected = (db.prepare("SELECT COUNT(*) as c FROM evolution_fixes WHERE status='rejected'").get() as { c: number }).c;
+    await ctx.reply(
+      `🧬 *Evolution System*\n\n` +
+      `Total fixes: ${total}\n⏳ Pending: ${pending}\n✅ Approved: ${approved}\n❌ Rejected: ${rejected}`,
       { parse_mode: 'Markdown' }
     );
   });

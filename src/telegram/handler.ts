@@ -1,242 +1,188 @@
-/**
- * NEXUM Telegram Handler
- *
- * Real token-by-token streaming like Claude / ChatGPT / Perplexity / OpenClaw:
- *  1. "…" sent immediately → user sees instant response
- *  2. SSE tokens stream in → each token appended to accumulated text
- *  3. Message edited every ~800ms with growing text
- *  4. Final complete text sent synchronously
- */
-
-import type { Bot, Context } from 'grammy';
-import { InputFile } from 'grammy';
-import { buildPrompt } from '../agent/executor';
-import { chat, chatStreaming, fixTelegramFormatting } from '../agent/router';
-import { getHistory, saveMessage, autoExtract } from '../agent/memory';
-import { config, hasAccess } from '../core/config';
-import { ensureUser } from '../core/db';
-import { canSendMessage, hasFeature } from '../core/billing';
+import { Bot, Context } from 'grammy';
+import { getOrCreateUser, incrementMsgCount } from '../core/db';
+import { getUserPlan, checkRateLimit } from '../core/billing';
+import { getPreferences } from '../core/preferences';
+import { detectAndSaveIntent, intentSummary } from '../agent/intents';
+import { executeAI, getSession, addToSession } from '../agent/executor';
+import { buildSystemPrompt } from '../agent/persona';
+import { webSearch } from '../tools/search';
 import { transcribeVoice } from '../tools/stt';
-import { textToSpeech, getUserVoicePref } from '../tools/tts';
-import { createDraftStream } from './draft-stream';
-import { truncateTelegram } from '../agent/persona';
-import { t } from '../i18n/index';
-import type { Message } from '../agent/router';
-import { createLogger } from '../infra/logger';
+import t from '../i18n';
+import logger from '../infra/logger';
+import db from '../core/db';
 
-const log = createLogger('handler');
+export function setupHandler(bot: Bot) {
 
-function isGroup(ctx: Context): boolean {
-  const tp = ctx.chat?.type;
-  return tp === 'group' || tp === 'supergroup';
-}
+  // Text messages
+  bot.on('message:text', async (ctx) => {
+    const uid   = ctx.from!.id;
+    const text  = ctx.message?.text ?? '';
+    if (!text || text.startsWith('/')) return;
 
-async function botMentioned(ctx: Context, bot: Bot): Promise<boolean> {
-  const info = await bot.api.getMe();
-  const text = ctx.message?.text ?? ctx.message?.caption ?? '';
-  return (
-    text.toLowerCase().includes(`@${info.username?.toLowerCase()}`) ||
-    ctx.message?.reply_to_message?.from?.id === info.id
-  );
-}
+    const user  = getOrCreateUser(uid, ctx.from?.username, ctx.from?.first_name);
+    const prefs = getPreferences(uid);
+    const lang  = prefs.lang;
+    const count = incrementMsgCount(uid);
+    const plan  = getUserPlan(uid);
 
-export async function safeReply(ctx: Context, text: string): Promise<void> {
-  if (!text?.trim()) return;
-  const txt = truncateTelegram(text);
-  try { await ctx.reply(txt, { parse_mode: 'Markdown' }); }
-  catch { await ctx.reply(txt).catch(() => {}); }
-}
-
-export { safeReply as streamReply };
-
-// ── Streaming reply ───────────────────────────────────────────────────────────
-
-export async function streamingReply(
-  ctx: Context,
-  uid: number,
-  userMessage: string,
-  group = false
-): Promise<void> {
-  const chatId = ctx.chat!.id;
-
-  const limit = canSendMessage(uid);
-  if (!limit.ok) { await ctx.reply(limit.reason!); return; }
-
-  // Start draft — sends "…" placeholder immediately in background
-  const draft = createDraftStream({ api: ctx.api, chatId });
-
-  // Typing indicator
-  const typingInterval = setInterval(() => {
-    ctx.replyWithChatAction('typing').catch(() => {});
-  }, 4500);
-  ctx.replyWithChatAction('typing').catch(() => {});
-
-  let fullReply = '';
-
-  try {
-    const system  = buildPrompt(uid, group);
-    const history = getHistory(uid, 20);
-    const msgs: Message[] = [
-      ...history.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
-      { role: 'user', content: userMessage },
-    ];
-
-    // Real SSE streaming: each token → draft.update(accumulated text)
-    // The draft throttles edits to Telegram to avoid rate limits
-    fullReply = await chatStreaming(uid, msgs, system, (accumulated) => {
-      draft.update(fixTelegramFormatting(accumulated));
-    });
-
-    clearInterval(typingInterval);
-
-    // Send complete final text — this always runs even if throttle skipped some edits
-    fullReply = fixTelegramFormatting(fullReply);
-    await draft.stop();
-
-    // Fallback: if "…" placeholder itself failed to send
-    if (draft.messageId() === null) {
-      await safeReply(ctx, fullReply);
+    // Rate limit check
+    if (!checkRateLimit(uid, count)) {
+      await ctx.reply(t(lang, 'limit_reached'), { parse_mode: 'Markdown' });
+      return;
     }
 
-    saveMessage(uid, 'user', userMessage);
-    saveMessage(uid, 'assistant', fullReply);
+    // Intent detection + auto-save
+    const intent = detectAndSaveIntent(text, uid);
+    const intentMsg = intentSummary(intent, lang);
 
-    if (hasFeature(uid, 'hasMemory')) autoExtract(uid, userMessage);
-
-    // Optional TTS
-    const vp = getUserVoicePref(uid);
-    if (vp.voice !== 'off') {
-      try {
-        const audio = await textToSpeech(fullReply, uid);
-        await ctx.replyWithAudio(new InputFile(audio, 'response.mp3'));
-      } catch { /* optional */ }
-    }
-
-  } catch (err) {
-    clearInterval(typingInterval);
-
-    const msg = err instanceof Error ? err.message : String(err);
-    log.error(`streamingReply uid=${uid}: ${msg}`);
-
-    const errText = `⚠️ ${msg.includes('All AI providers')
-      ? t(uid, 'error.ai_unavailable')
-      : t(uid, 'error.generic')}`;
-
-    // Try to edit existing placeholder with error, or send new message
+    // Build reply
+    const typing = await ctx.reply(t(lang, 'thinking'));
     try {
-      await draft.stop().catch(() => {});
-      if (draft.messageId()) {
-        await ctx.api.editMessageText(chatId, draft.messageId()!, errText).catch(async () => {
-          await ctx.reply(errText).catch(() => {});
-        });
-      } else {
-        await ctx.reply(errText).catch(() => {});
+      // Auto-search detection
+      let extraContext = '';
+      const needsSearch = /найди|поищи|что такое|кто такой|search|find|what is|who is/i.test(text);
+      if (needsSearch) {
+        try {
+          const results = await webSearch(text);
+          extraContext = `\n\nSearch results:\n${results}`;
+        } catch { /* silent */ }
       }
-    } catch { /* silent */ }
-  }
-}
 
-// ── Message type handlers ─────────────────────────────────────────────────────
+      const history = getSession(uid);
+      addToSession(uid, 'user', text);
 
-export async function handleTextMessage(ctx: Context, bot: Bot): Promise<void> {
-  const uid  = ctx.from?.id;
-  const text = ctx.message?.text?.trim();
-  if (!uid || !text) return;
+      const system = buildSystemPrompt(uid, lang, plan);
+      const response = await executeAI({
+        uid,
+        messages: [...history, { role: 'user', content: text + extraContext }],
+        systemPrompt: system,
+      });
 
-  ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
-  if (!hasAccess(uid)) return;
-  if (isGroup(ctx) && !await botMentioned(ctx, bot)) return;
+      addToSession(uid, 'assistant', response);
 
-  await streamingReply(ctx, uid, text, isGroup(ctx));
-}
+      const reply = (intentMsg ? `${intentMsg}\n\n` : '') + response;
+      await ctx.api.editMessageText(ctx.chat.id, typing.message_id, reply, {
+        parse_mode: 'Markdown',
+      }).catch(() => ctx.reply(reply, { parse_mode: 'Markdown' }));
 
-export async function handleVoiceMessage(ctx: Context, bot: Bot): Promise<void> {
-  const uid = ctx.from?.id;
-  if (!uid) return;
+    } catch (err) {
+      logger.error('handler', 'AI execution failed', err);
+      await ctx.api.editMessageText(ctx.chat.id, typing.message_id, t(lang, 'error_generic'))
+        .catch(() => ctx.reply(t(lang, 'error_generic')));
+    }
+  });
 
-  ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
-  if (!hasAccess(uid)) return;
-  if (isGroup(ctx) && !await botMentioned(ctx, bot)) return;
+  // Voice messages
+  bot.on('message:voice', async (ctx) => {
+    const uid  = ctx.from!.id;
+    const prefs = getPreferences(uid);
+    const lang  = prefs.lang;
+    getOrCreateUser(uid, ctx.from?.username, ctx.from?.first_name);
 
-  try {
-    await ctx.replyWithChatAction('typing').catch(() => {});
-    const file   = await ctx.api.getFile(ctx.message!.voice!.file_id);
-    const url    = `https://api.telegram.org/file/bot${config.botToken}/${file.file_path}`;
-    const buffer = Buffer.from(await (await fetch(url)).arrayBuffer());
-    const transcript = await transcribeVoice(buffer);
-    if (!transcript) { await ctx.reply(t(uid, 'error.voice_failed')); return; }
-    await streamingReply(ctx, uid, transcript, isGroup(ctx));
-  } catch (e) {
-    await ctx.reply(t(uid, 'error.generic')).catch(() => {});
-    log.error(`voice uid=${uid}: ${(e as Error).message}`);
-  }
-}
+    await ctx.reply('🎙️ Transcribing...');
+    try {
+      const fileInfo = await ctx.getFile();
+      const url = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${fileInfo.file_path}`;
+      const res = await fetch(url);
+      const buf = Buffer.from(await res.arrayBuffer());
+      const text = await transcribeVoice(buf);
+      if (!text) { await ctx.reply('❌ Could not transcribe'); return; }
 
-export async function handlePhotoMessage(ctx: Context, bot: Bot): Promise<void> {
-  const uid = ctx.from?.id;
-  const photos = ctx.message?.photo;
-  if (!uid || !photos?.length) return;
+      await ctx.reply(`🎙️ *${text}*`, { parse_mode: 'Markdown' });
 
-  ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
-  if (!hasAccess(uid)) return;
-  if (isGroup(ctx) && !await botMentioned(ctx, bot)) return;
+      // Process as text
+      const count = incrementMsgCount(uid);
+      const plan  = getUserPlan(uid);
+      if (!checkRateLimit(uid, count)) { await ctx.reply(t(lang, 'limit_reached')); return; }
 
-  const limit = canSendMessage(uid);
-  if (!limit.ok) { await ctx.reply(limit.reason!); return; }
+      const history = getSession(uid);
+      addToSession(uid, 'user', text);
+      const system = buildSystemPrompt(uid, lang, plan);
+      const response = await executeAI({ uid, messages: [...history, { role: 'user', content: text }], systemPrompt: system });
+      addToSession(uid, 'assistant', response);
+      await ctx.reply(response, { parse_mode: 'Markdown' });
+    } catch (e) {
+      logger.error('handler', 'Voice processing failed', e);
+      await ctx.reply(t(lang, 'error_generic'));
+    }
+  });
 
-  try {
-    await ctx.replyWithChatAction('upload_photo').catch(() => {});
-    const photo = photos[photos.length - 1];
-    const file  = await ctx.api.getFile(photo.file_id);
-    const url   = `https://api.telegram.org/file/bot${config.botToken}/${file.file_path}`;
-    const buf   = Buffer.from(await (await fetch(url)).arrayBuffer());
-    const b64   = buf.toString('base64');
-    const caption = ctx.message?.caption ?? (t(uid, 'photo.default_caption'));
+  // Photo messages
+  bot.on('message:photo', async (ctx) => {
+    const uid   = ctx.from!.id;
+    const prefs = getPreferences(uid);
+    const lang  = prefs.lang;
+    getOrCreateUser(uid, ctx.from?.username, ctx.from?.first_name);
 
-    const system   = buildPrompt(uid, isGroup(ctx));
-    const response = await chat(uid, [
-      { role: 'user', content: [
-        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${b64}` } },
-        { type: 'text', text: caption },
-      ]},
-    ], system, true);
+    const caption = ctx.message?.caption ?? 'Опиши это изображение подробно / Describe this image in detail';
+    await ctx.reply('🖼️ Analyzing image...');
 
-    saveMessage(uid, 'user', `[Photo] ${caption}`);
-    saveMessage(uid, 'assistant', response);
-    await safeReply(ctx, response);
-  } catch (e) {
-    await ctx.reply(t(uid, 'error.generic')).catch(() => {});
-    log.error(`photo uid=${uid}: ${(e as Error).message}`);
-  }
-}
+    try {
+      const photos = ctx.message.photo;
+      const largest = photos[photos.length - 1];
+      const fileInfo = await ctx.api.getFile(largest.file_id);
+      const url = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${fileInfo.file_path}`;
+      const imgRes = await fetch(url);
+      const imgBuf = Buffer.from(await imgRes.arrayBuffer());
+      const base64 = imgBuf.toString('base64');
 
-export async function handleDocumentMessage(ctx: Context, bot: Bot): Promise<void> {
-  const uid = ctx.from?.id;
-  const doc = ctx.message?.document;
-  if (!uid || !doc) return;
+      // Use Gemini for vision
+      const { getNextKey } = await import('../core/config');
+      const key = getNextKey('gemini');
+      if (!key) { await ctx.reply('❌ No Gemini key for vision'); return; }
 
-  ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
-  if (!hasAccess(uid)) return;
-  if (isGroup(ctx) && !await botMentioned(ctx, bot)) return;
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: caption },
+                { inline_data: { mime_type: 'image/jpeg', data: base64 } },
+              ],
+            }],
+          }),
+        }
+      );
+      const data = await res.json() as { candidates: { content: { parts: { text: string }[] } }[] };
+      const answer = data.candidates[0].content.parts[0].text;
+      await ctx.reply(answer, { parse_mode: 'Markdown' });
+    } catch (e) {
+      logger.error('handler', 'Photo processing failed', e);
+      await ctx.reply(t(lang, 'error_generic'));
+    }
+  });
 
-  const limit = canSendMessage(uid);
-  if (!limit.ok) { await ctx.reply(limit.reason!); return; }
+  // Document messages
+  bot.on('message:document', async (ctx) => {
+    const uid  = ctx.from!.id;
+    const prefs = getPreferences(uid);
+    const lang  = prefs.lang;
+    getOrCreateUser(uid, ctx.from?.username, ctx.from?.first_name);
 
-  if (!doc.file_name?.match(/\.(txt|md|csv|json|js|ts|py|html|css|xml|yaml|yml|sh|log)$/i)) {
-    await ctx.reply('📎 Supported: txt, md, csv, json, js, ts, py, html, css, xml, yaml, sh, log');
-    return;
-  }
+    const doc = ctx.message.document;
+    await ctx.reply(`📄 Processing *${doc.file_name}*...`, { parse_mode: 'Markdown' });
 
-  try {
-    await ctx.replyWithChatAction('typing').catch(() => {});
-    const file = await ctx.api.getFile(doc.file_id);
-    const url  = `https://api.telegram.org/file/bot${config.botToken}/${file.file_path}`;
-    const text = await (await fetch(url)).text();
-    const caption = ctx.message?.caption ?? 'Analyze this file:';
-    const prompt  = `${caption}\n\nFile: \`${doc.file_name}\`\n\`\`\`\n${text.slice(0, 8000)}\n\`\`\``;
-    await streamingReply(ctx, uid, prompt, isGroup(ctx));
-  } catch (e) {
-    await ctx.reply(t(uid, 'error.generic')).catch(() => {});
-    log.error(`doc uid=${uid}: ${(e as Error).message}`);
-  }
+    try {
+      const fileInfo = await ctx.getFile();
+      const url = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${fileInfo.file_path}`;
+      const res = await fetch(url);
+      const text = await res.text();
+      const snippet = text.slice(0, 3000);
+
+      const count = incrementMsgCount(uid);
+      const plan  = getUserPlan(uid);
+      if (!checkRateLimit(uid, count)) { await ctx.reply(t(lang, 'limit_reached')); return; }
+
+      const userMsg = `Document: "${doc.file_name}"\nContent:\n${snippet}\n\nSummarize and analyze this document.`;
+      const system = buildSystemPrompt(uid, lang, plan);
+      const answer = await executeAI({ uid, messages: [{ role: 'user', content: userMsg }], systemPrompt: system });
+      await ctx.reply(answer, { parse_mode: 'Markdown' });
+    } catch (e) {
+      logger.error('handler', 'Document processing failed', e);
+      await ctx.reply(t(lang, 'error_generic'));
+    }
+  });
 }

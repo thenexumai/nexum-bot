@@ -2,566 +2,181 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Notes — NEXUM</title>
-<link rel="stylesheet" href="shared/design-system.css">
+<link rel="stylesheet" href="/shared/design-system.css">
 <style>
-  .char-count {
-    font-size: 12px;
-    color: var(--text-muted);
-    text-align: right;
-    margin-top: 4px;
+  .notes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .note-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px;
+    cursor: pointer; transition: border-color .15s, transform .1s;
+    position: relative; min-height: 120px;
   }
-  .section-label {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--text-muted);
-    margin-bottom: 8px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .section-label svg {
-    width: 14px;
-    height: 14px;
-  }
-  .pinned-section {
-    margin-bottom: 16px;
-  }
-  .modal-actions-row {
-    display: flex;
-    gap: 8px;
-  }
-  .modal-actions-row .btn {
-    flex: 1;
-  }
-  .note-card-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 4px;
-  }
-  .note-card-pin {
-    flex-shrink: 0;
-    color: var(--accent);
-    width: 14px;
-    height: 14px;
-    margin-top: 1px;
-  }
-  .note-card-pin svg {
-    width: 14px;
-    height: 14px;
-  }
-  .note-card-date {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 8px;
-  }
-  .modal-delete-row {
-    padding: 0 16px 12px;
-  }
+  .note-card:hover { border-color: var(--border2); transform: translateY(-1px); }
+  .note-card.pinned { border-color: var(--accent); }
+  .note-card-title { font-weight: 700; font-size: .9rem; margin-bottom: 6px; }
+  .note-card-body  { font-size: .78rem; color: var(--text2); line-height: 1.5; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
+  .note-card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+  .note-card-date   { font-size: .7rem; color: var(--text3); }
+  .pin-icon { position: absolute; top: 10px; right: 10px; font-size: .8rem; opacity: .7; }
+  .editor-area { min-height: 200px; font-size: .95rem; line-height: 1.7; }
+  .search-bar { margin-bottom: 12px; }
 </style>
 </head>
 <body>
-<div class="app-container">
+<header class="app-header">
+  <div class="header-logo">
+    <div class="logo-dot">📝</div>
+    <h1>Notes</h1>
+  </div>
+  <span class="badge badge-accent" id="noteCount">0</span>
+</header>
 
-  <!-- Header -->
-  <header class="app-header">
-    <span class="app-header-title" id="headerTitle"></span>
-    <button class="app-header-action" id="btnAdd" aria-label="Add note"></button>
-  </header>
-
-  <!-- Content -->
-  <main class="app-content" id="appContent">
-    <!-- Loading state -->
-    <div class="loading-container" id="loadingState">
-      <div class="spinner"></div>
-    </div>
-
-    <!-- Main content (hidden until loaded) -->
-    <div id="mainContent" class="hidden">
-      <!-- Search bar -->
-      <div class="search-bar" id="searchBar"></div>
-
-      <!-- Pinned section -->
-      <div id="pinnedSection" class="pinned-section hidden"></div>
-
-      <!-- All notes grid -->
-      <div id="notesGrid" class="note-grid"></div>
-
-      <!-- Empty state -->
-      <div class="empty-state hidden" id="emptyState">
-        <div class="empty-state-icon" id="emptyIcon"></div>
-        <div class="empty-state-title" id="emptyTitle"></div>
-        <div class="empty-state-desc" id="emptyDesc"></div>
-        <button class="btn btn-primary" id="emptyAddBtn"></button>
-      </div>
-    </div>
-  </main>
+<div class="page">
+  <div class="search-bar">
+    <input class="input" id="searchInput" type="search" placeholder="Search notes..." oninput="onSearch()">
+  </div>
+  <div class="notes-grid" id="noteGrid"></div>
 </div>
 
-<!-- Add/Edit Modal -->
-<div class="modal-overlay" id="noteModal">
-  <div class="modal-sheet">
+<button class="fab" onclick="openNew()">+</button>
+
+<!-- Note Editor Modal -->
+<div class="modal-overlay" id="modal" onclick="closeIfBg(event)">
+  <div class="modal" style="border-radius:var(--radius-lg) var(--radius-lg) 0 0">
     <div class="modal-handle"></div>
-    <div class="modal-header">
-      <span class="modal-title" id="modalTitle"></span>
-      <button class="btn btn-ghost btn-sm" id="modalClose"></button>
-    </div>
-    <div class="modal-body">
-      <div class="form-group">
-        <label class="form-label" id="labelTitle"></label>
-        <input class="form-input" type="text" id="inputTitle" maxlength="200">
-      </div>
-      <div class="form-group">
-        <label class="form-label" id="labelContent"></label>
-        <textarea class="form-textarea" id="inputContent" rows="6" maxlength="5000"></textarea>
-        <div class="char-count" id="charCount">0 / 5000</div>
-      </div>
-      <div class="form-group">
-        <label class="form-label" id="labelTags"></label>
-        <input class="form-input" type="text" id="inputTags">
-        <div class="form-hint" id="tagsHint"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h2 id="modalTitle">New Note</h2>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-icon" id="pinBtn" onclick="togglePin()" title="Pin">📌</button>
+        <button class="btn btn-danger btn-icon" id="deleteBtn" onclick="deleteNote()" title="Delete" style="display:none">🗑</button>
       </div>
     </div>
-    <div class="modal-footer">
-      <div class="modal-actions-row" style="width:100%">
-        <button class="btn btn-ghost" id="modalPinBtn"></button>
-        <button class="btn btn-primary" id="modalSaveBtn" style="flex:2"></button>
-      </div>
+    <div class="form-group">
+      <input class="input" id="inTitle" type="text" placeholder="Title">
     </div>
-    <div class="modal-delete-row hidden" id="deleteRow">
-      <button class="btn btn-danger btn-full btn-sm" id="modalDeleteBtn"></button>
+    <div class="form-group">
+      <textarea class="input editor-area" id="inContent" placeholder="Start writing..."></textarea>
     </div>
+    <div class="form-group">
+      <input class="input" id="inTags" type="text" placeholder="Tags: work, personal, ideas">
+    </div>
+    <button class="btn btn-primary" style="width:100%" onclick="saveNote()">Save Note</button>
   </div>
 </div>
 
-<script src="shared/icons.js"></script>
-<script src="shared/app-shell.js"></script>
+<div class="toast" id="toast"></div>
+
 <script>
-(function() {
-  'use strict';
+const uid = new URLSearchParams(location.search).get('uid') || 0;
+const API = '/api';
+let notes = [];
+let editId = null;
+let isPinned = false;
+let searchQ = '';
 
-  // ── i18n ──────────────────────────────────────────────────────────────
-  var T = {
-    en: Object.assign({}, APP_TRANSLATIONS.en, {
-      'notes_title': 'Notes',
-      'add_note': 'Add Note',
-      'edit_note': 'Edit Note',
-      'search_notes': 'Search notes...',
-      'pinned': 'Pinned',
-      'title': 'Title',
-      'content': 'Content',
-      'tags': 'Tags',
-      'tags_hint': 'Comma-separated, e.g. work, ideas',
-      'no_notes': 'No notes yet',
-      'create_first_note': 'Create your first note to get started',
-      'characters': 'characters',
-      'save': 'Save',
-      'cancel': 'Cancel',
-      'delete': 'Delete',
-      'close': 'Close',
-      'pin': 'Pin',
-      'unpin': 'Unpin',
-      'delete_confirm': 'Delete this note?',
-      'no_results': 'No notes match your search',
-      'try_different': 'Try a different search term',
-    }),
-    ru: Object.assign({}, APP_TRANSLATIONS.ru, {
-      'notes_title': 'Заметки',
-      'add_note': 'Новая заметка',
-      'edit_note': 'Редактировать',
-      'search_notes': 'Поиск заметок...',
-      'pinned': 'Закреплённые',
-      'title': 'Название',
-      'content': 'Содержание',
-      'tags': 'Теги',
-      'tags_hint': 'Через запятую, напр. работа, идеи',
-      'no_notes': 'Нет заметок',
-      'create_first_note': 'Создайте первую заметку',
-      'characters': 'символов',
-      'save': 'Сохранить',
-      'cancel': 'Отмена',
-      'delete': 'Удалить',
-      'close': 'Закрыть',
-      'pin': 'Закрепить',
-      'unpin': 'Открепить',
-      'delete_confirm': 'Удалить эту заметку?',
-      'no_results': 'Ничего не найдено',
-      'try_different': 'Попробуйте другой запрос',
-    })
-  };
-
-  // ── State ─────────────────────────────────────────────────────────────
-  var state = {
-    uid: '0',
-    lang: 'en',
-    notes: [],
-    searchQuery: '',
-    editingNote: null, // null = new, object = editing
-    isPinned: false
-  };
-
-  // ── Helper ────────────────────────────────────────────────────────────
-  function t(key, params) {
-    return tr(T[state.lang] || T.en, key, params);
-  }
-
-  function esc(str) {
-    if (!str) return '';
-    var d = document.createElement('div');
-    d.textContent = str;
-    return d.innerHTML;
-  }
-
-  function formatDate(dateStr) {
-    if (!dateStr) return '';
-    try {
-      var d = new Date(dateStr);
-      return d.toLocaleDateString(state.lang === 'ru' ? 'ru-RU' : 'en-US', {
-        month: 'short', day: 'numeric'
-      });
-    } catch (e) {
-      return dateStr.slice(0, 10);
-    }
-  }
-
-  // ── DOM refs ──────────────────────────────────────────────────────────
-  var $headerTitle = document.getElementById('headerTitle');
-  var $btnAdd = document.getElementById('btnAdd');
-  var $loadingState = document.getElementById('loadingState');
-  var $mainContent = document.getElementById('mainContent');
-  var $searchBar = document.getElementById('searchBar');
-  var $pinnedSection = document.getElementById('pinnedSection');
-  var $notesGrid = document.getElementById('notesGrid');
-  var $emptyState = document.getElementById('emptyState');
-  var $emptyIcon = document.getElementById('emptyIcon');
-  var $emptyTitle = document.getElementById('emptyTitle');
-  var $emptyDesc = document.getElementById('emptyDesc');
-  var $emptyAddBtn = document.getElementById('emptyAddBtn');
-  var $noteModal = document.getElementById('noteModal');
-  var $modalTitle = document.getElementById('modalTitle');
-  var $modalClose = document.getElementById('modalClose');
-  var $labelTitle = document.getElementById('labelTitle');
-  var $inputTitle = document.getElementById('inputTitle');
-  var $labelContent = document.getElementById('labelContent');
-  var $inputContent = document.getElementById('inputContent');
-  var $charCount = document.getElementById('charCount');
-  var $labelTags = document.getElementById('labelTags');
-  var $inputTags = document.getElementById('inputTags');
-  var $tagsHint = document.getElementById('tagsHint');
-  var $modalPinBtn = document.getElementById('modalPinBtn');
-  var $modalSaveBtn = document.getElementById('modalSaveBtn');
-  var $modalDeleteBtn = document.getElementById('modalDeleteBtn');
-  var $deleteRow = document.getElementById('deleteRow');
-
-  // ── API ───────────────────────────────────────────────────────────────
-  function apiGet() {
-    return fetch('/api/notes?uid=' + state.uid)
-      .then(function(r) { return r.ok ? r.json() : []; })
-      .catch(function() { return []; });
-  }
-
-  function apiCreate(data) {
-    return fetch('/api/notes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-  }
-
-  function apiUpdate(id, data) {
-    return fetch('/api/notes/' + id, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-  }
-
-  function apiDelete(id) {
-    return fetch('/api/notes/' + id, { method: 'DELETE' });
-  }
-
-  // ── Data loading ──────────────────────────────────────────────────────
-  function loadNotes() {
-    if (!state.uid || state.uid === '0') {
-      state.notes = [];
-      showContent();
-      render();
-      return;
-    }
-    apiGet().then(function(notes) {
-      state.notes = Array.isArray(notes) ? notes : [];
-      showContent();
-      render();
-    });
-  }
-
-  function showContent() {
-    $loadingState.classList.add('hidden');
-    $mainContent.classList.remove('hidden');
-    $mainContent.classList.add('fade-in');
-  }
-
-  // ── Filtering ─────────────────────────────────────────────────────────
-  function getFilteredNotes() {
-    var q = state.searchQuery.toLowerCase().trim();
-    if (!q) return state.notes;
-    return state.notes.filter(function(n) {
-      var title = (n.title || '').toLowerCase();
-      var content = (n.content || '').toLowerCase();
-      var tags = (n.tags || '').toLowerCase();
-      return title.indexOf(q) !== -1 || content.indexOf(q) !== -1 || tags.indexOf(q) !== -1;
-    });
-  }
-
-  // ── Render ────────────────────────────────────────────────────────────
-  function render() {
-    var filtered = getFilteredNotes();
-    var pinned = filtered.filter(function(n) { return n.pinned === 1 || n.pinned === true; });
-    var unpinned = filtered.filter(function(n) { return n.pinned !== 1 && n.pinned !== true; });
-
-    // Show/hide search bar only if there are notes
-    if (state.notes.length > 0) {
-      $searchBar.classList.remove('hidden');
-    } else {
-      $searchBar.classList.add('hidden');
-    }
-
-    // Empty state
-    if (state.notes.length === 0) {
-      $pinnedSection.classList.add('hidden');
-      $notesGrid.classList.add('hidden');
-      $emptyState.classList.remove('hidden');
-      $emptyTitle.textContent = t('no_notes');
-      $emptyDesc.textContent = t('create_first_note');
-      $emptyAddBtn.textContent = t('add_note');
-      return;
-    }
-
-    // No search results
-    if (filtered.length === 0) {
-      $pinnedSection.classList.add('hidden');
-      $notesGrid.classList.add('hidden');
-      $emptyState.classList.remove('hidden');
-      $emptyTitle.textContent = t('no_results');
-      $emptyDesc.textContent = t('try_different');
-      $emptyAddBtn.textContent = t('add_note');
-      return;
-    }
-
-    $emptyState.classList.add('hidden');
-
-    // Pinned section
-    if (pinned.length > 0) {
-      $pinnedSection.classList.remove('hidden');
-      var pinnedHtml = '<div class="section-label">' + icon('pin', 14) + ' ' + esc(t('pinned')) + '</div>';
-      pinnedHtml += '<div class="note-grid">';
-      pinnedHtml += pinned.map(function(n) { return renderNoteCard(n); }).join('');
-      pinnedHtml += '</div>';
-      $pinnedSection.innerHTML = pinnedHtml;
-    } else {
-      $pinnedSection.classList.add('hidden');
-      $pinnedSection.innerHTML = '';
-    }
-
-    // Unpinned grid
-    if (unpinned.length > 0) {
-      $notesGrid.classList.remove('hidden');
-      $notesGrid.innerHTML = unpinned.map(function(n) { return renderNoteCard(n); }).join('');
-    } else {
-      $notesGrid.classList.remove('hidden');
-      $notesGrid.innerHTML = '';
-    }
-  }
-
-  function renderNoteCard(note) {
-    var isPinned = note.pinned === 1 || note.pinned === true;
-    var tags = parseTags(note.tags);
-    var tagsHtml = '';
-    if (tags.length > 0) {
-      tagsHtml = '<div class="note-card-tags">' +
-        tags.map(function(tg) { return '<span class="note-card-tag">' + esc(tg) + '</span>'; }).join('') +
-        '</div>';
-    }
-    var titleHtml = note.title
-      ? '<div class="note-card-header"><span class="note-card-title">' + esc(note.title) + '</span>' +
-        (isPinned ? '<span class="note-card-pin">' + icon('pin', 14) + '</span>' : '') +
-        '</div>'
-      : (isPinned ? '<div class="note-card-header"><span></span><span class="note-card-pin">' + icon('pin', 14) + '</span></div>' : '');
-
-    return '<div class="note-card' + (isPinned ? ' pinned' : '') + ' fade-in" data-id="' + note.id + '" onclick="window.__openNote(' + note.id + ')">' +
-      titleHtml +
-      '<div class="note-card-content">' + esc(note.content) + '</div>' +
-      tagsHtml +
-      '<div class="note-card-date">' + formatDate(note.updated_at || note.created_at) + '</div>' +
-      '</div>';
-  }
-
-  function parseTags(tagsStr) {
-    if (!tagsStr) return [];
-    return tagsStr.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
-  }
-
-  // ── Modal ─────────────────────────────────────────────────────────────
-  function openModal(note) {
-    state.editingNote = note || null;
-    state.isPinned = note ? (note.pinned === 1 || note.pinned === true) : false;
-
-    $modalTitle.textContent = note ? t('edit_note') : t('add_note');
-    $inputTitle.value = note ? (note.title || '') : '';
-    $inputContent.value = note ? (note.content || '') : '';
-    $inputTags.value = note ? (note.tags || '') : '';
-    updateCharCount();
-    updatePinButton();
-
-    if (note) {
-      $deleteRow.classList.remove('hidden');
-    } else {
-      $deleteRow.classList.add('hidden');
-    }
-
-    $noteModal.classList.add('active');
-    setTimeout(function() { $inputTitle.focus(); }, 300);
-  }
-
-  function closeModal() {
-    $noteModal.classList.remove('active');
-    state.editingNote = null;
-    state.isPinned = false;
-  }
-
-  function updateCharCount() {
-    var len = ($inputContent.value || '').length;
-    $charCount.textContent = len + ' / 5000 ' + t('characters');
-  }
-
-  function updatePinButton() {
-    $modalPinBtn.innerHTML = icon('pin', 16) + ' ' + (state.isPinned ? t('unpin') : t('pin'));
-  }
-
-  function togglePin() {
-    state.isPinned = !state.isPinned;
-    updatePinButton();
-  }
-
-  function saveNote() {
-    var title = $inputTitle.value.trim();
-    var content = $inputContent.value.trim();
-    var tags = $inputTags.value.trim();
-
-    if (!content && !title) return;
-
-    var data = {
-      uid: parseInt(state.uid),
-      title: title,
-      content: content,
-      pinned: state.isPinned ? 1 : 0,
-      tags: tags
-    };
-
-    var promise;
-    if (state.editingNote) {
-      promise = apiUpdate(state.editingNote.id, data);
-    } else {
-      promise = apiCreate(data);
-    }
-
-    promise.then(function() {
-      closeModal();
-      loadNotes();
-    }).catch(function(err) {
-      console.error('Save failed:', err);
-    });
-  }
-
-  function deleteNote() {
-    if (!state.editingNote) return;
-    var confirmed = confirm(t('delete_confirm'));
-    if (!confirmed) return;
-    apiDelete(state.editingNote.id).then(function() {
-      closeModal();
-      loadNotes();
-    });
-  }
-
-  // ── Search ────────────────────────────────────────────────────────────
-  function onSearchInput(e) {
-    state.searchQuery = e.target.value;
+async function load() {
+  try {
+    notes = await fetch(`${API}/notes?uid=${uid}`).then(r=>r.json());
     render();
+  } catch(e) {
+    document.getElementById('noteGrid').innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">❌</div><h3>${e.message}</h3></div>`;
+  }
+}
+
+function render() {
+  const q = searchQ.toLowerCase();
+  let filtered = q
+    ? notes.filter(n => n.title?.toLowerCase().includes(q) || n.content?.toLowerCase().includes(q))
+    : notes;
+
+  // Pinned first
+  filtered.sort((a,b) => (b.pinned||0)-(a.pinned||0));
+
+  document.getElementById('noteCount').textContent = filtered.length;
+  const el = document.getElementById('noteGrid');
+
+  if (!filtered.length) {
+    el.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📝</div><h3>No notes yet</h3><p>Tap + to create your first note</p></div>`;
+    return;
   }
 
-  // ── Open note (exposed globally for onclick) ──────────────────────────
-  window.__openNote = function(id) {
-    var note = state.notes.find(function(n) { return n.id === id; });
-    if (note) openModal(note);
-  };
+  el.innerHTML = filtered.map(n => `
+    <div class="note-card ${n.pinned?'pinned':''}" onclick="openEdit(${n.id})">
+      ${n.pinned ? '<div class="pin-icon">📌</div>' : ''}
+      <div class="note-card-title">${esc(n.title||'Untitled')}</div>
+      <div class="note-card-body">${esc(n.content||'')}</div>
+      <div class="note-card-footer">
+        <span class="note-card-date">${fmtDate(n.created_at)}</span>
+        ${n.tags ? `<span class="badge badge-accent" style="font-size:.65rem">${esc(n.tags.split(',')[0].trim())}</span>` : ''}
+      </div>
+    </div>`).join('');
+}
 
-  // ── Setup UI ──────────────────────────────────────────────────────────
-  function setupUI() {
-    // Header
-    $headerTitle.textContent = t('notes_title');
-    $btnAdd.innerHTML = icon('plus', 20);
-    $btnAdd.onclick = function() { openModal(null); };
+function esc(s){ return (s||'').replace(/</g,'&lt;'); }
+function fmtDate(s){ return s?new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''; }
+function onSearch(){ searchQ=document.getElementById('searchInput').value; render(); }
 
-    // Search bar
-    $searchBar.innerHTML = icon('search', 18) +
-      '<input class="form-input" type="text" id="searchInput" autocomplete="off">';
-    var $searchInput = document.getElementById('searchInput');
-    $searchInput.placeholder = t('search_notes');
-    $searchInput.addEventListener('input', onSearchInput);
+function openNew(){
+  editId=null; isPinned=false;
+  document.getElementById('modalTitle').textContent='New Note';
+  document.getElementById('inTitle').value='';
+  document.getElementById('inContent').value='';
+  document.getElementById('inTags').value='';
+  document.getElementById('deleteBtn').style.display='none';
+  document.getElementById('pinBtn').textContent='📌';
+  document.getElementById('modal').classList.add('open');
+  setTimeout(()=>document.getElementById('inTitle').focus(),300);
+}
 
-    // Empty state icon
-    $emptyIcon.innerHTML = icon('notes', 28);
-    $emptyAddBtn.onclick = function() { openModal(null); };
+function openEdit(id){
+  const n=notes.find(x=>x.id===id);
+  if(!n) return;
+  editId=id; isPinned=!!n.pinned;
+  document.getElementById('modalTitle').textContent='Edit Note';
+  document.getElementById('inTitle').value=n.title||'';
+  document.getElementById('inContent').value=n.content||'';
+  document.getElementById('inTags').value=n.tags||'';
+  document.getElementById('deleteBtn').style.display='flex';
+  document.getElementById('pinBtn').textContent=isPinned?'📍':'📌';
+  document.getElementById('modal').classList.add('open');
+}
 
-    // Modal labels
-    $labelTitle.textContent = t('title');
-    $labelContent.textContent = t('content');
-    $labelTags.textContent = t('tags');
-    $tagsHint.textContent = t('tags_hint');
-    $inputTitle.placeholder = t('title');
-    $inputContent.placeholder = t('content');
+function togglePin(){ isPinned=!isPinned; document.getElementById('pinBtn').textContent=isPinned?'📍':'📌'; }
+function closeModal(){ document.getElementById('modal').classList.remove('open'); }
+function closeIfBg(e){ if(e.target.id==='modal') closeModal(); }
 
-    // Modal close
-    $modalClose.innerHTML = icon('x', 18);
-    $modalClose.onclick = closeModal;
-
-    // Modal actions
-    $modalSaveBtn.textContent = t('save');
-    $modalSaveBtn.onclick = saveNote;
-    $modalPinBtn.onclick = togglePin;
-    $modalDeleteBtn.innerHTML = icon('trash', 16) + ' ' + t('delete');
-    $modalDeleteBtn.onclick = deleteNote;
-
-    // Character count
-    $inputContent.addEventListener('input', updateCharCount);
-
-    // Close modal on overlay click
-    $noteModal.addEventListener('click', function(e) {
-      if (e.target === $noteModal) closeModal();
-    });
-
-    // Close modal on Escape
-    document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape' && $noteModal.classList.contains('active')) {
-        closeModal();
-      }
-    });
+async function saveNote(){
+  const title=document.getElementById('inTitle').value.trim();
+  const content=document.getElementById('inContent').value.trim();
+  if(!title&&!content) return showToast('Write something first');
+  const body={uid,title:title||'Untitled',content,tags:document.getElementById('inTags').value,pinned:isPinned?1:0};
+  if(editId){
+    await fetch(`${API}/notes/${editId}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const n=notes.find(x=>x.id===editId);
+    if(n) Object.assign(n,body);
+  } else {
+    const res=await fetch(`${API}/notes`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    notes.unshift(res);
   }
+  closeModal(); render(); showToast('✅ Saved!');
+}
 
-  // ── Init ──────────────────────────────────────────────────────────────
-  initApp().then(function(app) {
-    state.uid = app.uid;
-    state.lang = app.lang || 'en';
+async function deleteNote(){
+  if(!editId) return;
+  await fetch(`${API}/notes/${editId}`,{method:'DELETE'});
+  notes=notes.filter(n=>n.id!==editId);
+  closeModal(); render(); showToast('Deleted');
+}
 
-    setupUI();
-    loadNotes();
-  });
+function showToast(msg,ms=2000){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),ms);
+}
 
-})();
+load();
 </script>
 </body>
 </html>

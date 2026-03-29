@@ -1,0 +1,99 @@
+version: 1.0.0
+description: NEXUM safety policies — defines what is allowed and blocked
+
+# ── Path Policies ─────────────────────────────────────────────────────────────
+path_policy:
+  blocked:
+    windows:
+      - "C:\\Windows\\System32"
+      - "C:\\Windows\\SysWOW64"
+      - "C:\\Program Files\\Windows NT"
+      - "%WINDIR%"
+      - "%SYSTEMROOT%"
+    unix:
+      - /System
+      - /Library/System
+      - /bin
+      - /sbin
+      - /usr/bin
+      - /usr/sbin
+      - /etc/passwd
+      - /etc/shadow
+      - /boot
+      - /dev
+    all_platforms:
+      - .ssh
+      - .aws
+      - .gnupg
+      - id_rsa
+      - id_ed25519
+      - authorized_keys
+      - credentials
+
+  allowed_workspaces:
+    windows:
+      - "C:\\Users"
+      - "C:\\Projects"
+      - "C:\\Work"
+    unix:
+      - ~/
+      - /home
+      - /tmp/nexum
+
+# ── Command Blocklist ──────────────────────────────────────────────────────────
+blocked_commands:
+  exact:
+    - rm -rf /
+    - format c:
+    - del /f /s /q C:\\Windows
+    - shutdown /s
+    - halt
+    - poweroff
+  patterns:
+    - "^(sudo )?rm -rf /"
+    - "mkfs\\."
+    - "dd if=.*of=/dev/"
+    - ":(){ :|:& };:"  # fork bomb
+    - "nc -l.*-e /bin"  # reverse shell
+    - "curl.*\\| bash"  # curl pipe bash
+    - "wget.*\\| sh"
+
+# ── Action Classification ──────────────────────────────────────────────────────
+action_policy:
+  safe:
+    - screenshot
+    - sysinfo
+    - file_list
+    - file_read
+    - browser_navigate
+    - browser_screenshot
+    description: "Executed immediately, no confirmation needed"
+
+  sensitive:
+    - file_write
+    - mouse_move
+    - mouse_click
+    - keyboard_type
+    - browser_fill_form
+    description: "Logged and rate-limited, no confirmation needed"
+
+  dangerous:
+    - shell_exec
+    - file_delete
+    - browser_form_submit
+    description: "Requires explicit Telegram confirmation with 60s timeout"
+
+# ── Rate Limits ────────────────────────────────────────────────────────────────
+rate_limits:
+  shell_exec: 20/hour
+  file_write: 50/hour
+  file_delete: 10/hour
+  mouse_control: 100/hour
+  screenshot: 200/hour
+
+# ── Audit Policy ──────────────────────────────────────────────────────────────
+audit:
+  log_all_pc_actions: true
+  log_dangerous_only: false
+  retain_days: 30
+  notify_admin_on_dangerous: true

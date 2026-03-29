@@ -1,45 +1,95 @@
-import type { Bot, Context } from 'grammy';
-import { db, setUserApiKey } from '../../core/db';
-import { t } from '../../i18n/index';
+import { Bot } from 'grammy';
+import { canUseFeature } from '../../core/billing';
+import { getPreferences } from '../../core/preferences';
+import t from '../../i18n';
+import db from '../../core/db';
 
-const VALID_PROVIDERS = ['cerebras','groq','gemini','deepseek','claude','openrouter','grok','sambanova','together'];
+const VALID_PROVIDERS = ['claude', 'groq', 'gemini', 'deepseek', 'grok', 'openrouter', 'together', 'sambanova', 'cerebras'];
 
-export function registerByokCommands(bot: Bot): void {
-  bot.command('setkey', async (ctx: Context) => {
-    const uid  = ctx.from?.id ?? 0;
-    const args = (ctx.message?.text ?? '').split(' ');
+function maskKey(key: string): string {
+  if (key.length < 12) return '***';
+  return key.slice(0, 6) + '...' + key.slice(-4);
+}
 
-    if (args.length < 3) {
+export function setupByokCommands(bot: Bot) {
+
+  // /setkey PROVIDER KEY
+  bot.command('setkey', async (ctx) => {
+    const uid   = ctx.from!.id;
+    const prefs = getPreferences(uid);
+    const lang  = prefs.lang;
+
+    if (!canUseFeature(uid, 'byok')) {
+      await ctx.reply(t(lang, 'no_access', { plan: 'PRO' })); return;
+    }
+
+    const parts = ctx.match?.trim().split(/\s+/) ?? [];
+    if (parts.length < 2) {
       await ctx.reply(
-        t(uid, 'byok.usage', { providers: VALID_PROVIDERS.join(', ') }),
-        { parse_mode: 'Markdown' }
-      );
-      return;
+        `Usage: /setkey <provider> <key>\n\nProviders: ${VALID_PROVIDERS.join(', ')}`
+      ); return;
     }
 
-    const provider = args[1].toLowerCase();
-    const key      = args[2];
-
-    if (!VALID_PROVIDERS.includes(provider)) {
-      await ctx.reply(t(uid, 'byok.unknown_provider', { providers: VALID_PROVIDERS.join(', ') }));
-      return;
+    const [provider, key] = parts;
+    if (!VALID_PROVIDERS.includes(provider.toLowerCase())) {
+      await ctx.reply(`❌ Unknown provider. Valid: ${VALID_PROVIDERS.join(', ')}`); return;
     }
 
-    setUserApiKey(uid, provider, key);
-    try { await ctx.deleteMessage(); } catch {}
-    await ctx.reply(`✅ ${t(uid, 'byok.saved', { provider })}`, { parse_mode: 'Markdown' });
+    const user = db.prepare('SELECT byok_keys FROM users WHERE uid = ?').get(uid) as
+      { byok_keys: string } | undefined;
+    const keys = JSON.parse(user?.byok_keys ?? '{}');
+    keys[provider.toLowerCase()] = key;
+
+    db.prepare('UPDATE users SET byok_keys = ? WHERE uid = ?').run(JSON.stringify(keys), uid);
+
+    // Delete the user's message for security
+    try { await ctx.deleteMessage(); } catch { /* ok */ }
+
+    await ctx.reply(t(lang, 'byok_saved', { provider }));
   });
 
-  bot.command('mykeys', async (ctx: Context) => {
-    const uid  = ctx.from?.id ?? 0;
-    const rows = db.prepare(`SELECT provider, substr(api_key,1,8)||'…' AS masked FROM user_api_keys WHERE uid=? ORDER BY provider`).all(uid) as { provider: string; masked: string }[];
-    if (!rows.length) {
-      await ctx.reply(t(uid, 'byok.list_empty'), { parse_mode: 'Markdown' });
-      return;
+  // /mykeys
+  bot.command('mykeys', async (ctx) => {
+    const uid   = ctx.from!.id;
+    const prefs = getPreferences(uid);
+    const lang  = prefs.lang;
+
+    if (!canUseFeature(uid, 'byok')) {
+      await ctx.reply(t(lang, 'no_access', { plan: 'PRO' })); return;
     }
-    await ctx.reply(
-      `${t(uid, 'byok.list_title')}\n\n${rows.map(r => `• *${r.provider}:* \`${r.masked}\``).join('\n')}`,
-      { parse_mode: 'Markdown' }
-    );
+
+    const user = db.prepare('SELECT byok_keys FROM users WHERE uid = ?').get(uid) as
+      { byok_keys: string } | undefined;
+    const keys = JSON.parse(user?.byok_keys ?? '{}');
+    const entries = Object.entries(keys);
+
+    if (!entries.length) {
+      await ctx.reply(t(lang, 'byok_list_empty')); return;
+    }
+
+    const list = entries.map(([p, k]) => `• *${p}*: \`${maskKey(String(k))}\``).join('\n');
+    await ctx.reply(`🔑 *Your API Keys:*\n\n${list}`, { parse_mode: 'Markdown' });
+  });
+
+  // /rmkey PROVIDER
+  bot.command('rmkey', async (ctx) => {
+    const uid      = ctx.from!.id;
+    const prefs    = getPreferences(uid);
+    const lang     = prefs.lang;
+    const provider = ctx.match?.trim().toLowerCase();
+
+    if (!canUseFeature(uid, 'byok')) {
+      await ctx.reply(t(lang, 'no_access', { plan: 'PRO' })); return;
+    }
+    if (!provider) { await ctx.reply('Usage: /rmkey <provider>'); return; }
+
+    const user = db.prepare('SELECT byok_keys FROM users WHERE uid = ?').get(uid) as
+      { byok_keys: string } | undefined;
+    const keys = JSON.parse(user?.byok_keys ?? '{}');
+    if (!keys[provider]) { await ctx.reply(`❌ No key for ${provider}`); return; }
+
+    delete keys[provider];
+    db.prepare('UPDATE users SET byok_keys = ? WHERE uid = ?').run(JSON.stringify(keys), uid);
+    await ctx.reply(t(lang, 'byok_removed', { provider }));
   });
 }

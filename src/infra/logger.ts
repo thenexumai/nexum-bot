@@ -1,46 +1,62 @@
-/**
- * NEXUM Logger
- * Structured logging with levels, inspired by OpenClaw's logInfo pattern.
- */
+// OpenClaw-style beautiful colored logger
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+const COLORS = {
+  reset: '\x1b[0m',
+  bright: '\x1b[1m',
+  dim: '\x1b[2m',
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  magenta: '\x1b[35m',
+  cyan: '\x1b[36m',
+  white: '\x1b[37m',
+  gray: '\x1b[90m',
+};
 
-const IS_PROD = process.env.NODE_ENV === 'production';
+type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'SUCCESS';
 
-function ts(): string {
-  return new Date().toISOString().slice(11, 23); // HH:MM:SS.mmm
+const LEVEL_COLORS: Record<LogLevel, string> = {
+  DEBUG: COLORS.gray,
+  INFO:  COLORS.cyan,
+  WARN:  COLORS.yellow,
+  ERROR: COLORS.red,
+  SUCCESS: COLORS.green,
+};
+
+const LEVEL_ICONS: Record<LogLevel, string> = {
+  DEBUG: '●',
+  INFO:  '◆',
+  WARN:  '▲',
+  ERROR: '✖',
+  SUCCESS: '✔',
+};
+
+function timestamp(): string {
+  const now = new Date();
+  return now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
 }
 
-function fmt(level: string, module: string, msg: string, meta?: unknown): string {
-  const base = `[${ts()}] [${level.toUpperCase()}] [${module}] ${msg}`;
-  if (meta !== undefined) {
-    const metaStr = typeof meta === 'string' ? meta : JSON.stringify(meta);
-    return `${base} ${metaStr}`;
-  }
-  return base;
+function format(level: LogLevel, module: string, message: string, data?: unknown): string {
+  const ts  = `${COLORS.dim}[${timestamp()}]${COLORS.reset}`;
+  const lv  = `${LEVEL_COLORS[level]}${LEVEL_ICONS[level]} ${level.padEnd(7)}${COLORS.reset}`;
+  const mod = `${COLORS.magenta}[${module}]${COLORS.reset}`;
+  const msg = message;
+  const extra = data !== undefined ? `\n  ${COLORS.dim}${JSON.stringify(data, null, 2)}${COLORS.reset}` : '';
+  return `${ts} ${lv} ${mod} ${msg}${extra}`;
 }
 
 export const logger = {
-  debug: (module: string, msg: string, meta?: unknown) => {
-    if (!IS_PROD) console.debug(fmt('debug', module, msg, meta));
-  },
-  info: (module: string, msg: string, meta?: unknown) => {
-    console.info(fmt('info', module, msg, meta));
-  },
-  warn: (module: string, msg: string, meta?: unknown) => {
-    console.warn(fmt('warn', module, msg, meta));
-  },
-  error: (module: string, msg: string, meta?: unknown) => {
-    console.error(fmt('error', module, msg, meta));
-  },
+  debug: (module: string, message: string, data?: unknown) =>
+    console.log(format('DEBUG', module, message, data)),
+  info: (module: string, message: string, data?: unknown) =>
+    console.log(format('INFO', module, message, data)),
+  warn: (module: string, message: string, data?: unknown) =>
+    console.warn(format('WARN', module, message, data)),
+  error: (module: string, message: string, data?: unknown) =>
+    console.error(format('ERROR', module, message, data)),
+  success: (module: string, message: string, data?: unknown) =>
+    console.log(format('SUCCESS', module, message, data)),
 };
 
-/** Create a module-scoped logger */
-export function createLogger(module: string) {
-  return {
-    debug: (msg: string, meta?: unknown) => logger.debug(module, msg, meta),
-    info:  (msg: string, meta?: unknown) => logger.info(module, msg, meta),
-    warn:  (msg: string, meta?: unknown) => logger.warn(module, msg, meta),
-    error: (msg: string, meta?: unknown) => logger.error(module, msg, meta),
-  };
-}
+export default logger;

@@ -2,641 +2,221 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Calendar — NEXUM</title>
-<link rel="stylesheet" href="shared/design-system.css">
+<link rel="stylesheet" href="/shared/design-system.css">
 <style>
-  .cal-section { margin-bottom: 16px; }
-  .events-section-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-secondary);
+  .cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .cal-nav { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 12px; cursor: pointer; color: var(--text); font-size: 1rem; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 16px; }
+  .cal-dow  { text-align: center; font-size: .7rem; font-weight: 700; color: var(--text3); padding: 4px 0; text-transform: uppercase; }
+  .cal-day  {
+    aspect-ratio: 1; border-radius: var(--radius-sm);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    cursor: pointer; font-size: .85rem; font-weight: 500; position: relative;
+    transition: background .1s;
+  }
+  .cal-day:hover    { background: var(--surface2); }
+  .cal-day.other    { color: var(--text3); }
+  .cal-day.today    { background: var(--accent); color: #fff; font-weight: 700; }
+  .cal-day.selected { background: var(--accent-dim); border: 1px solid var(--accent); color: var(--accent2); }
+  .cal-day.has-event::after {
+    content: ''; position: absolute; bottom: 3px;
+    width: 4px; height: 4px; border-radius: 50%; background: var(--green);
+  }
+  .cal-day.today.has-event::after { background: #fff; }
+  .events-section h3 { font-size: .8rem; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+  .event-item {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 12px; border-radius: var(--radius-sm);
+    background: var(--surface); border: 1px solid var(--border);
     margin-bottom: 8px;
-    padding: 0 2px;
   }
-  .event-color-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-  .event-delete-btn {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-    transition: all var(--transition);
-    flex-shrink: 0;
-  }
-  .event-delete-btn:hover,
-  .event-delete-btn:active {
-    color: var(--danger);
-    background: var(--danger-subtle);
-  }
-  .form-row-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 4px 0;
-  }
-  .color-picker-row {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  .color-swatch {
-    width: 32px;
-    height: 32px;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    border: 2px solid transparent;
-    transition: all var(--transition);
-  }
-  .color-swatch:hover { transform: scale(1.1); }
-  .color-swatch.active { border-color: var(--text-primary); }
-  .datetime-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-  }
+  .event-time { font-size: .8rem; color: var(--accent2); font-weight: 700; min-width: 50px; padding-top: 2px; }
+  .event-title { font-weight: 600; font-size: .9rem; }
+  .event-sub   { font-size: .75rem; color: var(--text2); margin-top: 2px; }
+  .event-dot   { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: 6px; }
 </style>
 </head>
 <body>
-<div class="app-container" id="app">
+<header class="app-header">
+  <div class="header-logo">
+    <div class="logo-dot">📅</div>
+    <h1>Calendar</h1>
+  </div>
+  <button class="btn btn-ghost btn-icon" onclick="openModal()">+</button>
+</header>
 
-  <!-- Loading state -->
-  <div class="loading-container" id="loadingState">
-    <div class="spinner"></div>
+<div class="page">
+  <!-- Month nav -->
+  <div class="cal-header">
+    <button class="cal-nav" onclick="prevMonth()">‹</button>
+    <h2 id="monthLabel" style="font-size:1.1rem"></h2>
+    <button class="cal-nav" onclick="nextMonth()">›</button>
   </div>
 
-  <!-- Main content (hidden until loaded) -->
-  <div id="mainContent" class="hidden">
+  <!-- Day-of-week labels -->
+  <div class="cal-grid" id="calDow"></div>
 
-    <!-- Header -->
-    <header class="app-header">
-      <span class="app-header-title" id="headerTitle">Calendar</span>
-      <button class="app-header-action" id="addEventBtn" aria-label="Add event"></button>
-    </header>
+  <!-- Calendar grid -->
+  <div class="cal-grid" id="calGrid"></div>
 
-    <!-- Content -->
-    <main class="app-content">
-
-      <!-- Calendar navigation -->
-      <div class="cal-nav">
-        <button class="cal-nav-btn" id="prevMonth" aria-label="Previous month"></button>
-        <span class="cal-nav-title" id="calNavTitle"></span>
-        <button class="cal-nav-btn" id="nextMonth" aria-label="Next month"></button>
-      </div>
-
-      <!-- Calendar grid -->
-      <div class="cal-section card">
-        <div style="padding: 8px 4px;">
-          <div class="cal-grid" id="weekdayHeaders"></div>
-          <div class="cal-grid" id="calDays"></div>
-        </div>
-      </div>
-
-      <!-- Events section -->
-      <div id="eventsSection" class="fade-in" style="margin-top: 16px;">
-        <div class="events-section-title" id="eventsSectionTitle">Events</div>
-        <div id="eventsList"></div>
-      </div>
-
-    </main>
+  <!-- Events for selected day -->
+  <div class="events-section">
+    <h3 id="eventsLabel">Today's Events</h3>
+    <div id="eventsList"></div>
   </div>
 </div>
 
-<!-- Add/Edit Event Modal -->
-<div class="modal-overlay" id="eventModal">
-  <div class="modal-sheet">
+<button class="fab" onclick="openModal()">+</button>
+
+<!-- Add Event Modal -->
+<div class="modal-overlay" id="modal" onclick="closeIfBg(event)">
+  <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-header">
-      <span class="modal-title" id="modalTitle">Add Event</span>
-      <button class="app-header-action" id="modalCloseBtn" aria-label="Close"></button>
+    <h2>New Event</h2>
+    <div class="form-group">
+      <label class="form-label">Title</label>
+      <input class="input" id="inTitle" type="text" placeholder="Meeting, Birthday, Deadline...">
     </div>
-    <div class="modal-body">
+    <div class="form-row">
       <div class="form-group">
-        <label class="form-label" id="labelTitle">Title</label>
-        <input class="form-input" type="text" id="inputTitle" maxlength="200">
+        <label class="form-label">Date</label>
+        <input class="input" id="inDate" type="date">
       </div>
       <div class="form-group">
-        <label class="form-label" id="labelDescription">Description</label>
-        <textarea class="form-input" id="inputDescription" rows="2" style="min-height:60px;resize:vertical;"></textarea>
-      </div>
-      <div class="form-group">
-        <div class="form-row-toggle">
-          <label class="form-label" id="labelAllDay" style="margin-bottom:0;">All Day</label>
-          <div class="toggle" id="toggleAllDay"></div>
-        </div>
-      </div>
-      <div id="dateTimeFields">
-        <div class="datetime-row">
-          <div class="form-group">
-            <label class="form-label" id="labelStartDate">Start</label>
-            <input class="form-input" type="date" id="inputStartDate">
-          </div>
-          <div class="form-group" id="startTimeGroup">
-            <label class="form-label">&nbsp;</label>
-            <input class="form-input" type="time" id="inputStartTime" value="09:00">
-          </div>
-        </div>
-        <div class="datetime-row">
-          <div class="form-group">
-            <label class="form-label" id="labelEndDate">End</label>
-            <input class="form-input" type="date" id="inputEndDate">
-          </div>
-          <div class="form-group" id="endTimeGroup">
-            <label class="form-label">&nbsp;</label>
-            <input class="form-input" type="time" id="inputEndTime" value="10:00">
-          </div>
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label" id="labelColor">Color</label>
-        <div class="color-picker-row" id="colorPicker"></div>
+        <label class="form-label">Time</label>
+        <input class="input" id="inTime" type="time">
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost btn-full" id="btnCancel">Cancel</button>
-      <button class="btn btn-primary btn-full" id="btnSave">Save</button>
+    <div class="form-group">
+      <label class="form-label">Note (optional)</label>
+      <input class="input" id="inNote" type="text" placeholder="Location, details...">
     </div>
+    <button class="btn btn-primary" style="width:100%" onclick="addEvent()">Save Event</button>
   </div>
 </div>
 
-<script src="shared/icons.js"></script>
-<script src="shared/app-shell.js"></script>
+<div class="toast" id="toast"></div>
+
 <script>
-(function() {
-  'use strict';
+const uid = new URLSearchParams(location.search).get('uid') || 0;
+const API = '/api';
+const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-  // ── State ──────────────────────────────────────────────────────────
-  var state = {
-    uid: '0',
-    lang: 'en',
-    T: {},
-    events: [],
-    currentMonth: new Date().getMonth(),
-    currentYear: new Date().getFullYear(),
-    selectedDate: null,
-    allDay: false,
-    selectedColor: '#7c6af5'
-  };
+let events = [];
+let today = new Date();
+let viewing = new Date(today.getFullYear(), today.getMonth(), 1);
+let selectedDate = toYMD(today);
 
-  var EVENT_COLORS = [
-    '#7c6af5', '#3b82f6', '#22c55e', '#f59e0b',
-    '#ef4444', '#ec4899', '#8b5cf6', '#06b6d4'
-  ];
+function toYMD(d) { return d.toISOString().slice(0,10); }
 
-  // ── Helpers ────────────────────────────────────────────────────────
-  function $(id) { return document.getElementById(id); }
+async function load() {
+  try {
+    events = await fetch(`${API}/calendar?uid=${uid}`).then(r => r.json());
+    renderCal();
+    renderEvents(selectedDate);
+  } catch(e) {}
+}
 
-  function getMonthNames() {
-    return tr(state.T, 'months').split(',');
+function renderCal() {
+  document.getElementById('monthLabel').textContent = `${MONTHS[viewing.getMonth()]} ${viewing.getFullYear()}`;
+
+  // DOW headers
+  document.getElementById('calDow').innerHTML = DOW.map(d => `<div class="cal-dow">${d}</div>`).join('');
+
+  const first = new Date(viewing.getFullYear(), viewing.getMonth(), 1);
+  const last  = new Date(viewing.getFullYear(), viewing.getMonth() + 1, 0);
+  const startPad = first.getDay();
+  const todayYMD = toYMD(today);
+
+  const eventDays = new Set(events.map(e => e.start?.slice(0,10)).filter(Boolean));
+
+  let cells = '';
+  // Pad before
+  const prevLast = new Date(viewing.getFullYear(), viewing.getMonth(), 0).getDate();
+  for (let i = startPad - 1; i >= 0; i--) {
+    cells += `<div class="cal-day other">${prevLast - i}</div>`;
+  }
+  // Current month
+  for (let d = 1; d <= last.getDate(); d++) {
+    const ymd = `${viewing.getFullYear()}-${String(viewing.getMonth()+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const isToday    = ymd === todayYMD;
+    const isSelected = ymd === selectedDate;
+    const hasEv      = eventDays.has(ymd);
+    cells += `<div class="cal-day ${isToday?'today':''} ${isSelected&&!isToday?'selected':''} ${hasEv?'has-event':''}" onclick="selectDay('${ymd}')">${d}</div>`;
+  }
+  // Pad after
+  const remaining = 42 - startPad - last.getDate();
+  for (let d = 1; d <= remaining; d++) {
+    cells += `<div class="cal-day other">${d}</div>`;
   }
 
-  function getWeekdayNames() {
-    return tr(state.T, 'weekdays').split(',');
+  document.getElementById('calGrid').innerHTML = cells;
+}
+
+function renderEvents(ymd) {
+  const dayEvents = events.filter(e => e.start?.slice(0,10) === ymd);
+  const label = ymd === toYMD(today) ? "Today's Events" : `Events on ${ymd}`;
+  document.getElementById('eventsLabel').textContent = label;
+
+  const el = document.getElementById('eventsList');
+  if (!dayEvents.length) {
+    el.innerHTML = `<div class="empty" style="padding:24px"><div class="empty-icon" style="font-size:2rem">📭</div><h3 style="font-size:.9rem">No events</h3></div>`;
+    return;
   }
+  el.innerHTML = dayEvents.map(e => {
+    const time = e.start?.slice(11,16) || '';
+    return `
+    <div class="event-item">
+      <div class="event-dot"></div>
+      <div style="flex:1">
+        <div class="event-title">${esc(e.title)}</div>
+        ${e.note ? `<div class="event-sub">📍 ${esc(e.note)}</div>` : ''}
+      </div>
+      ${time ? `<div class="event-time">${time}</div>` : ''}
+    </div>`;
+  }).join('');
+}
 
-  function formatDate(y, m, d) {
-    return y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-  }
+function selectDay(ymd) { selectedDate = ymd; renderCal(); renderEvents(ymd); }
+function prevMonth() { viewing.setMonth(viewing.getMonth()-1); renderCal(); }
+function nextMonth() { viewing.setMonth(viewing.getMonth()+1); renderCal(); }
 
-  function isSameDay(dateStr, y, m, d) {
-    if (!dateStr) return false;
-    var target = formatDate(y, m, d);
-    return dateStr.slice(0, 10) === target;
-  }
+async function addEvent() {
+  const title = document.getElementById('inTitle').value.trim();
+  const date  = document.getElementById('inDate').value;
+  if (!title || !date) return showToast('Title and date required');
+  const time = document.getElementById('inTime').value;
+  const start = time ? `${date}T${time}:00` : `${date}T00:00:00`;
+  const body = { uid, title, start, note: document.getElementById('inNote').value, all_day: !time };
+  const res = await fetch(`${API}/calendar`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }).then(r=>r.json());
+  events.push(res);
+  closeModal();
+  renderCal();
+  renderEvents(date);
+  showToast('✅ Event saved!');
+  document.getElementById('inTitle').value='';
+  document.getElementById('inNote').value='';
+}
 
-  function formatEventTime(event) {
-    if (event.all_day) {
-      return tr(state.T, 'all_day');
-    }
-    var start = event.start_at ? event.start_at.slice(11, 16) : '';
-    var end = event.end_at ? event.end_at.slice(11, 16) : '';
-    if (start && end) return start + ' - ' + end;
-    if (start) return start;
-    return '';
-  }
+function esc(s) { return (s||'').replace(/</g,'&lt;'); }
+function openModal() {
+  document.getElementById('inDate').value = selectedDate;
+  document.getElementById('modal').classList.add('open');
+}
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+function closeIfBg(e) { if(e.target.id==='modal') closeModal(); }
+function showToast(msg,ms=2000) {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),ms);
+}
 
-  function escapeHtml(str) {
-    if (!str) return '';
-    var div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
-
-  function dateHasEvents(y, m, d) {
-    var ds = formatDate(y, m, d);
-    return state.events.some(function(ev) {
-      if (!ev.start_at) return false;
-      // For multi-day / all-day: check if date falls within range
-      var startDate = ev.start_at.slice(0, 10);
-      var endDate = ev.end_at ? ev.end_at.slice(0, 10) : startDate;
-      return ds >= startDate && ds <= endDate;
-    });
-  }
-
-  function getEventsForDate(y, m, d) {
-    var ds = formatDate(y, m, d);
-    return state.events.filter(function(ev) {
-      if (!ev.start_at) return false;
-      var startDate = ev.start_at.slice(0, 10);
-      var endDate = ev.end_at ? ev.end_at.slice(0, 10) : startDate;
-      return ds >= startDate && ds <= endDate;
-    });
-  }
-
-  // ── API ────────────────────────────────────────────────────────────
-  async function loadEvents() {
-    if (!state.uid || state.uid === '0') return;
-    try {
-      var resp = await fetch('/api/calendar?uid=' + state.uid);
-      if (resp.ok) {
-        var data = await resp.json();
-        state.events = Array.isArray(data) ? data : [];
-      }
-    } catch (e) {
-      console.warn('Failed to load events:', e);
-    }
-    renderCalendar();
-    renderEvents();
-  }
-
-  async function saveEvent(payload) {
-    try {
-      var resp = await fetch('/api/calendar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (resp.ok) {
-        await loadEvents();
-      }
-    } catch (e) {
-      console.warn('Failed to save event:', e);
-    }
-  }
-
-  async function deleteEvent(id) {
-    try {
-      await fetch('/api/calendar/' + id, { method: 'DELETE' });
-      await loadEvents();
-    } catch (e) {
-      console.warn('Failed to delete event:', e);
-    }
-  }
-
-  // ── Render: Weekday headers ────────────────────────────────────────
-  function renderWeekdayHeaders() {
-    var names = getWeekdayNames();
-    var html = '';
-    for (var i = 0; i < names.length; i++) {
-      html += '<div class="cal-weekday">' + escapeHtml(names[i]) + '</div>';
-    }
-    $('weekdayHeaders').innerHTML = html;
-  }
-
-  // ── Render: Calendar grid ─────────────────────────────────────────
-  function renderCalendar() {
-    var y = state.currentYear;
-    var m = state.currentMonth;
-    var monthNames = getMonthNames();
-
-    // Update nav title
-    $('calNavTitle').textContent = monthNames[m] + ' ' + y;
-
-    var today = new Date();
-    var todayY = today.getFullYear();
-    var todayM = today.getMonth();
-    var todayD = today.getDate();
-
-    // First day of month (0=Sun, adjust for Mon-start: Mon=0..Sun=6)
-    var firstDow = new Date(y, m, 1).getDay();
-    var startOffset = (firstDow + 6) % 7; // Monday-based offset
-
-    var daysInMonth = new Date(y, m + 1, 0).getDate();
-    var daysInPrevMonth = new Date(y, m, 0).getDate();
-
-    var html = '';
-
-    // Previous month trailing days
-    for (var i = startOffset - 1; i >= 0; i--) {
-      var pd = daysInPrevMonth - i;
-      var prevM = m === 0 ? 11 : m - 1;
-      var prevY = m === 0 ? y - 1 : y;
-      var hasEv = dateHasEvents(prevY, prevM, pd);
-      html += '<div class="cal-day other-month' + (hasEv ? ' has-event' : '') + '" data-date="' + formatDate(prevY, prevM, pd) + '">' + pd + '</div>';
-    }
-
-    // Current month days
-    for (var d = 1; d <= daysInMonth; d++) {
-      var isToday = (d === todayD && m === todayM && y === todayY);
-      var isSelected = false;
-      if (state.selectedDate) {
-        isSelected = state.selectedDate === formatDate(y, m, d);
-      }
-      var hasEvent = dateHasEvents(y, m, d);
-
-      var cls = 'cal-day';
-      if (isToday && !isSelected) cls += ' today';
-      if (isSelected) cls += ' selected';
-      if (hasEvent) cls += ' has-event';
-
-      html += '<div class="' + cls + '" data-date="' + formatDate(y, m, d) + '">' + d + '</div>';
-    }
-
-    // Next month leading days (fill to complete 6 rows max, or at least fill the row)
-    var totalCells = startOffset + daysInMonth;
-    var remaining = (7 - (totalCells % 7)) % 7;
-    for (var nd = 1; nd <= remaining; nd++) {
-      var nextM = m === 11 ? 0 : m + 1;
-      var nextY = m === 11 ? y + 1 : y;
-      var hasEvN = dateHasEvents(nextY, nextM, nd);
-      html += '<div class="cal-day other-month' + (hasEvN ? ' has-event' : '') + '" data-date="' + formatDate(nextY, nextM, nd) + '">' + nd + '</div>';
-    }
-
-    $('calDays').innerHTML = html;
-
-    // Attach click handlers
-    var dayEls = $('calDays').querySelectorAll('.cal-day');
-    for (var j = 0; j < dayEls.length; j++) {
-      dayEls[j].addEventListener('click', onDayClick);
-    }
-  }
-
-  function onDayClick(e) {
-    var el = e.currentTarget;
-    var date = el.getAttribute('data-date');
-    if (!date) return;
-    state.selectedDate = date;
-    renderCalendar();
-    renderEvents();
-  }
-
-  // ── Render: Events list ────────────────────────────────────────────
-  function renderEvents() {
-    var container = $('eventsList');
-    var titleEl = $('eventsSectionTitle');
-
-    var eventsToShow;
-    var sectionTitle;
-
-    if (state.selectedDate) {
-      var parts = state.selectedDate.split('-');
-      var sy = parseInt(parts[0]);
-      var sm = parseInt(parts[1]) - 1;
-      var sd = parseInt(parts[2]);
-      eventsToShow = getEventsForDate(sy, sm, sd);
-
-      var monthNames = getMonthNames();
-      sectionTitle = tr(state.T, 'events') + ' — ' + sd + ' ' + monthNames[sm];
-    } else {
-      // Show upcoming events
-      var todayStr = formatDate(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
-      eventsToShow = state.events.filter(function(ev) {
-        return ev.start_at && ev.start_at.slice(0, 10) >= todayStr;
-      }).sort(function(a, b) {
-        return (a.start_at || '').localeCompare(b.start_at || '');
-      }).slice(0, 20);
-      sectionTitle = tr(state.T, 'events');
-    }
-
-    titleEl.textContent = sectionTitle;
-
-    if (!eventsToShow.length) {
-      container.innerHTML =
-        '<div class="empty-state">' +
-          '<div class="empty-state-icon">' + icon('calendar', 28) + '</div>' +
-          '<div class="empty-state-title">' + escapeHtml(tr(state.T, 'no_events')) + '</div>' +
-          '<div class="empty-state-desc">' + escapeHtml(tr(state.T, 'add_first_event')) + '</div>' +
-        '</div>';
-      return;
-    }
-
-    var html = '<div class="list">';
-    for (var i = 0; i < eventsToShow.length; i++) {
-      var ev = eventsToShow[i];
-      var colorVal = ev.color || '#7c6af5';
-      html +=
-        '<div class="list-item">' +
-          '<div class="event-color-dot" style="background:' + escapeHtml(colorVal) + ';"></div>' +
-          '<div class="list-item-content">' +
-            '<div class="list-item-title">' + escapeHtml(ev.title) + '</div>' +
-            '<div class="list-item-subtitle">' +
-              icon('clock', 14) + ' ' + formatEventTime(ev) +
-              (ev.description ? ' &middot; ' + escapeHtml(ev.description) : '') +
-            '</div>' +
-          '</div>' +
-          '<button class="event-delete-btn" data-id="' + ev.id + '" aria-label="' + tr(state.T, 'delete') + '">' + icon('x', 16) + '</button>' +
-        '</div>';
-    }
-    html += '</div>';
-    container.innerHTML = html;
-
-    // Attach delete handlers
-    var delBtns = container.querySelectorAll('.event-delete-btn');
-    for (var j = 0; j < delBtns.length; j++) {
-      delBtns[j].addEventListener('click', function(e) {
-        var id = this.getAttribute('data-id');
-        if (id) deleteEvent(id);
-      });
-    }
-  }
-
-  // ── Modal ──────────────────────────────────────────────────────────
-  function openModal() {
-    state.allDay = false;
-    state.selectedColor = EVENT_COLORS[0];
-
-    $('inputTitle').value = '';
-    $('inputDescription').value = '';
-    $('toggleAllDay').classList.remove('active');
-    $('startTimeGroup').classList.remove('hidden');
-    $('endTimeGroup').classList.remove('hidden');
-    $('inputStartTime').value = '09:00';
-    $('inputEndTime').value = '10:00';
-
-    // Pre-fill date with selected date or today
-    var dateStr = state.selectedDate || formatDate(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
-    $('inputStartDate').value = dateStr;
-    $('inputEndDate').value = dateStr;
-
-    renderColorPicker();
-    $('eventModal').classList.add('active');
-
-    // Focus title after animation
-    setTimeout(function() { $('inputTitle').focus(); }, 350);
-  }
-
-  function closeModal() {
-    $('eventModal').classList.remove('active');
-  }
-
-  function renderColorPicker() {
-    var html = '';
-    for (var i = 0; i < EVENT_COLORS.length; i++) {
-      var c = EVENT_COLORS[i];
-      var active = c === state.selectedColor ? ' active' : '';
-      html += '<div class="color-swatch' + active + '" data-color="' + c + '" style="background:' + c + ';"></div>';
-    }
-    $('colorPicker').innerHTML = html;
-
-    var swatches = $('colorPicker').querySelectorAll('.color-swatch');
-    for (var j = 0; j < swatches.length; j++) {
-      swatches[j].addEventListener('click', function() {
-        state.selectedColor = this.getAttribute('data-color');
-        renderColorPicker();
-      });
-    }
-  }
-
-  function toggleAllDay() {
-    state.allDay = !state.allDay;
-    $('toggleAllDay').classList.toggle('active', state.allDay);
-    $('startTimeGroup').classList.toggle('hidden', state.allDay);
-    $('endTimeGroup').classList.toggle('hidden', state.allDay);
-  }
-
-  function handleSave() {
-    var title = $('inputTitle').value.trim();
-    if (!title) {
-      $('inputTitle').focus();
-      return;
-    }
-
-    var startDate = $('inputStartDate').value;
-    var endDate = $('inputEndDate').value;
-    if (!startDate) {
-      $('inputStartDate').focus();
-      return;
-    }
-    if (!endDate) endDate = startDate;
-
-    var startAt, endAt;
-    if (state.allDay) {
-      startAt = startDate + 'T00:00:00';
-      endAt = endDate + 'T23:59:59';
-    } else {
-      var startTime = $('inputStartTime').value || '09:00';
-      var endTime = $('inputEndTime').value || '10:00';
-      startAt = startDate + 'T' + startTime + ':00';
-      endAt = endDate + 'T' + endTime + ':00';
-    }
-
-    var payload = {
-      uid: parseInt(state.uid) || 0,
-      title: title,
-      description: $('inputDescription').value.trim(),
-      start_at: startAt,
-      end_at: endAt,
-      all_day: state.allDay,
-      color: state.selectedColor
-    };
-
-    closeModal();
-    saveEvent(payload);
-  }
-
-  // ── Month navigation ───────────────────────────────────────────────
-  function prevMonth() {
-    if (state.currentMonth === 0) {
-      state.currentMonth = 11;
-      state.currentYear--;
-    } else {
-      state.currentMonth--;
-    }
-    state.selectedDate = null;
-    renderCalendar();
-    renderEvents();
-  }
-
-  function nextMonth() {
-    if (state.currentMonth === 11) {
-      state.currentMonth = 0;
-      state.currentYear++;
-    } else {
-      state.currentMonth++;
-    }
-    state.selectedDate = null;
-    renderCalendar();
-    renderEvents();
-  }
-
-  // ── Apply translations ─────────────────────────────────────────────
-  function applyTranslations() {
-    var T = state.T;
-    $('headerTitle').textContent = tr(T, 'calendar');
-    $('modalTitle').textContent = tr(T, 'add_event');
-    $('labelTitle').textContent = tr(T, 'event_title');
-    $('labelDescription').textContent = tr(T, 'description');
-    $('labelAllDay').textContent = tr(T, 'all_day');
-    $('labelStartDate').textContent = tr(T, 'start_time');
-    $('labelEndDate').textContent = tr(T, 'end_time');
-    $('labelColor').textContent = tr(T, 'category');
-    $('btnCancel').textContent = tr(T, 'cancel');
-    $('btnSave').textContent = tr(T, 'save');
-    $('inputTitle').placeholder = tr(T, 'event_title');
-  }
-
-  // ── Inject icons ───────────────────────────────────────────────────
-  function injectIcons() {
-    $('addEventBtn').innerHTML = icon('plus', 20);
-    $('prevMonth').innerHTML = icon('chevronLeft', 20);
-    $('nextMonth').innerHTML = icon('chevronRight', 20);
-    $('modalCloseBtn').innerHTML = icon('x', 20);
-  }
-
-  // ── Event listeners ────────────────────────────────────────────────
-  function bindEvents() {
-    $('addEventBtn').addEventListener('click', openModal);
-    $('modalCloseBtn').addEventListener('click', closeModal);
-    $('btnCancel').addEventListener('click', closeModal);
-    $('btnSave').addEventListener('click', handleSave);
-    $('prevMonth').addEventListener('click', prevMonth);
-    $('nextMonth').addEventListener('click', nextMonth);
-    $('toggleAllDay').addEventListener('click', toggleAllDay);
-
-    // Close modal on overlay click
-    $('eventModal').addEventListener('click', function(e) {
-      if (e.target === $('eventModal')) closeModal();
-    });
-
-    // Keyboard: Escape to close modal
-    document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') closeModal();
-    });
-  }
-
-  // ── Init ───────────────────────────────────────────────────────────
-  async function init() {
-    injectIcons();
-    bindEvents();
-
-    var app = await initApp();
-    state.uid = app.uid;
-    state.lang = app.lang;
-    state.T = APP_TRANSLATIONS[app.lang] || APP_TRANSLATIONS.en;
-
-    applyTranslations();
-    renderWeekdayHeaders();
-    renderCalendar();
-    renderEvents();
-
-    // Hide loading, show content
-    $('loadingState').classList.add('hidden');
-    $('mainContent').classList.remove('hidden');
-    $('mainContent').classList.add('fade-in');
-
-    // Load data
-    await loadEvents();
-  }
-
-  init();
-})();
+// Set default date to today
+document.getElementById('inDate').value = toYMD(today);
+load();
 </script>
 </body>
 </html>

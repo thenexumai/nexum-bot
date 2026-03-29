@@ -1,169 +1,192 @@
-/**
- * NEXUM Agent Executor
- * Central pipeline: rate limit → intent detect → tool detect → context build → LLM → memory save
- */
+import { getNextKey } from '../core/config';
+import logger from '../infra/logger';
+import db from '../core/db';
 
-import { getTariffConfig, hasFeature, canSendMessage } from '../core/billing';
-import { db } from '../core/db';
-import { getHistory, saveMessage, buildMemoryContext, autoExtract } from './memory';
-import { chat, chatStreaming, type Message, type StreamCallback } from './router';
-import { buildSystemPrompt } from './persona';
-import { webSearch } from '../tools/search';
-import { detectIntent, formatAmount, type FinanceIntent } from './intents';
-import { createLogger } from '../infra/logger';
+interface Message { role: 'user' | 'assistant'; content: string; }
 
-export { chatStreaming, type StreamCallback };
-
-const log = createLogger('executor');
-
-// ── System prompt ─────────────────────────────────────────────────────────────
-
-export function buildPrompt(uid: number, isGroup = false): string {
-  const tariff = getTariffConfig(uid);
-  const memoryContext = hasFeature(uid, 'hasMemory') ? buildMemoryContext(uid) : '';
-  return buildSystemPrompt({ tariff, memoryContext, isGroup, uid });
+interface ExecutorOptions {
+  uid: number;
+  messages: Message[];
+  systemPrompt?: string;
+  byokProvider?: string;
+  byokKey?: string;
+  onToken?: (token: string) => void;
 }
 
-// ── Search intent detection ───────────────────────────────────────────────────
-
-function detectSearch(text: string): string | null {
-  const lo = text.toLowerCase();
-  const triggers = ['search ', 'find ', 'look up ', 'google ', 'what is the latest', 'current news'];
-  if (!triggers.some(t => lo.includes(t))) return null;
-  return text.replace(/^(search|find|google)\s+/i, '')
-             .replace(/search for\s+/i, '')
-             .replace(/look up\s+/i, '').trim();
+// Get BYOK key for user
+function getByokKey(uid: number, provider: string): string | null {
+  const user = db.prepare('SELECT byok_keys FROM users WHERE uid = ?').get(uid) as
+    { byok_keys: string } | undefined;
+  if (!user) return null;
+  const keys = JSON.parse(user.byok_keys ?? '{}');
+  return keys[provider] ?? null;
 }
 
-// ── Finance intent handler ────────────────────────────────────────────────────
+// ── Provider adapters ─────────────────────────────────────────────────────────
 
-function handleFinanceIntent(uid: number, intent: FinanceIntent): string {
-  try {
-    db.prepare(`
-      INSERT INTO finance (uid, type, amount, category, note, currency)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(uid, intent.financeType, intent.amount, intent.category, intent.note, intent.currency);
-
-    const sign = intent.financeType === 'income' ? '+' : '-';
-    const formattedAmount = formatAmount(intent.amount, intent.currency);
-    const categoryLabel = intent.category === 'other' ? '' : ` (${intent.category})`;
-
-    log.info(`Finance recorded uid=${uid} type=${intent.financeType} amount=${intent.amount} ${intent.currency}`);
-
-    return `✅ Записал в финансы: ${sign}${formattedAmount}${categoryLabel}`;
-  } catch (e) {
-    log.error(`Finance insert error: ${(e as Error).message}`);
-    return '❌ Не удалось записать в финансы. Попробуй снова.';
-  }
+async function callGroq(key: string, messages: Message[], system?: string): Promise<string> {
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        ...(system ? [{ role: 'system', content: system }] : []),
+        ...messages,
+      ],
+      max_tokens: 2048,
+    }),
+  });
+  const data = await res.json() as { choices: { message: { content: string } }[] };
+  return data.choices[0].message.content;
 }
 
-// ── Main execute ──────────────────────────────────────────────────────────────
-
-export interface ExecuteOptions {
-  isGroup?: boolean;
-  skipLimitCheck?: boolean;
+async function callGemini(key: string, messages: Message[], system?: string): Promise<string> {
+  const contents = messages.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: system ? { parts: [{ text: system }] } : undefined,
+        contents,
+        generationConfig: { maxOutputTokens: 2048 },
+      }),
+    }
+  );
+  const data = await res.json() as { candidates: { content: { parts: { text: string }[] } }[] };
+  return data.candidates[0].content.parts[0].text;
 }
 
-export async function execute(
-  uid: number,
-  userMessage: string,
-  options: ExecuteOptions = {}
-): Promise<string> {
-  const { isGroup = false, skipLimitCheck = false } = options;
+async function callDeepSeek(key: string, messages: Message[], system?: string): Promise<string> {
+  const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [
+        ...(system ? [{ role: 'system', content: system }] : []),
+        ...messages,
+      ],
+      max_tokens: 2048,
+    }),
+  });
+  const data = await res.json() as { choices: { message: { content: string } }[] };
+  return data.choices[0].message.content;
+}
 
-  if (!skipLimitCheck) {
-    const limit = canSendMessage(uid);
-    if (!limit.ok) return limit.reason!;
-  }
+async function callClaude(key: string, messages: Message[], system?: string): Promise<string> {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 2048,
+      system: system ?? undefined,
+      messages,
+    }),
+  });
+  const data = await res.json() as { content: { type: string; text: string }[] };
+  return data.content.find(b => b.type === 'text')?.text ?? '';
+}
 
-  // ── Intent detection ───────────────────────────────────────────────────────
-  const intent = detectIntent(userMessage);
+async function callOpenRouter(key: string, messages: Message[], system?: string): Promise<string> {
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://nexum.ai',
+    },
+    body: JSON.stringify({
+      model: 'meta-llama/llama-3.3-70b-instruct',
+      messages: [
+        ...(system ? [{ role: 'system', content: system }] : []),
+        ...messages,
+      ],
+      max_tokens: 2048,
+    }),
+  });
+  const data = await res.json() as { choices: { message: { content: string } }[] };
+  return data.choices[0].message.content;
+}
 
-  if (intent.type === 'finance') {
-    const response = handleFinanceIntent(uid, intent);
-    saveMessage(uid, 'user', userMessage);
-    saveMessage(uid, 'assistant', response);
-    return response;
-  }
+// ── Provider order and fallback ──────────────────────────────────────────────
 
-  // ── Tool: web search ───────────────────────────────────────────────────────
-  const searchQuery = detectSearch(userMessage);
-  if (searchQuery) {
-    try {
-      const results = await webSearch(searchQuery);
-      if (results) {
-        const prompt = `User asked: "${userMessage}"\n\nSearch results:\n${results}\n\nProvide a helpful, concise response.`;
-        const history = getHistory(uid, 10);
-        const messages: Message[] = [
-          ...history.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
-          { role: 'user', content: prompt },
-        ];
-        const response = await chat(uid, messages, buildPrompt(uid, isGroup));
-        saveMessage(uid, 'user', userMessage);
-        saveMessage(uid, 'assistant', response);
-        return response;
+type ProviderFn = (key: string, messages: Message[], system?: string) => Promise<string>;
+
+const PROVIDERS: Array<{ name: string; fn: ProviderFn; keyGetter: () => string | null }> = [
+  { name: 'groq',       fn: callGroq,       keyGetter: () => getNextKey('groq') },
+  { name: 'gemini',     fn: callGemini,     keyGetter: () => getNextKey('gemini') },
+  { name: 'deepseek',   fn: callDeepSeek,   keyGetter: () => getNextKey('deepseek') },
+  { name: 'claude',     fn: callClaude,     keyGetter: () => getNextKey('claude') },
+  { name: 'openrouter', fn: callOpenRouter, keyGetter: () => getNextKey('openrouter') },
+];
+
+export async function executeAI(options: ExecutorOptions): Promise<string> {
+  const { uid, messages, systemPrompt, onToken } = options;
+
+  // 1. Try BYOK first
+  const byokProviders = ['claude', 'groq', 'gemini', 'deepseek', 'openrouter'];
+  for (const prov of byokProviders) {
+    const key = getByokKey(uid, prov);
+    if (key) {
+      const fn = PROVIDERS.find(p => p.name === prov)?.fn;
+      if (fn) {
+        try {
+          logger.debug('executor', `Using BYOK ${prov} for uid=${uid}`);
+          const result = await fn(key, messages, systemPrompt);
+          if (onToken) onToken(result);
+          return result;
+        } catch (e) {
+          logger.warn('executor', `BYOK ${prov} failed`, e);
+        }
       }
-    } catch (e) {
-      log.warn(`Search error: ${(e as Error).message}`);
     }
   }
 
-  // ── Regular chat ───────────────────────────────────────────────────────────
-  const history = getHistory(uid, 20);
-  const messages: Message[] = [
-    ...history.map(h => ({ role: h.role as 'user' | 'assistant', content: h.content })),
-    { role: 'user', content: userMessage },
-  ];
-
-  const response = await chat(uid, messages, buildPrompt(uid, isGroup));
-  saveMessage(uid, 'user', userMessage);
-  saveMessage(uid, 'assistant', response);
-
-  if (hasFeature(uid, 'hasMemory')) autoExtract(uid, userMessage);
-
-  return response;
-}
-
-// ── Background subagents ──────────────────────────────────────────────────────
-
-export interface SubagentRun {
-  id: string;
-  task: string;
-  status: 'pending' | 'running' | 'done' | 'error';
-  result?: string;
-  error?: string;
-  started_at: string;
-}
-
-export async function runSubagent(uid: number, task: string): Promise<{ id: string }> {
-  if (!hasFeature(uid, 'hasSubagents')) {
-    throw new Error('Background tasks require Pro plan — /tariffs');
-  }
-
-  const id = `sa_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  db.prepare(`INSERT INTO subagent_runs (id, uid, task, status) VALUES (?, ?, ?, 'pending')`).run(id, uid, task);
-
-  (async () => {
+  // 2. Rotate through system providers
+  for (const provider of PROVIDERS) {
+    const key = provider.keyGetter();
+    if (!key) continue;
     try {
-      db.prepare(`UPDATE subagent_runs SET status='running' WHERE id=?`).run(id);
-      const system = `You are a background task executor. Complete the task and return a clear, structured result.`;
-      const result = await chat(uid, [{ role: 'user', content: task }], system);
-      db.prepare(`UPDATE subagent_runs SET status='done', result=?, finished_at=datetime('now') WHERE id=?`).run(result, id);
+      logger.debug('executor', `Trying ${provider.name}`);
+      const result = await provider.fn(key, messages, systemPrompt);
+      if (onToken) onToken(result);
+      return result;
     } catch (e) {
-      db.prepare(`UPDATE subagent_runs SET status='error', error=?, finished_at=datetime('now') WHERE id=?`)
-        .run((e as Error).message, id);
+      logger.warn('executor', `${provider.name} failed, trying next`, e);
     }
-  })();
+  }
 
-  return { id };
+  throw new Error('All AI providers failed');
 }
 
-export function getSubagentResult(id: string): SubagentRun | undefined {
-  return db.prepare(`SELECT * FROM subagent_runs WHERE id=?`).get(id) as SubagentRun | undefined;
+// ── Session helpers ──────────────────────────────────────────────────────────
+
+export function getSession(uid: number): Message[] {
+  const row = db.prepare('SELECT messages FROM sessions WHERE uid = ?').get(uid) as
+    { messages: string } | undefined;
+  return row ? JSON.parse(row.messages) : [];
 }
 
-export function listSubagents(uid: number): SubagentRun[] {
-  return db.prepare(
-    `SELECT id, task, status, started_at FROM subagent_runs WHERE uid=? ORDER BY started_at DESC LIMIT 10`
-  ).all(uid) as SubagentRun[];
+export function addToSession(uid: number, role: 'user' | 'assistant', content: string) {
+  const messages = getSession(uid);
+  messages.push({ role, content });
+  const trimmed = messages.slice(-40); // keep last 40 messages
+  db.prepare(
+    "INSERT OR REPLACE INTO sessions (uid, messages, updated_at) VALUES (?, ?, datetime('now'))"
+  ).run(uid, JSON.stringify(trimmed));
+}
+
+export function clearSession(uid: number) {
+  db.prepare("DELETE FROM sessions WHERE uid = ?").run(uid);
 }

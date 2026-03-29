@@ -1,114 +1,73 @@
-/**
- * NEXUM Billing & Tariff System
- * Feature gating inspired by OpenClaw's tool-policy ownership model.
- */
+import db from './db';
 
-import { db } from './db';
+export type Plan = 'free' | 'middle' | 'pro';
 
-export type TariffPlan = 'free' | 'middle' | 'pro';
-
-export interface TariffConfig {
-  plan: TariffPlan;
-  priceUsd: number;
-  dailyMessageLimit: number | null;
-  hasMemory: boolean;
-  hasMiniApps: boolean;
-  hasBYOK: boolean;
-  hasPcAgent: boolean;
-  hasSubagents: boolean;
-}
-
-export const TARIFFS: Record<TariffPlan, TariffConfig> = {
-  free: {
-    plan: 'free', priceUsd: 0, dailyMessageLimit: 70,
-    hasMemory: false, hasMiniApps: false, hasBYOK: false,
-    hasPcAgent: false, hasSubagents: false,
-  },
-  middle: {
-    plan: 'middle', priceUsd: 9, dailyMessageLimit: 300,
-    hasMemory: true, hasMiniApps: true, hasBYOK: false,
-    hasPcAgent: false, hasSubagents: false,
-  },
-  pro: {
-    plan: 'pro', priceUsd: 15, dailyMessageLimit: null,
-    hasMemory: true, hasMiniApps: true, hasBYOK: true,
-    hasPcAgent: true, hasSubagents: true,
-  },
+const DAILY_LIMITS: Record<Plan, number> = {
+  free:   70,
+  middle: 300,
+  pro:    Infinity,
 };
 
-export type Feature = keyof Pick<
-  TariffConfig,
-  'hasMemory' | 'hasMiniApps' | 'hasBYOK' | 'hasPcAgent' | 'hasSubagents'
->;
+const PLAN_FEATURES: Record<Plan, string[]> = {
+  free:   ['ai_chat', 'search', 'tasks', 'finance'],
+  middle: ['ai_chat', 'search', 'tasks', 'finance', 'notes', 'habits', 'calendar',
+           'contacts', 'memory', 'mini_apps', 'reminders', 'voice', 'tts'],
+  pro:    ['ai_chat', 'search', 'tasks', 'finance', 'notes', 'habits', 'calendar',
+           'contacts', 'memory', 'mini_apps', 'reminders', 'voice', 'tts',
+           'pc_agent', 'byok', 'unlimited'],
+};
 
-// ── Accessors ─────────────────────────────────────────────────────────────────
-
-export function getUserTariff(uid: number): TariffPlan {
-  const row = db.prepare('SELECT tariff FROM users WHERE uid=?').get(uid) as
-    { tariff: string } | undefined;
-  return (row?.tariff as TariffPlan) ?? 'free';
-}
-
-export function setUserTariff(uid: number, plan: TariffPlan): void {
-  db.prepare(`
-    INSERT INTO users (uid, tariff) VALUES (?, ?)
-    ON CONFLICT(uid) DO UPDATE SET tariff=excluded.tariff, updated_at=datetime('now')
-  `).run(uid, plan);
-}
-
-export function getTariffConfig(uid: number): TariffConfig {
-  return TARIFFS[getUserTariff(uid)];
-}
-
-// ── Feature checks ────────────────────────────────────────────────────────────
-
-export function hasFeature(uid: number, feature: Feature): boolean {
-  return getTariffConfig(uid)[feature];
-}
-
-export function requireFeature(
-  uid: number,
-  feature: Feature,
-  featureName: string
-): { ok: boolean; reason?: string } {
-  if (hasFeature(uid, feature)) return { ok: true };
-  const plan = feature === 'hasPcAgent' || feature === 'hasBYOK' || feature === 'hasSubagents'
-    ? 'Pro' : 'Middle or Pro';
-  return { ok: false, reason: `${featureName} requires ${plan} plan — /tariffs` };
-}
-
-// ── Rate limiting ─────────────────────────────────────────────────────────────
-
-export function getMessageCountToday(uid: number): number {
-  const today = new Date().toISOString().split('T')[0];
+export function getUserPlan(uid: number): Plan {
   const row = db.prepare(
-    `SELECT COUNT(*) AS c FROM conversations WHERE uid=? AND date(created_at)=? AND role='user'`
-  ).get(uid, today) as { c: number };
-  return row?.c ?? 0;
+    "SELECT subscription_plan, subscription_expires_at FROM users WHERE uid = ?"
+  ).get(uid) as { subscription_plan: Plan; subscription_expires_at: string | null } | undefined;
+
+  if (!row) return 'free';
+  if (row.subscription_plan === 'free') return 'free';
+  if (!row.subscription_expires_at) return row.subscription_plan;
+
+  const expires = new Date(row.subscription_expires_at);
+  if (expires < new Date()) {
+    db.prepare("UPDATE users SET subscription_plan = 'free' WHERE uid = ?").run(uid);
+    return 'free';
+  }
+  return row.subscription_plan;
 }
 
-export function canSendMessage(uid: number): { ok: boolean; reason?: string; remaining?: number } {
-  const tariff = getTariffConfig(uid);
-  if (!tariff.dailyMessageLimit) return { ok: true };
-
-  const count = getMessageCountToday(uid);
-  const remaining = tariff.dailyMessageLimit - count;
-
-  if (remaining <= 0) {
-    return {
-      ok: false,
-      reason: `Daily limit reached (${count}/${tariff.dailyMessageLimit}). Upgrade: /tariffs`,
-    };
-  }
-  return { ok: true, remaining };
+export function canUseFeature(uid: number, feature: string): boolean {
+  const plan = getUserPlan(uid);
+  return PLAN_FEATURES[plan].includes(feature);
 }
 
-// ── Messaging ─────────────────────────────────────────────────────────────────
+export function getRateLimit(uid: number): number {
+  return DAILY_LIMITS[getUserPlan(uid)];
+}
 
-export function getUpgradeMessage(plan: TariffPlan): string {
-  if (plan === 'pro') return '✅ You\'re on Pro — all features unlocked.';
-  if (plan === 'middle') {
-    return `Upgrade to Pro ($15/mo) for:\n• Unlimited messages (BYOK)\n• PC Agent\n• Background tasks\n\n/tariffs`;
-  }
-  return `Upgrade to Middle ($9/mo) for memory + mini-apps.\nOr Pro ($15/mo) for everything including PC Agent.\n\n/tariffs`;
+export function checkRateLimit(uid: number, currentCount: number): boolean {
+  const limit = getRateLimit(uid);
+  return currentCount <= limit;
+}
+
+export function grantPlan(uid: number, plan: Plan, days: number) {
+  const expires = new Date();
+  expires.setDate(expires.getDate() + days);
+  db.prepare(
+    "UPDATE users SET subscription_plan = ?, subscription_expires_at = ? WHERE uid = ?"
+  ).run(plan, expires.toISOString(), uid);
+}
+
+export function revokePlan(uid: number) {
+  db.prepare(
+    "UPDATE users SET subscription_plan = 'free', subscription_expires_at = NULL WHERE uid = ?"
+  ).run(uid);
+}
+
+export function getPlanInfo(plan: Plan) {
+  const prices: Record<Plan, string> = { free: 'Бесплатно', middle: '$9/мес', pro: '$15/мес' };
+  return {
+    name: plan.toUpperCase(),
+    price: prices[plan],
+    dailyLimit: DAILY_LIMITS[plan] === Infinity ? '∞' : DAILY_LIMITS[plan],
+    features: PLAN_FEATURES[plan],
+  };
 }

@@ -1,21 +1,23 @@
-import { getProviderKey } from '../core/config';
+import { getNextKey } from '../core/config';
 import FormData from 'form-data';
 import fetch from 'node-fetch';
 
 export async function transcribeVoice(audioBuffer: Buffer): Promise<string | null> {
-  const key = getProviderKey('groq');
-  if (!key) throw new Error('STT requires Groq key — /setkey groq <key>');
+  const key = getNextKey('groq');
+  if (!key) return null;
 
-  const form = new FormData();
-  form.append('file', audioBuffer, { filename: 'voice.ogg', contentType: 'audio/ogg' });
-  form.append('model', 'whisper-large-v3');
-  form.append('response_format', 'text');
+  try {
+    const form = new FormData();
+    form.append('file', audioBuffer, { filename: 'voice.ogg', contentType: 'audio/ogg' });
+    form.append('model', 'whisper-large-v3-turbo');
+    form.append('response_format', 'json');
 
-  const r = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, ...form.getHeaders() },
-    body: form,
-  });
-  if (!r.ok) throw new Error(`STT failed ${r.status}`);
-  return (await r.text()).trim() || null;
+    const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, ...form.getHeaders() },
+      body: form,
+    });
+    const data = await res.json() as { text?: string };
+    return data.text ?? null;
+  } catch { return null; }
 }

@@ -1,0 +1,61 @@
+version: 1.0.0
+description: User context template — auto-populated per user
+
+# This file is a template. Per-user context is stored in SQLite (memory table).
+
+context_fields:
+  - key: preferred_language
+    type: string
+    values: [en, ru]
+    default: en
+    description: User's preferred response language
+
+  - key: voice_mode
+    type: boolean
+    default: false
+    description: Whether to respond with voice by default
+
+  - key: timezone
+    type: string
+    default: UTC
+    description: User's timezone for reminders and calendar
+
+  - key: currency
+    type: string
+    default: USD
+    description: Default currency for finance tracking
+
+  - key: name_preference
+    type: string
+    default: null
+    description: How the user wants to be addressed
+
+  - key: focus_mode
+    type: boolean
+    default: false
+    description: Brief responses, no small talk
+
+  - key: ai_provider_preference
+    type: string
+    values: [auto, claude, gpt4, gemini, groq, deepseek]
+    default: auto
+    description: Preferred AI provider (auto = round-robin best available)
+
+  - key: memory_enabled
+    type: boolean
+    default: true
+    description: Whether NEXUM should build long-term memory (Middle+)
+
+  - key: intent_detection
+    type: boolean
+    default: true
+    description: Whether to auto-record finance/tasks from natural language
+
+auto_memory_keys:
+  - user's job or profession
+  - user's city or country
+  - user's family situation
+  - user's main goals
+  - user's preferred tools or apps
+  - recurring financial categories
+  - important upcoming events

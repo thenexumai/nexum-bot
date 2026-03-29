@@ -1,8 +1,11 @@
 node_modules/
 dist/
+data/
+logs/
 .env
-data/*.db
-data/*.db-shm
-data/*.db-wal
-*.log
+*.db
+*.db-shm
+*.db-wal
+__pycache__/
+*.pyc
 .DS_Store

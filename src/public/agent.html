@@ -2,99 +2,252 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Agent — NEXUM</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PC Agent — NEXUM</title>
+<link rel="stylesheet" href="/shared/design-system.css">
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--border:#222;
-  --text:#f0f0f0;--muted:#888;--accent:#6366f1;--green:#22c55e;--radius:14px;
-  --font:-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,sans-serif;
-}
-body{background:var(--bg);color:var(--text);font-family:var(--font);padding:20px 16px;max-width:480px;margin:0 auto}
-h2{font-size:22px;font-weight:700;margin-bottom:4px}
-.subtitle{color:var(--muted);font-size:14px;margin-bottom:20px}
-.status-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px}
-.status-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-.status-dot{width:10px;height:10px;border-radius:50%;background:var(--muted)}
-.status-dot.online{background:var(--green);box-shadow:0 0 8px var(--green)}
-.status-label{font-size:15px;font-weight:600}
-.status-sub{font-size:13px;color:var(--muted)}
-.section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:12px}
-.section h3{font-size:14px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
-.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.stat{background:var(--surface2);border-radius:10px;padding:12px}
-.stat-val{font-size:22px;font-weight:700;color:var(--accent)}
-.stat-label{font-size:12px;color:var(--muted);margin-top:2px}
-.cmd-row{display:flex;gap:8px;margin-bottom:8px}
-.cmd-row input{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 12px;font-size:13px;font-family:inherit}
-.cmd-row input:focus{outline:none;border-color:var(--accent)}
-.cmd-row input::placeholder{color:var(--muted)}
-.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer}
-.btn.sm{padding:7px 12px;font-size:12px}
-.output{background:var(--surface2);border-radius:8px;padding:12px;font-size:12px;font-family:monospace;color:#a0e0a0;min-height:48px;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto}
-.actions{display:flex;gap:8px;flex-wrap:wrap}
-.action-btn{background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 12px;font-size:13px;cursor:pointer}
-.action-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .status-dot.online  { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 2s infinite; }
+  .status-dot.offline { background: var(--text3); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+  .terminal {
+    background: #0a0c10; border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px;
+    font-family: var(--font-mono); font-size: .8rem;
+    min-height: 200px; max-height: 300px; overflow-y: auto;
+    margin-bottom: 12px;
+  }
+  .log-line { margin-bottom: 4px; line-height: 1.5; }
+  .log-line.info  { color: #38bdf8; }
+  .log-line.ok    { color: #22d3a5; }
+  .log-line.error { color: #ff5a7e; }
+  .log-line.warn  { color: #fbbf24; }
+  .log-line.cmd   { color: #a78bfa; }
+  .log-line.ts    { color: #5c5f72; font-size: .7rem; }
+
+  .cmd-input-row { display: flex; gap: 8px; }
+  .cmd-input-row .input { font-family: var(--font-mono); }
+
+  .quick-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+  .quick-btn {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 12px 10px;
+    cursor: pointer; text-align: center; transition: all .15s;
+    font-family: var(--font); color: var(--text);
+  }
+  .quick-btn:hover { border-color: var(--accent); background: var(--accent-dim); }
+  .quick-btn .icon { font-size: 1.3rem; display: block; margin-bottom: 4px; }
+  .quick-btn .label { font-size: .75rem; font-weight: 600; color: var(--text2); }
+
+  .sys-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+  .sys-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; }
+  .sys-label { font-size: .7rem; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; }
+  .sys-value { font-size: 1.1rem; font-weight: 700; margin-top: 4px; }
+  .sys-bar   { height: 4px; background: var(--border); border-radius: 2px; margin-top: 6px; }
+  .sys-fill  { height: 100%; border-radius: 2px; background: var(--accent); }
+
+  .screenshot-preview { width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--border); display: none; margin-top: 12px; }
 </style>
 </head>
 <body>
-<h2>🤖 Agent Panel</h2>
-<p class="subtitle">NEXUM AI Agent status</p>
+<header class="app-header">
+  <div class="header-logo">
+    <div class="logo-dot">🖥</div>
+    <h1>PC Agent</h1>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <div class="status-dot offline" id="statusDot"></div>
+    <span id="statusText" style="font-size:.8rem;color:var(--text2)">Offline</span>
+  </div>
+</header>
 
-<div class="status-card">
-  <div class="status-row">
-    <div class="status-dot" id="statusDot"></div>
-    <div>
-      <div class="status-label" id="statusLabel">Checking...</div>
-      <div class="status-sub" id="statusSub">Connect via /link in Telegram</div>
+<div class="page">
+
+  <!-- Connection banner -->
+  <div id="connectBanner" class="card" style="margin-bottom:16px;border-color:var(--accent);background:var(--accent-dim)">
+    <div style="font-weight:700;margin-bottom:6px">🖥 Connect your PC</div>
+    <div style="font-size:.85rem;color:var(--text2);margin-bottom:10px">Run the PC Agent on your computer to control it from here.</div>
+    <code style="font-size:.78rem;background:var(--bg);padding:8px;border-radius:6px;display:block;margin-bottom:10px">python nexum_agent.py --code <b id="pairingCode">...</b> --server wss://...</code>
+    <button class="btn btn-primary" style="width:100%" onclick="refreshStatus()">Check connection</button>
+  </div>
+
+  <!-- System info (shown when connected) -->
+  <div id="sysSection" style="display:none">
+    <div class="sys-grid">
+      <div class="sys-card">
+        <div class="sys-label">CPU</div>
+        <div class="sys-value" id="cpuVal">—</div>
+        <div class="sys-bar"><div class="sys-fill" id="cpuBar" style="width:0%"></div></div>
+      </div>
+      <div class="sys-card">
+        <div class="sys-label">RAM</div>
+        <div class="sys-value" id="ramVal">—</div>
+        <div class="sys-bar"><div class="sys-fill" id="ramBar" style="width:0%"></div></div>
+      </div>
+      <div class="sys-card">
+        <div class="sys-label">Disk</div>
+        <div class="sys-value" id="diskVal">—</div>
+        <div class="sys-bar"><div class="sys-fill" id="diskBar" style="width:0%"></div></div>
+      </div>
+      <div class="sys-card">
+        <div class="sys-label">Screen</div>
+        <div class="sys-value" id="screenVal" style="font-size:.85rem">—</div>
+      </div>
     </div>
+
+    <!-- Quick actions -->
+    <div style="font-size:.75rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Quick Actions</div>
+    <div class="quick-actions">
+      <button class="quick-btn" onclick="doAction('screenshot')"><span class="icon">📸</span><span class="label">Screenshot</span></button>
+      <button class="quick-btn" onclick="doAction('sysinfo')"><span class="icon">💻</span><span class="label">Refresh Info</span></button>
+      <button class="quick-btn" onclick="promptAction('browse')"><span class="icon">🌐</span><span class="label">Open URL</span></button>
+      <button class="quick-btn" onclick="promptAction('read')"><span class="icon">📂</span><span class="label">Read File</span></button>
+    </div>
+
+    <!-- Screenshot preview -->
+    <img class="screenshot-preview" id="screenshotImg" alt="Screenshot">
   </div>
+
+  <!-- Terminal -->
+  <div style="font-size:.75rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Terminal</div>
+  <div class="terminal" id="terminal">
+    <div class="log-line info">NEXUM PC Agent Terminal</div>
+    <div class="log-line ts">Connect your PC to start sending commands.</div>
+  </div>
+  <div class="cmd-input-row">
+    <input class="input" id="cmdInput" type="text" placeholder="shell command..." style="flex:1" onkeydown="if(event.key==='Enter')runCmd()">
+    <button class="btn btn-primary" onclick="runCmd()">Run</button>
+  </div>
+
 </div>
 
-<div class="section">
-  <h3>Stats</h3>
-  <div class="stat-grid">
-    <div class="stat"><div class="stat-val" id="totalMsgs">—</div><div class="stat-label">Total messages</div></div>
-    <div class="stat"><div class="stat-val" id="todayMsgs">—</div><div class="stat-label">Today</div></div>
-    <div class="stat"><div class="stat-val" id="memCount">—</div><div class="stat-label">Memories</div></div>
-    <div class="stat"><div class="stat-val" id="noteCount">—</div><div class="stat-label">Notes</div></div>
-  </div>
-</div>
-
-<div class="section">
-  <h3>Quick Commands</h3>
-  <div class="actions">
-    <button class="action-btn" onclick="openApp('/finance')">💰 Finance</button>
-    <button class="action-btn" onclick="openApp('/tasks')">✅ Tasks</button>
-    <button class="action-btn" onclick="openApp('/notes')">📝 Notes</button>
-    <button class="action-btn" onclick="openApp('/habits')">🔥 Habits</button>
-    <button class="action-btn" onclick="openApp('/calendar')">📅 Calendar</button>
-    <button class="action-btn" onclick="openApp('/contacts')">👤 Contacts</button>
-  </div>
-</div>
+<div class="toast" id="toast"></div>
 
 <script>
-const uid = new URLSearchParams(location.search).get('uid') || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) || 0;
+const uid = new URLSearchParams(location.search).get('uid') || 0;
+const API = '/api';
+let isConnected = false;
 
-function openApp(path) {
-  window.location.href = path + '?uid=' + uid;
+function log(msg, type='info') {
+  const el = document.getElementById('terminal');
+  const ts = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  el.innerHTML += `<div class="log-line ${type}"><span class="ts">[${ts}]</span> ${esc(String(msg))}</div>`;
+  el.scrollTop = el.scrollHeight;
 }
 
-async function loadStats() {
-  if (!uid) return;
+function esc(s) { return (s||'').replace(/</g,'&lt;'); }
+
+async function refreshStatus() {
   try {
-    const r = await fetch('/health');
-    const d = await r.json();
-    document.getElementById('statusDot').classList.add('online');
-    document.getElementById('statusLabel').textContent = 'Online';
-    document.getElementById('statusSub').textContent = `Uptime: ${Math.floor(d.uptime/60)}m`;
-  } catch {
-    document.getElementById('statusLabel').textContent = 'Offline';
+    const data = await fetch(`${API}/pc/status?uid=${uid}`).then(r=>r.json());
+    isConnected = data.connected;
+    setConnected(isConnected);
+    if (data.pairingCode) document.getElementById('pairingCode').textContent = data.pairingCode;
+    if (isConnected && data.sysinfo) updateSysinfo(data.sysinfo);
+  } catch(e) {
+    log('Status check failed: ' + e.message, 'error');
   }
 }
 
-loadStats();
+function setConnected(on) {
+  document.getElementById('statusDot').className = 'status-dot ' + (on?'online':'offline');
+  document.getElementById('statusText').textContent = on ? 'Online' : 'Offline';
+  document.getElementById('connectBanner').style.display = on ? 'none' : 'block';
+  document.getElementById('sysSection').style.display = on ? 'block' : 'none';
+  if (on) log('PC Agent connected!', 'ok');
+}
+
+function updateSysinfo(s) {
+  if (s.cpu_percent !== undefined) {
+    document.getElementById('cpuVal').textContent = s.cpu_percent+'%';
+    document.getElementById('cpuBar').style.width = s.cpu_percent+'%';
+  }
+  if (s.ram_percent !== undefined) {
+    document.getElementById('ramVal').textContent = s.ram_used_gb+'GB';
+    document.getElementById('ramBar').style.width = s.ram_percent+'%';
+  }
+  if (s.disk_percent !== undefined) {
+    document.getElementById('diskVal').textContent = (100-s.disk_percent).toFixed(0)+'% free';
+    document.getElementById('diskBar').style.width = (100-s.disk_percent)+'%';
+  }
+  if (s.screen) document.getElementById('screenVal').textContent = s.screen;
+}
+
+async function sendCmd(type, payload={}) {
+  try {
+    const res = await fetch(`${API}/pc/command`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ uid, type, payload })
+    }).then(r=>r.json());
+    return res;
+  } catch(e) {
+    log('Command failed: '+e.message, 'error');
+    return null;
+  }
+}
+
+async function doAction(action) {
+  if (!isConnected) { showToast('PC not connected'); return; }
+  log(`> ${action}`, 'cmd');
+
+  const res = await sendCmd(action);
+  if (!res) return;
+
+  if (action === 'screenshot' && res.data?.type === 'image') {
+    const img = document.getElementById('screenshotImg');
+    img.src = `data:image/png;base64,${res.data.data}`;
+    img.style.display = 'block';
+    log('Screenshot captured', 'ok');
+  } else if (action === 'sysinfo' && res.data) {
+    updateSysinfo(res.data);
+    log('System info updated', 'ok');
+  } else {
+    log(JSON.stringify(res.data).slice(0,120), 'ok');
+  }
+}
+
+async function promptAction(action) {
+  if (!isConnected) { showToast('PC not connected'); return; }
+  const input = prompt(action === 'browse' ? 'Enter URL:' : 'Enter file path:');
+  if (!input) return;
+  log(`> ${action} ${input}`, 'cmd');
+  const payload = action === 'browse' ? { url: input } : { path: input };
+  const res = await sendCmd(action === 'browse' ? 'browser_navigate' : 'file_read', payload);
+  if (res?.ok) {
+    const out = typeof res.data === 'object' ? JSON.stringify(res.data).slice(0,200) : String(res.data).slice(0,200);
+    log(out, 'ok');
+  } else {
+    log(res?.error || 'Failed', 'error');
+  }
+}
+
+async function runCmd() {
+  const cmd = document.getElementById('cmdInput').value.trim();
+  if (!cmd) return;
+  if (!isConnected) { showToast('PC not connected'); return; }
+  document.getElementById('cmdInput').value = '';
+  log(`$ ${cmd}`, 'cmd');
+  const res = await sendCmd('shell', { command: cmd, timeout: 30 });
+  if (res?.ok) {
+    if (res.data?.stdout) log(res.data.stdout, 'ok');
+    if (res.data?.stderr) log(res.data.stderr, 'warn');
+    if (res.data?.timed_out) log('Command timed out', 'warn');
+  } else {
+    log('BLOCKED or failed: ' + (res?.data || ''), 'error');
+  }
+}
+
+function showToast(msg,ms=2000) {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),ms);
+}
+
+// Init
+refreshStatus();
+setInterval(refreshStatus, 30000);
 </script>
 </body>
 </html>

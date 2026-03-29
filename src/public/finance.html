@@ -2,569 +2,257 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Finance — NEXUM</title>
-<link rel="stylesheet" href="shared/design-system.css">
+<link rel="stylesheet" href="/shared/design-system.css">
 <style>
-  /* ── Finance-specific styles ─────────────────────────────────── */
-  .type-toggle {
-    display: flex;
-    gap: 4px;
-    padding: 4px;
-    background: var(--bg-surface);
-    border-radius: var(--radius-md);
-    margin-bottom: 16px;
-  }
-  .type-toggle-btn {
-    flex: 1;
-    padding: 10px 12px;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-muted);
+  .amount-positive { color: var(--green); }
+  .amount-negative { color: var(--red); }
+  .balance-card {
+    background: linear-gradient(135deg, #1a1d27 0%, #252838 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px 20px;
     text-align: center;
-    border-radius: var(--radius-sm);
-    transition: all var(--transition);
-    cursor: pointer;
-    min-height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    background: transparent;
-    border: none;
-    user-select: none;
-    -webkit-user-select: none;
+    margin-bottom: 16px;
+    position: relative; overflow: hidden;
   }
-  .type-toggle-btn:active { opacity: 0.7; }
-  .type-toggle-btn.active {
-    box-shadow: var(--shadow-sm);
-    color: var(--accent-text);
+  .balance-card::before {
+    content: ''; position: absolute; top: -40px; right: -40px;
+    width: 120px; height: 120px;
+    background: var(--accent-dim); border-radius: 50%;
   }
-  .type-toggle-btn.active.income-active {
-    background: var(--success);
+  .balance-label { font-size: .8rem; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; }
+  .balance-amount { font-size: 2.4rem; font-weight: 800; margin: 8px 0 4px; letter-spacing: -.03em; }
+  .balance-sub { font-size: .85rem; color: var(--text2); }
+  .txn-type-btn {
+    flex: 1; padding: 10px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border); background: var(--surface);
+    color: var(--text2); font-size: .9rem; font-weight: 600; cursor: pointer;
+    transition: all .15s;
   }
-  .type-toggle-btn.active.expense-active {
-    background: var(--danger);
+  .txn-type-btn.active-income  { background: var(--green-dim); color: var(--green); border-color: rgba(34,211,165,.4); }
+  .txn-type-btn.active-expense { background: var(--red-dim);   color: var(--red);   border-color: rgba(255,90,126,.4); }
+  .filter-tabs { display: flex; gap: 6px; margin-bottom: 12px; overflow-x: auto; padding-bottom: 2px; }
+  .filter-tab {
+    padding: 6px 14px; border-radius: 99px; white-space: nowrap;
+    border: 1px solid var(--border); background: var(--surface);
+    color: var(--text2); font-size: .8rem; font-weight: 500; cursor: pointer;
   }
-  .type-toggle-btn svg {
-    width: 16px;
-    height: 16px;
-  }
-
-  .tx-amount {
-    font-size: 15px;
-    font-weight: 700;
-    white-space: nowrap;
-  }
-  .tx-amount.income { color: var(--success); }
-  .tx-amount.expense { color: var(--danger); }
-
-  .list-item-icon.income-icon {
-    background: var(--success-subtle);
-    color: var(--success);
-  }
-  .list-item-icon.expense-icon {
-    background: var(--danger-subtle);
-    color: var(--danger);
-  }
-
-  .tx-delete {
-    width: 36px;
-    height: 36px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-    transition: all var(--transition);
-    cursor: pointer;
-    background: none;
-    border: none;
-    flex-shrink: 0;
-    min-width: 44px;
-    min-height: 44px;
-  }
-  .tx-delete:active {
-    background: var(--danger-subtle);
-    color: var(--danger);
-  }
-
-  .section-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    margin-bottom: 8px;
-    margin-top: 20px;
-  }
-  .section-label:first-child {
-    margin-top: 0;
-  }
-
-  .summary-card-icon {
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-sm);
-    margin: 0 auto 6px;
-  }
-  .summary-card-icon svg {
-    width: 16px;
-    height: 16px;
-  }
-  .summary-card-icon.balance-icon {
-    background: var(--accent-subtle);
-    color: var(--accent);
-  }
-  .summary-card-icon.income-icon {
-    background: var(--success-subtle);
-    color: var(--success);
-  }
-  .summary-card-icon.expense-icon {
-    background: var(--danger-subtle);
-    color: var(--danger);
-  }
-
-  .tx-right {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex-shrink: 0;
-  }
+  .filter-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 </style>
 </head>
 <body>
-<script src="shared/icons.js"></script>
-<script src="shared/app-shell.js"></script>
+<header class="app-header">
+  <div class="header-logo">
+    <div class="logo-dot">💰</div>
+    <h1>Finance</h1>
+  </div>
+  <button class="btn btn-ghost btn-icon" onclick="openModal()" title="Add">+</button>
+</header>
 
-<div class="app-container" id="app" style="display:none">
-  <!-- Header -->
-  <header class="app-header">
-    <span class="app-header-title" id="headerTitle"></span>
-    <button class="app-header-action" id="addBtn" aria-label="Add transaction"></button>
-  </header>
+<div class="page">
+  <!-- Balance Card -->
+  <div class="balance-card">
+    <div class="balance-label">Total Balance</div>
+    <div class="balance-amount" id="balanceAmt">$0.00</div>
+    <div class="balance-sub" id="balanceSub">Loading...</div>
+  </div>
 
-  <!-- Content -->
-  <main class="app-content">
-    <!-- Loading state -->
-    <div class="loading-container" id="loadingState">
-      <div class="spinner"></div>
+  <!-- Stats -->
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">Income</div>
+      <div class="stat-value amount-positive" id="totalIncome">$0</div>
+      <div class="stat-sub">this month</div>
     </div>
-
-    <!-- Main content (hidden until loaded) -->
-    <div id="mainContent" class="hidden">
-      <!-- Summary cards -->
-      <div class="summary-cards" id="summaryCards">
-        <div class="summary-card">
-          <div class="summary-card-icon balance-icon" id="balanceIcon"></div>
-          <div class="summary-card-label" id="balanceLabel"></div>
-          <div class="summary-card-value" id="balanceValue">0</div>
-        </div>
-        <div class="summary-card">
-          <div class="summary-card-icon income-icon" id="incomeIcon"></div>
-          <div class="summary-card-label" id="incomeLabel"></div>
-          <div class="summary-card-value income" id="incomeValue">0</div>
-        </div>
-        <div class="summary-card">
-          <div class="summary-card-icon expense-icon" id="expenseIcon"></div>
-          <div class="summary-card-label" id="expenseLabel"></div>
-          <div class="summary-card-value expense" id="expenseValue">0</div>
-        </div>
-      </div>
-
-      <!-- Transaction list section -->
-      <div id="txSection"></div>
+    <div class="stat-card">
+      <div class="stat-label">Expenses</div>
+      <div class="stat-value amount-negative" id="totalExpense">$0</div>
+      <div class="stat-sub">this month</div>
     </div>
-  </main>
+  </div>
+
+  <!-- Filter -->
+  <div class="filter-tabs">
+    <button class="filter-tab active" onclick="setFilter('all',this)">All</button>
+    <button class="filter-tab" onclick="setFilter('income',this)">Income</button>
+    <button class="filter-tab" onclick="setFilter('expense',this)">Expenses</button>
+    <button class="filter-tab" onclick="setFilter('food',this)">Food</button>
+    <button class="filter-tab" onclick="setFilter('transport',this)">Transport</button>
+    <button class="filter-tab" onclick="setFilter('salary',this)">Salary</button>
+  </div>
+
+  <!-- Transactions List -->
+  <div id="txnList"></div>
 </div>
 
-<!-- Add transaction modal -->
-<div class="modal-overlay" id="modal">
-  <div class="modal-sheet">
+<!-- FAB -->
+<button class="fab" onclick="openModal()">+</button>
+
+<!-- Add Transaction Modal -->
+<div class="modal-overlay" id="modal" onclick="closeIfBg(event)">
+  <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-header">
-      <span class="modal-title" id="modalTitle"></span>
-      <button class="app-header-action" id="modalClose" aria-label="Close"></button>
+    <h2>Add Transaction</h2>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button class="txn-type-btn active-income" id="btnIncome"  onclick="setType('income')">+ Income</button>
+      <button class="txn-type-btn"               id="btnExpense" onclick="setType('expense')">- Expense</button>
     </div>
-    <div class="modal-body">
-      <!-- Type toggle -->
-      <div class="type-toggle" id="typeToggle">
-        <button class="type-toggle-btn active income-active" id="toggleIncome" data-type="income"></button>
-        <button class="type-toggle-btn" id="toggleExpense" data-type="expense"></button>
-      </div>
-
-      <!-- Amount -->
+    <div class="form-group">
+      <label class="form-label">Amount</label>
+      <input class="input" id="inAmount" type="number" placeholder="0.00" min="0" step="0.01">
+    </div>
+    <div class="form-row">
       <div class="form-group">
-        <label class="form-label" id="amountLabel"></label>
-        <input type="number" class="form-input" id="inputAmount" inputmode="decimal" min="0" step="0.01" placeholder="0.00">
+        <label class="form-label">Category</label>
+        <select class="input" id="inCategory">
+          <option value="salary">Salary</option>
+          <option value="freelance">Freelance</option>
+          <option value="food">Food</option>
+          <option value="transport">Transport</option>
+          <option value="shopping">Shopping</option>
+          <option value="utilities">Utilities</option>
+          <option value="health">Health</option>
+          <option value="entertainment">Entertainment</option>
+          <option value="other">Other</option>
+        </select>
       </div>
-
-      <!-- Category -->
       <div class="form-group">
-        <label class="form-label" id="categoryLabel"></label>
-        <select class="form-select" id="inputCategory"></select>
-      </div>
-
-      <!-- Note -->
-      <div class="form-group">
-        <label class="form-label" id="noteLabel"></label>
-        <input type="text" class="form-input" id="inputNote" maxlength="200">
+        <label class="form-label">Currency</label>
+        <select class="input" id="inCurrency">
+          <option value="USD">USD</option>
+          <option value="EUR">EUR</option>
+          <option value="RUB">RUB</option>
+          <option value="UZS">UZS</option>
+        </select>
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" id="btnCancel" style="flex:1"></button>
-      <button class="btn btn-primary" id="btnSave" style="flex:2"></button>
+    <div class="form-group">
+      <label class="form-label">Note (optional)</label>
+      <input class="input" id="inNote" type="text" placeholder="What was this for?">
     </div>
+    <button class="btn btn-primary" style="width:100%" onclick="addTxn()">Save</button>
   </div>
 </div>
 
+<div class="toast" id="toast"></div>
+
 <script>
-(function() {
-  'use strict';
+const uid = new URLSearchParams(location.search).get('uid') || 0;
+const API = '/api';
+let filter = 'all';
+let txnType = 'income';
 
-  // ── State ────────────────────────────────────────────────
-  var state = {
-    uid: '0',
-    lang: 'en',
-    T: {},
-    transactions: [],
-    txType: 'income',
-    loading: true
-  };
+const CAT_ICONS = {
+  salary:'💼', freelance:'💻', food:'🍔', transport:'🚗',
+  shopping:'🛍', utilities:'💡', health:'❤️', entertainment:'🎮', other:'📦',
+  income:'📈', expense:'📉'
+};
 
-  var incomeCategories = ['salary', 'freelance', 'investment', 'other'];
-  var expenseCategories = ['food', 'transport', 'shopping', 'health', 'entertainment', 'other'];
+async function load() {
+  try {
+    const [txns, summary] = await Promise.all([
+      fetch(`${API}/finance?uid=${uid}`).then(r=>r.json()),
+      fetch(`${API}/finance/summary?uid=${uid}`).then(r=>r.json()).catch(()=>null),
+    ]);
 
-  // ── DOM refs ─────────────────────────────────────────────
-  var $app = document.getElementById('app');
-  var $loading = document.getElementById('loadingState');
-  var $main = document.getElementById('mainContent');
-  var $modal = document.getElementById('modal');
-  var $txSection = document.getElementById('txSection');
-  var $inputAmount = document.getElementById('inputAmount');
-  var $inputCategory = document.getElementById('inputCategory');
-  var $inputNote = document.getElementById('inputNote');
-  var $toggleIncome = document.getElementById('toggleIncome');
-  var $toggleExpense = document.getElementById('toggleExpense');
-
-  // ── Init ─────────────────────────────────────────────────
-  initApp().then(function(ctx) {
-    state.uid = ctx.uid;
-    state.lang = ctx.lang;
-    state.T = APP_TRANSLATIONS[ctx.lang] || APP_TRANSLATIONS.en;
-
-    applyLabels();
-    $app.style.display = '';
-    $app.classList.add('fade-in');
-    loadData();
-  });
-
-  // ── Localization ─────────────────────────────────────────
-  function t(key, params) {
-    return tr(state.T, key, params);
-  }
-
-  function applyLabels() {
-    var T = state.T;
-    // Header
-    document.getElementById('headerTitle').textContent = t('finance');
-    document.getElementById('addBtn').innerHTML = Icons.plus;
-
-    // Summary icons
-    document.getElementById('balanceIcon').innerHTML = icon('wallet', 16);
-    document.getElementById('incomeIcon').innerHTML = icon('arrowUp', 16);
-    document.getElementById('expenseIcon').innerHTML = icon('arrowDown', 16);
-
-    // Summary labels
-    document.getElementById('balanceLabel').textContent = t('balance');
-    document.getElementById('incomeLabel').textContent = t('income');
-    document.getElementById('expenseLabel').textContent = t('expenses');
-
-    // Modal
-    document.getElementById('modalTitle').textContent = t('add_transaction');
-    document.getElementById('modalClose').innerHTML = Icons.x;
-    document.getElementById('amountLabel').textContent = t('amount');
-    document.getElementById('categoryLabel').textContent = t('category');
-    document.getElementById('noteLabel').textContent = t('note');
-    document.getElementById('btnCancel').textContent = t('cancel');
-    document.getElementById('btnSave').textContent = t('save');
-
-    // Input placeholders
-    $inputAmount.placeholder = '0.00';
-    $inputNote.placeholder = t('note') + '...';
-
-    // Type toggle
-    $toggleIncome.innerHTML = icon('arrowUp', 16) + ' ' + t('type_income');
-    $toggleExpense.innerHTML = icon('arrowDown', 16) + ' ' + t('type_expense');
-
-    // Build category options
-    buildCategoryOptions();
-  }
-
-  function buildCategoryOptions() {
-    var cats = state.txType === 'income' ? incomeCategories : expenseCategories;
-    var html = '';
-    for (var i = 0; i < cats.length; i++) {
-      html += '<option value="' + cats[i] + '">' + t(cats[i]) + '</option>';
-    }
-    $inputCategory.innerHTML = html;
-  }
-
-  // ── Data loading ─────────────────────────────────────────
-  async function loadData() {
-    state.loading = true;
-    showLoading(true);
-
-    try {
-      var resp = await fetch('/api/finance?uid=' + encodeURIComponent(state.uid));
-      if (!resp.ok) throw new Error('Network error');
-      var data = await resp.json();
-
-      state.transactions = data.transactions || [];
-      var incSummary = (data.summary || []).find(function(s) { return s.type === 'income'; });
-      var expSummary = (data.summary || []).find(function(s) { return s.type === 'expense'; });
-      var incTotal = incSummary ? incSummary.total : 0;
-      var expTotal = expSummary ? expSummary.total : 0;
-
-      updateSummary(incTotal, expTotal);
-      renderTransactions();
-    } catch (e) {
-      console.error('Failed to load finance data:', e);
-      renderTransactions();
-    } finally {
-      state.loading = false;
-      showLoading(false);
-    }
-  }
-
-  function showLoading(show) {
-    if (show) {
-      $loading.classList.remove('hidden');
-      $main.classList.add('hidden');
-    } else {
-      $loading.classList.add('hidden');
-      $main.classList.remove('hidden');
-      $main.classList.add('fade-in');
-    }
-  }
-
-  // ── Summary ──────────────────────────────────────────────
-  function formatAmount(n) {
-    return Number(n || 0).toLocaleString(state.lang === 'ru' ? 'ru-RU' : 'en-US', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2
+    // Compute balance
+    let income = 0, expense = 0;
+    txns.forEach(t => {
+      if (t.type === 'income') income += +t.amount;
+      else expense += +t.amount;
     });
+    const balance = income - expense;
+
+    document.getElementById('balanceAmt').textContent = fmt(balance);
+    document.getElementById('balanceAmt').className = 'balance-amount ' + (balance >= 0 ? 'amount-positive' : 'amount-negative');
+    document.getElementById('balanceSub').textContent = `${txns.length} transactions`;
+    document.getElementById('totalIncome').textContent = fmt(income);
+    document.getElementById('totalExpense').textContent = fmt(expense);
+
+    renderList(txns);
+  } catch(e) {
+    document.getElementById('txnList').innerHTML = `<div class="empty"><div class="empty-icon">❌</div><h3>Load failed</h3><p>${e.message}</p></div>`;
   }
+}
 
-  function updateSummary(income, expense) {
-    var balance = (income || 0) - (expense || 0);
-    document.getElementById('balanceValue').textContent = formatAmount(balance);
-    document.getElementById('incomeValue').textContent = '+' + formatAmount(income);
-    document.getElementById('expenseValue').textContent = '-' + formatAmount(expense);
+function renderList(txns) {
+  const filtered = filter === 'all' ? txns
+    : txns.filter(t => t.type === filter || t.category === filter);
 
-    // Color balance based on sign
-    var balEl = document.getElementById('balanceValue');
-    balEl.className = 'summary-card-value';
-    if (balance > 0) balEl.classList.add('income');
-    else if (balance < 0) balEl.classList.add('expense');
+  const el = document.getElementById('txnList');
+  if (!filtered.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">💸</div><h3>No transactions</h3><p>Add your first transaction</p></div>`;
+    return;
   }
+  el.innerHTML = filtered.map(t => `
+    <div class="list-item fade-in">
+      <div class="list-item-icon" style="background:var(--${t.type==='income'?'green':'red'}-dim)">
+        ${CAT_ICONS[t.category] || '💰'}
+      </div>
+      <div class="list-item-body">
+        <div class="list-item-title">${t.category || t.type}</div>
+        <div class="list-item-sub">${t.note || ''} · ${fmtDate(t.created_at)}</div>
+      </div>
+      <div class="list-item-right">
+        <div class="${t.type==='income'?'amount-positive':'amount-negative'}" style="font-weight:700">
+          ${t.type==='income'?'+':'-'}${fmt(t.amount, t.currency)}
+        </div>
+      </div>
+    </div>`).join('');
+}
 
-  // ── Render transactions ──────────────────────────────────
-  function renderTransactions() {
-    if (!state.transactions.length) {
-      $txSection.innerHTML =
-        '<div class="empty-state">' +
-          '<div class="empty-state-icon">' + icon('wallet', 28) + '</div>' +
-          '<div class="empty-state-title">' + t('no_transactions') + '</div>' +
-          '<div class="empty-state-desc">' + t('start_tracking') + '</div>' +
-          '<button class="btn btn-primary" id="emptyAddBtn">' + icon('plus', 16) + ' ' + t('add_transaction') + '</button>' +
-        '</div>';
-      document.getElementById('emptyAddBtn').addEventListener('click', openModal);
-      return;
-    }
+function fmt(n, currency='USD') {
+  return new Intl.NumberFormat('en-US',{style:'currency',currency,maximumFractionDigits:0}).format(n||0);
+}
+function fmtDate(s) {
+  if (!s) return '';
+  const d = new Date(s);
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+function setFilter(f, el) {
+  filter = f;
+  document.querySelectorAll('.filter-tab').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  load();
+}
+function setType(t) {
+  txnType = t;
+  document.getElementById('btnIncome').className  = 'txn-type-btn' + (t==='income'  ? ' active-income'  : '');
+  document.getElementById('btnExpense').className = 'txn-type-btn' + (t==='expense' ? ' active-expense' : '');
+}
+function openModal() { document.getElementById('modal').classList.add('open'); }
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+function closeIfBg(e) { if (e.target.id==='modal') closeModal(); }
 
-    var html = '<div class="section-label">' + t('all') + ' (' + state.transactions.length + ')</div>';
-    html += '<div class="list">';
+async function addTxn() {
+  const amount = parseFloat(document.getElementById('inAmount').value);
+  if (!amount || amount <= 0) return showToast('Enter a valid amount');
+  const body = {
+    uid, type: txnType,
+    amount,
+    category: document.getElementById('inCategory').value,
+    currency: document.getElementById('inCurrency').value,
+    note: document.getElementById('inNote').value,
+  };
+  try {
+    await fetch(`${API}/finance`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    closeModal();
+    showToast('✅ Saved!');
+    document.getElementById('inAmount').value='';
+    document.getElementById('inNote').value='';
+    load();
+  } catch(e) { showToast('Error: '+e.message); }
+}
 
-    for (var i = 0; i < state.transactions.length; i++) {
-      var tx = state.transactions[i];
-      var isIncome = tx.type === 'income';
-      var iconName = isIncome ? 'arrowUp' : 'arrowDown';
-      var iconClass = isIncome ? 'income-icon' : 'expense-icon';
-      var amountClass = isIncome ? 'income' : 'expense';
-      var sign = isIncome ? '+' : '-';
-      var dateStr = tx.created_at ? tx.created_at.slice(0, 10) : '';
-      var categoryLabel = t(tx.category) || tx.category;
-      var noteText = tx.note || '';
+function showToast(msg, ms=2500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), ms);
+}
 
-      html +=
-        '<div class="list-item">' +
-          '<div class="list-item-icon ' + iconClass + '">' + icon(iconName, 18) + '</div>' +
-          '<div class="list-item-content">' +
-            '<div class="list-item-title">' + escapeHtml(categoryLabel) + '</div>' +
-            '<div class="list-item-subtitle">' + escapeHtml(noteText || categoryLabel) + (dateStr ? ' &middot; ' + formatDate(dateStr) : '') + '</div>' +
-          '</div>' +
-          '<div class="tx-right">' +
-            '<span class="tx-amount ' + amountClass + '">' + sign + formatAmount(tx.amount) + '</span>' +
-            '<button class="tx-delete" data-id="' + tx.id + '" aria-label="' + t('delete') + '">' + icon('trash', 16) + '</button>' +
-          '</div>' +
-        '</div>';
-    }
-
-    html += '</div>';
-    $txSection.innerHTML = html;
-
-    // Attach delete handlers
-    var deleteBtns = $txSection.querySelectorAll('.tx-delete');
-    for (var j = 0; j < deleteBtns.length; j++) {
-      deleteBtns[j].addEventListener('click', handleDelete);
-    }
-  }
-
-  function formatDate(dateStr) {
-    if (!dateStr) return '';
-    try {
-      var parts = dateStr.split('-');
-      var d = new Date(parts[0], parts[1] - 1, parts[2]);
-      return d.toLocaleDateString(state.lang === 'ru' ? 'ru-RU' : 'en-US', {
-        month: 'short',
-        day: 'numeric'
-      });
-    } catch (e) {
-      return dateStr;
-    }
-  }
-
-  function escapeHtml(text) {
-    var div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  // ── Delete transaction ───────────────────────────────────
-  async function handleDelete(e) {
-    var btn = e.currentTarget;
-    var id = btn.getAttribute('data-id');
-    if (!id) return;
-
-    btn.style.opacity = '0.4';
-    btn.style.pointerEvents = 'none';
-
-    try {
-      await fetch('/api/finance/' + id, { method: 'DELETE' });
-      await loadData();
-    } catch (err) {
-      console.error('Delete failed:', err);
-      btn.style.opacity = '';
-      btn.style.pointerEvents = '';
-    }
-  }
-
-  // ── Modal ────────────────────────────────────────────────
-  function openModal() {
-    state.txType = 'income';
-    updateTypeToggle();
-    buildCategoryOptions();
-    $inputAmount.value = '';
-    $inputNote.value = '';
-    $inputCategory.selectedIndex = 0;
-    $modal.classList.add('active');
-    // Focus amount after animation
-    setTimeout(function() { $inputAmount.focus(); }, 350);
-  }
-
-  function closeModal() {
-    $modal.classList.remove('active');
-  }
-
-  function updateTypeToggle() {
-    if (state.txType === 'income') {
-      $toggleIncome.classList.add('active', 'income-active');
-      $toggleIncome.classList.remove('expense-active');
-      $toggleExpense.classList.remove('active', 'income-active', 'expense-active');
-    } else {
-      $toggleExpense.classList.add('active', 'expense-active');
-      $toggleExpense.classList.remove('income-active');
-      $toggleIncome.classList.remove('active', 'income-active', 'expense-active');
-    }
-  }
-
-  function setTxType(type) {
-    state.txType = type;
-    updateTypeToggle();
-    buildCategoryOptions();
-  }
-
-  // ── Save transaction ─────────────────────────────────────
-  async function saveTransaction() {
-    var amount = parseFloat($inputAmount.value);
-    if (!amount || amount <= 0) {
-      $inputAmount.focus();
-      $inputAmount.style.borderColor = 'var(--danger)';
-      setTimeout(function() { $inputAmount.style.borderColor = ''; }, 1500);
-      return;
-    }
-
-    var category = $inputCategory.value;
-    var note = $inputNote.value.trim();
-    var $saveBtn = document.getElementById('btnSave');
-
-    $saveBtn.disabled = true;
-    $saveBtn.textContent = t('loading');
-
-    try {
-      await fetch('/api/finance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          uid: parseInt(state.uid, 10) || 0,
-          type: state.txType,
-          amount: amount,
-          category: category,
-          note: note
-        })
-      });
-      closeModal();
-      await loadData();
-    } catch (err) {
-      console.error('Save failed:', err);
-    } finally {
-      $saveBtn.disabled = false;
-      $saveBtn.textContent = t('save');
-    }
-  }
-
-  // ── Event listeners ──────────────────────────────────────
-  document.getElementById('addBtn').addEventListener('click', openModal);
-  document.getElementById('modalClose').addEventListener('click', closeModal);
-  document.getElementById('btnCancel').addEventListener('click', closeModal);
-  document.getElementById('btnSave').addEventListener('click', saveTransaction);
-
-  $toggleIncome.addEventListener('click', function() { setTxType('income'); });
-  $toggleExpense.addEventListener('click', function() { setTxType('expense'); });
-
-  // Close modal on overlay click
-  $modal.addEventListener('click', function(e) {
-    if (e.target === $modal) closeModal();
-  });
-
-  // Submit on Enter in amount field
-  $inputAmount.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      $inputCategory.focus();
-    }
-  });
-
-  $inputNote.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      saveTransaction();
-    }
-  });
-
-})();
+load();
 </script>
 </body>
 </html>

@@ -1,35 +1,26 @@
-FROM node:20-slim
+FROM node:20-alpine AS builder
 
-RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    make \
-    g++ \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache python3 py3-pip make g++ sqlite
 
 WORKDIR /app
-
-# Install dependencies first (layer caching)
 COPY package*.json ./
 RUN npm ci
-
-# Copy source and compile TypeScript
-COPY tsconfig.json ./
-COPY src ./src
+COPY . .
 RUN npm run build
 
-# Copy static assets to dist
-RUN cp -r src/public dist/public
+FROM node:20-alpine
 
-# Prune dev dependencies
-RUN npm prune --omit=dev
+RUN apk add --no-cache python3 py3-pip sqlite ffmpeg
 
-# Create data directory for SQLite
-RUN mkdir -p /app/data
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev
 
-ENV NODE_ENV=production
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/src/public ./src/public
+COPY system ./system
+
+RUN mkdir -p data logs
 
 EXPOSE 3000
-
 CMD ["node", "dist/index.js"]

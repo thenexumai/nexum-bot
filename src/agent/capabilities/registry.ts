@@ -1,178 +1,30 @@
-/**
- * NEXUM Capability Registry
- *
- * Inspired by OpenClaw's tool-policy system.
- * Every action the PC agent can perform is registered here with:
- *   - classification: safe / sensitive / dangerous
- *   - requiresConfirmation: whether user must approve before execution
- *   - requiresProPlan: whether Pro subscription is required
- *   - description: human-readable purpose
- *
- * This is the single source of truth for what NEXUM can do.
- */
+export type SafetyLevel = 'safe' | 'sensitive' | 'dangerous';
 
-export type ActionClass = 'safe' | 'sensitive' | 'dangerous';
-
-export interface CapabilityDef {
+export interface Capability {
+  id: string;
   name: string;
   description: string;
-  class: ActionClass;
-  requiresConfirmation: boolean; // must user approve before exec?
-  requiresProPlan: boolean;
-  allowedInGroups: boolean;      // can non-owners use in group chats?
+  safety: SafetyLevel;
+  planRequired: 'free' | 'middle' | 'pro';
 }
 
-// ── Capability registry ───────────────────────────────────────────────────────
-
-const CAPABILITIES: Record<string, CapabilityDef> = {
-
-  // Safe: read-only, no side effects
-  screenshot: {
-    name: 'screenshot',
-    description: 'Take a screenshot of the PC screen',
-    class: 'safe',
-    requiresConfirmation: false,
-    requiresProPlan: true,
-    allowedInGroups: false,
-  },
-  sysinfo: {
-    name: 'sysinfo',
-    description: 'Get system information (CPU, RAM, disk)',
-    class: 'safe',
-    requiresConfirmation: false,
-    requiresProPlan: true,
-    allowedInGroups: false,
-  },
-  file_list: {
-    name: 'file_list',
-    description: 'List files in a directory',
-    class: 'safe',
-    requiresConfirmation: false,
-    requiresProPlan: true,
-    allowedInGroups: false,
-  },
-  file_read: {
-    name: 'file_read',
-    description: 'Read contents of a file',
-    class: 'safe',
-    requiresConfirmation: false,
-    requiresProPlan: true,
-    allowedInGroups: false,
-  },
-  open_url: {
-    name: 'open_url',
-    description: 'Open a URL in the default browser',
-    class: 'safe',
-    requiresConfirmation: false,
-    requiresProPlan: true,
-    allowedInGroups: false,
-  },
-
-  // Sensitive: has side effects, but reversible or low-risk
-  mouse_move: {
-    name: 'mouse_move',
-    description: 'Move the mouse cursor to coordinates',
-    class: 'sensitive',
-    requiresConfirmation: false,
-    requiresProPlan: true,
-    allowedInGroups: false,
-  },
-  mouse_click: {
-    name: 'mouse_click',
-    description: 'Click the mouse at coordinates',
-    class: 'sensitive',
-    requiresConfirmation: false,
-    requiresProPlan: true,
-    allowedInGroups: false,
-  },
-  key_press: {
-    name: 'key_press',
-    description: 'Press keyboard keys or shortcuts',
-    class: 'sensitive',
-    requiresConfirmation: false,
-    requiresProPlan: true,
-    allowedInGroups: false,
-  },
-  type_text: {
-    name: 'type_text',
-    description: 'Type text as keyboard input',
-    class: 'sensitive',
-    requiresConfirmation: false,
-    requiresProPlan: true,
-    allowedInGroups: false,
-  },
-  file_write: {
-    name: 'file_write',
-    description: 'Write content to a file',
-    class: 'sensitive',
-    requiresConfirmation: true,
-    requiresProPlan: true,
-    allowedInGroups: false,
-  },
-
-  // Dangerous: irreversible, destructive, or high-privilege
-  run_cmd: {
-    name: 'run_cmd',
-    description: 'Execute a shell command',
-    class: 'dangerous',
-    requiresConfirmation: true,
-    requiresProPlan: true,
-    allowedInGroups: false,
-  },
-  file_delete: {
-    name: 'file_delete',
-    description: 'Delete a file from the filesystem',
-    class: 'dangerous',
-    requiresConfirmation: true,
-    requiresProPlan: true,
-    allowedInGroups: false,
-  },
+export const CAPABILITIES: Record<string, Capability> = {
+  screenshot:   { id: 'screenshot',   name: 'Screenshot',    description: 'Capture screen',          safety: 'safe',      planRequired: 'pro' },
+  sysinfo:      { id: 'sysinfo',      name: 'System Info',   description: 'Get system info',         safety: 'safe',      planRequired: 'pro' },
+  file_read:    { id: 'file_read',    name: 'Read File',     description: 'Read file contents',      safety: 'safe',      planRequired: 'pro' },
+  browser_open: { id: 'browser_open', name: 'Open Browser',  description: 'Open URL in browser',     safety: 'sensitive', planRequired: 'pro' },
+  file_write:   { id: 'file_write',   name: 'Write File',    description: 'Write to a file',         safety: 'sensitive', planRequired: 'pro' },
+  mouse_move:   { id: 'mouse_move',   name: 'Mouse Move',    description: 'Move mouse cursor',       safety: 'sensitive', planRequired: 'pro' },
+  keyboard_type:{ id: 'keyboard_type',name: 'Type Text',     description: 'Type keyboard input',     safety: 'sensitive', planRequired: 'pro' },
+  shell_exec:   { id: 'shell_exec',   name: 'Shell Execute', description: 'Run shell command',       safety: 'dangerous', planRequired: 'pro' },
+  file_delete:  { id: 'file_delete',  name: 'Delete File',   description: 'Delete a file',           safety: 'dangerous', planRequired: 'pro' },
 };
 
-// ── Registry API ──────────────────────────────────────────────────────────────
-
-export function getCapability(name: string): CapabilityDef | null {
-  return CAPABILITIES[name] ?? null;
+export function getCapability(id: string): Capability | undefined {
+  return CAPABILITIES[id];
 }
 
-export function getAllCapabilities(): CapabilityDef[] {
-  return Object.values(CAPABILITIES);
-}
-
-export function getCapabilitiesByClass(cls: ActionClass): CapabilityDef[] {
-  return Object.values(CAPABILITIES).filter(c => c.class === cls);
-}
-
-export function requiresConfirmation(action: string): boolean {
-  return CAPABILITIES[action]?.requiresConfirmation ?? true; // default: confirm unknown
-}
-
-export function isKnownAction(action: string): boolean {
-  return action in CAPABILITIES;
-}
-
-export function getActionClass(action: string): ActionClass {
-  return CAPABILITIES[action]?.class ?? 'dangerous';
-}
-
-// ── Blocked commands (OpenClaw-inspired safety denylist) ─────────────────────
-
-const BLOCKED_COMMAND_PATTERNS = [
-  /rm\s+-rf\s+\//, /mkfs/, /dd\s+if=/, /:\(\)\s*{\s*:\|:/, // fork bombs, disk wipe
-  /chmod\s+777\s+\//, />\s*\/dev\/sda/, /format\s+c:/i,   // destructive system ops
-  /shutdown\s*-[hpr]/i, /reboot/i, /halt\b/,              // system shutdown
-  /passwd\s+root/i, /visudo/i, /sudo\s+su/i,             // privilege escalation
-];
-
-export function isBlockedCommand(cmd: string): boolean {
-  return BLOCKED_COMMAND_PATTERNS.some(re => re.test(cmd));
-}
-
-export function getBlockReason(cmd: string): string | null {
-  if (/rm\s+-rf\s+\//.test(cmd))    return 'Recursive root deletion blocked';
-  if (/mkfs/.test(cmd))              return 'Filesystem format commands blocked';
-  if (/:\(\)\s*{\s*:\|:/.test(cmd)) return 'Fork bomb pattern blocked';
-  if (/shutdown|reboot|halt\b/.test(cmd)) return 'System shutdown commands blocked';
-  if (/sudo\s+su|visudo/.test(cmd)) return 'Privilege escalation blocked';
-  return isBlockedCommand(cmd) ? 'Command blocked by safety policy' : null;
+export function listCapabilities(safety?: SafetyLevel): Capability[] {
+  const caps = Object.values(CAPABILITIES);
+  return safety ? caps.filter(c => c.safety === safety) : caps;
 }

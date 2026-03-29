@@ -2,761 +2,209 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Tasks — NEXUM</title>
-<link rel="stylesheet" href="shared/design-system.css">
+<link rel="stylesheet" href="/shared/design-system.css">
 <style>
-  .task-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+  .task-item { cursor: pointer; user-select: none; }
+  .task-item.done .list-item-title { text-decoration: line-through; color: var(--text3); }
+  .check-circle {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid var(--border2); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .15s; font-size: .7rem;
   }
-
-  .task-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    padding: 14px 16px;
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    transition: all var(--transition);
-    cursor: pointer;
-    -webkit-user-select: none;
-    user-select: none;
+  .task-item.done .check-circle { background: var(--green); border-color: var(--green); }
+  .priority-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .p-high   { background: var(--red); }
+  .p-medium { background: var(--yellow); }
+  .p-low    { background: var(--green); }
+  .section-title {
+    font-size: .75rem; font-weight: 700; color: var(--text3);
+    text-transform: uppercase; letter-spacing: .06em;
+    margin: 16px 0 8px;
   }
-  .task-card:active {
-    background: var(--bg-hover);
-    transform: scale(0.99);
-  }
-  .task-card.status-done {
-    opacity: 0.55;
-  }
-
-  .task-status-indicator {
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
-    border: 2px solid var(--border-strong);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    margin-top: 1px;
-    transition: all var(--transition);
-  }
-  .task-status-indicator.status-todo {
-    border-color: var(--text-muted);
-  }
-  .task-status-indicator.status-in_progress {
-    border-color: var(--warning);
-    background: var(--warning-subtle);
-    color: var(--warning);
-  }
-  .task-status-indicator.status-done {
-    border-color: var(--success);
-    background: var(--success);
-    color: #fff;
-  }
-
-  .task-card-body {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .task-card-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 2px;
-  }
-
-  .task-card-title {
-    font-size: 15px;
-    font-weight: 500;
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .task-card.status-done .task-card-title {
-    text-decoration: line-through;
-    color: var(--text-muted);
-  }
-
-  .task-card-desc {
-    font-size: 13px;
-    color: var(--text-secondary);
-    margin-top: 2px;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .task-card.status-done .task-card-desc {
-    color: var(--text-muted);
-  }
-
-  .task-card-footer {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 8px;
-    flex-wrap: wrap;
-  }
-
-  .task-due {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-  .task-due svg {
-    width: 14px;
-    height: 14px;
-  }
-  .task-due.overdue {
-    color: var(--danger);
-  }
-
-  .task-card-actions {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-    margin-left: 4px;
-  }
-
-  .task-delete-btn {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
-    transition: all var(--transition);
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-  }
-  .task-delete-btn:hover,
-  .task-delete-btn:active {
-    background: var(--danger-subtle);
-    color: var(--danger);
-  }
-  .task-delete-btn svg {
-    width: 16px;
-    height: 16px;
-  }
-
-  .tab-count {
-    font-size: 11px;
-    font-weight: 600;
-    background: var(--bg-elevated);
-    border-radius: var(--radius-full);
-    padding: 0 6px;
-    min-width: 18px;
-    height: 18px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    margin-left: 4px;
-    color: var(--text-muted);
-  }
-  .tab.active .tab-count {
-    background: var(--accent-subtle);
-    color: var(--accent);
-  }
+  .progress-bar { height: 4px; background: var(--border); border-radius: 2px; margin-bottom: 16px; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .3s; }
 </style>
 </head>
 <body>
-<script src="shared/icons.js"></script>
-<script src="shared/app-shell.js"></script>
+<header class="app-header">
+  <div class="header-logo">
+    <div class="logo-dot">✅</div>
+    <h1>Tasks</h1>
+  </div>
+  <span id="doneCount" class="badge badge-accent">0 / 0</span>
+</header>
 
-<div class="app-container" id="app" style="display:none;">
-  <!-- Header -->
-  <header class="app-header">
-    <span class="app-header-title" id="headerTitle"></span>
-    <button class="app-header-action" id="addBtn" aria-label="Add task"></button>
-  </header>
+<div class="page">
+  <!-- Progress -->
+  <div class="progress-bar"><div class="progress-fill" id="progress" style="width:0%"></div></div>
 
-  <!-- Tabs -->
-  <div style="padding: 12px 16px 0;">
-    <div class="tabs" id="statusTabs"></div>
+  <!-- Stats -->
+  <div class="stat-grid" style="margin-bottom:12px">
+    <div class="stat-card">
+      <div class="stat-label">To Do</div>
+      <div class="stat-value" id="todoCnt">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Done Today</div>
+      <div class="stat-value amount-positive" id="doneTodayCnt">0</div>
+    </div>
   </div>
 
-  <!-- Content -->
-  <main class="app-content" id="content">
-    <!-- Loading state -->
-    <div class="loading-container" id="loadingState">
-      <div class="spinner"></div>
-    </div>
+  <!-- Filter -->
+  <div class="filter-tabs">
+    <button class="filter-tab active" onclick="setFilter('all',this)">All</button>
+    <button class="filter-tab" onclick="setFilter('active',this)">Active</button>
+    <button class="filter-tab" onclick="setFilter('done',this)">Done</button>
+    <button class="filter-tab" onclick="setFilter('high',this)">🔴 High</button>
+  </div>
 
-    <!-- Task list -->
-    <div class="task-list fade-in" id="taskList"></div>
-
-    <!-- Empty state -->
-    <div class="empty-state fade-in hidden" id="emptyState">
-      <div class="empty-state-icon" id="emptyIcon"></div>
-      <div class="empty-state-title" id="emptyTitle"></div>
-      <div class="empty-state-desc" id="emptyDesc"></div>
-      <button class="btn btn-primary" id="emptyAddBtn"></button>
-    </div>
-  </main>
+  <div id="taskList"></div>
 </div>
 
-<!-- Add/Edit Task Modal -->
-<div class="modal-overlay" id="taskModal">
-  <div class="modal-sheet">
+<button class="fab" onclick="openModal()">+</button>
+
+<!-- Add Task Modal -->
+<div class="modal-overlay" id="modal" onclick="closeIfBg(event)">
+  <div class="modal">
     <div class="modal-handle"></div>
-    <div class="modal-header">
-      <span class="modal-title" id="modalTitle"></span>
-      <button class="btn btn-ghost btn-sm" id="modalCloseBtn"></button>
+    <h2>New Task</h2>
+    <div class="form-group">
+      <label class="form-label">Title</label>
+      <input class="input" id="inTitle" type="text" placeholder="What needs to be done?">
     </div>
-    <div class="modal-body">
+    <div class="form-group">
+      <label class="form-label">Description (optional)</label>
+      <textarea class="input" id="inDesc" placeholder="Details..."></textarea>
+    </div>
+    <div class="form-row">
       <div class="form-group">
-        <label class="form-label" id="labelTitle"></label>
-        <input type="text" class="form-input" id="inputTitle" maxlength="200">
+        <label class="form-label">Priority</label>
+        <select class="input" id="inPriority">
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+          <option value="low">Low</option>
+        </select>
       </div>
       <div class="form-group">
-        <label class="form-label" id="labelDesc"></label>
-        <textarea class="form-textarea" id="inputDesc" rows="3" maxlength="1000"></textarea>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label" id="labelPriority"></label>
-          <select class="form-select" id="inputPriority">
-            <option value="low" id="optLow"></option>
-            <option value="medium" id="optMedium" selected></option>
-            <option value="high" id="optHigh"></option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label" id="labelDueDate"></label>
-          <input type="date" class="form-input" id="inputDueDate">
-        </div>
+        <label class="form-label">Due Date</label>
+        <input class="input" id="inDue" type="date">
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" id="modalCancelBtn" style="flex:1;"></button>
-      <button class="btn btn-primary" id="modalSaveBtn" style="flex:1;"></button>
-    </div>
+    <button class="btn btn-primary" style="width:100%" onclick="addTask()">Add Task</button>
   </div>
 </div>
 
-<!-- Delete Confirmation Modal -->
-<div class="modal-overlay" id="deleteModal">
-  <div class="modal-sheet">
-    <div class="modal-handle"></div>
-    <div class="modal-header">
-      <span class="modal-title" id="deleteModalTitle"></span>
-      <button class="btn btn-ghost btn-sm" id="deleteModalCloseBtn"></button>
-    </div>
-    <div class="modal-body">
-      <p id="deleteModalMsg" style="font-size:15px; color:var(--text-secondary);"></p>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" id="deleteModalCancelBtn" style="flex:1;"></button>
-      <button class="btn btn-danger" id="deleteModalConfirmBtn" style="flex:1;"></button>
-    </div>
-  </div>
-</div>
+<div class="toast" id="toast"></div>
 
 <script>
-(function() {
-  'use strict';
+const uid = new URLSearchParams(location.search).get('uid') || 0;
+const API = '/api';
+let allTasks = [];
+let filter = 'all';
 
-  // ── i18n ──────────────────────────────────────────────────────────────
-  var T = {
-    en: Object.assign({}, APP_TRANSLATIONS.en, {
-      'tasks_title': 'Tasks',
-      'tab_all': 'All',
-      'tab_todo': 'Todo',
-      'tab_in_progress': 'In Progress',
-      'tab_done': 'Done',
-      'add_task': 'Add Task',
-      'edit_task': 'Edit Task',
-      'title_placeholder': 'What needs to be done?',
-      'desc_placeholder': 'Add details...',
-      'no_tasks_all': 'No tasks yet',
-      'no_tasks_todo': 'No todo tasks',
-      'no_tasks_in_progress': 'Nothing in progress',
-      'no_tasks_done': 'Nothing completed yet',
-      'desc_all': 'Add your first task to get started',
-      'desc_todo': 'All tasks have been started or completed',
-      'desc_in_progress': 'Move a task to in progress to see it here',
-      'desc_done': 'Complete a task to see it here',
-      'add_first_task': 'Add Task',
-      'delete_task': 'Delete Task',
-      'delete_confirm': 'Are you sure you want to delete this task? This action cannot be undone.',
-      'status_todo': 'Todo',
-      'status_in_progress': 'In Progress',
-      'status_done': 'Done',
-      'overdue': 'Overdue',
-    }),
-    ru: Object.assign({}, APP_TRANSLATIONS.ru, {
-      'tasks_title': 'Задачи',
-      'tab_all': 'Все',
-      'tab_todo': 'К выполнению',
-      'tab_in_progress': 'В работе',
-      'tab_done': 'Готово',
-      'add_task': 'Добавить задачу',
-      'edit_task': 'Изменить задачу',
-      'title_placeholder': 'Что нужно сделать?',
-      'desc_placeholder': 'Добавьте описание...',
-      'no_tasks_all': 'Нет задач',
-      'no_tasks_todo': 'Нет задач к выполнению',
-      'no_tasks_in_progress': 'Нет задач в работе',
-      'no_tasks_done': 'Нет завершённых задач',
-      'desc_all': 'Добавьте первую задачу',
-      'desc_todo': 'Все задачи уже начаты или завершены',
-      'desc_in_progress': 'Переведите задачу в работу',
-      'desc_done': 'Завершите задачу',
-      'add_first_task': 'Добавить задачу',
-      'delete_task': 'Удалить задачу',
-      'delete_confirm': 'Вы уверены, что хотите удалить эту задачу? Это действие нельзя отменить.',
-      'status_todo': 'К выполнению',
-      'status_in_progress': 'В работе',
-      'status_done': 'Готово',
-      'overdue': 'Просрочено',
-    })
-  };
-
-  // ── State ─────────────────────────────────────────────────────────────
-  var state = {
-    uid: '0',
-    lang: 'en',
-    tasks: [],
-    filter: 'all',
-    loading: true,
-    deleteTarget: null
-  };
-
-  // ── Helpers ───────────────────────────────────────────────────────────
-  function t(key, params) {
-    var translations = T[state.lang] || T.en;
-    return tr(translations, key, params);
+async function load() {
+  try {
+    allTasks = await fetch(`${API}/tasks?uid=${uid}`).then(r=>r.json());
+    render();
+  } catch(e) {
+    document.getElementById('taskList').innerHTML = `<div class="empty"><div class="empty-icon">❌</div><h3>${e.message}</h3></div>`;
   }
+}
 
-  function $(id) { return document.getElementById(id); }
+function render() {
+  const total = allTasks.length;
+  const done  = allTasks.filter(t=>t.status==='done').length;
+  const todo  = allTasks.filter(t=>t.status!=='done').length;
+  const today = new Date().toDateString();
+  const doneToday = allTasks.filter(t=>t.status==='done' && new Date(t.updated_at||t.created_at).toDateString()===today).length;
 
-  function formatDate(dateStr) {
-    if (!dateStr) return '';
-    var d = new Date(dateStr + 'T00:00:00');
-    var day = String(d.getDate()).padStart(2, '0');
-    var month = String(d.getMonth() + 1).padStart(2, '0');
-    var year = d.getFullYear();
-    return day + '.' + month + '.' + year;
-  }
+  document.getElementById('doneCount').textContent  = `${done} / ${total}`;
+  document.getElementById('progress').style.width   = total ? `${Math.round(done/total*100)}%` : '0%';
+  document.getElementById('todoCnt').textContent    = todo;
+  document.getElementById('doneTodayCnt').textContent = doneToday;
 
-  function isOverdue(dateStr, status) {
-    if (!dateStr || status === 'done') return false;
-    var today = new Date();
-    today.setHours(0, 0, 0, 0);
-    var due = new Date(dateStr + 'T00:00:00');
-    return due < today;
-  }
+  let tasks = [...allTasks];
+  if (filter==='active') tasks = tasks.filter(t=>t.status!=='done');
+  if (filter==='done')   tasks = tasks.filter(t=>t.status==='done');
+  if (filter==='high')   tasks = tasks.filter(t=>t.priority==='high');
 
-  function nextStatus(current) {
-    if (current === 'todo') return 'in_progress';
-    if (current === 'in_progress') return 'done';
-    return 'todo';
-  }
-
-  function priorityBadgeClass(priority) {
-    if (priority === 'high') return 'badge badge-danger';
-    if (priority === 'medium') return 'badge badge-warning';
-    return 'badge badge-success';
-  }
-
-  function getFilteredTasks() {
-    if (state.filter === 'all') return state.tasks;
-    return state.tasks.filter(function(task) {
-      return task.status === state.filter;
-    });
-  }
-
-  function escapeHtml(str) {
-    if (!str) return '';
-    var div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
-
-  // ── API ───────────────────────────────────────────────────────────────
-  function api(method, path, body) {
-    var opts = {
-      method: method,
-      headers: { 'Content-Type': 'application/json' }
-    };
-    if (body) opts.body = JSON.stringify(body);
-    return fetch(path, opts).then(function(r) {
-      if (!r.ok) throw new Error('API error: ' + r.status);
-      if (r.status === 204) return null;
-      return r.json();
-    });
-  }
-
-  function loadTasks() {
-    state.loading = true;
-    renderContent();
-    return api('GET', '/api/tasks?uid=' + state.uid)
-      .then(function(data) {
-        state.tasks = Array.isArray(data) ? data : [];
-        state.loading = false;
-        renderContent();
-      })
-      .catch(function(err) {
-        console.error('Failed to load tasks:', err);
-        state.tasks = [];
-        state.loading = false;
-        renderContent();
-      });
-  }
-
-  function createTask(taskData) {
-    taskData.uid = parseInt(state.uid, 10);
-    return api('POST', '/api/tasks', taskData).then(function() {
-      return loadTasks();
-    });
-  }
-
-  function updateTask(id, patch) {
-    return api('PATCH', '/api/tasks/' + id, patch).then(function() {
-      return loadTasks();
-    });
-  }
-
-  function deleteTask(id) {
-    return api('DELETE', '/api/tasks/' + id).then(function() {
-      return loadTasks();
-    });
-  }
-
-  // ── Render: Tabs ──────────────────────────────────────────────────────
-  function renderTabs() {
-    var tabs = [
-      { key: 'all', label: t('tab_all') },
-      { key: 'todo', label: t('tab_todo') },
-      { key: 'in_progress', label: t('tab_in_progress') },
-      { key: 'done', label: t('tab_done') }
-    ];
-
-    var counts = { all: state.tasks.length, todo: 0, in_progress: 0, done: 0 };
-    state.tasks.forEach(function(task) {
-      if (counts[task.status] !== undefined) counts[task.status]++;
-    });
-
-    var html = '';
-    tabs.forEach(function(tab) {
-      var active = state.filter === tab.key ? ' active' : '';
-      var count = counts[tab.key];
-      html += '<button class="tab' + active + '" data-filter="' + tab.key + '">'
-            + escapeHtml(tab.label)
-            + '<span class="tab-count">' + count + '</span>'
-            + '</button>';
-    });
-
-    $('statusTabs').innerHTML = html;
-  }
-
-  // ── Render: Task List ─────────────────────────────────────────────────
-  function renderContent() {
-    var loadingEl = $('loadingState');
-    var listEl = $('taskList');
-    var emptyEl = $('emptyState');
-
-    if (state.loading) {
-      loadingEl.classList.remove('hidden');
-      listEl.classList.add('hidden');
-      emptyEl.classList.add('hidden');
-      return;
-    }
-
-    loadingEl.classList.add('hidden');
-    renderTabs();
-
-    var filtered = getFilteredTasks();
-
-    if (filtered.length === 0) {
-      listEl.classList.add('hidden');
-      emptyEl.classList.remove('hidden');
-      renderEmptyState();
-      return;
-    }
-
-    emptyEl.classList.add('hidden');
-    listEl.classList.remove('hidden');
-
-    var html = '';
-    filtered.forEach(function(task) {
-      var statusClass = 'status-' + task.status;
-      var overdue = isOverdue(task.due_date, task.status);
-
-      html += '<div class="task-card ' + statusClass + ' fade-in" data-task-id="' + task.id + '">';
-
-      // Status indicator
-      html += '<div class="task-status-indicator ' + statusClass + '" data-action="toggle" data-id="' + task.id + '" data-status="' + task.status + '">';
-      if (task.status === 'done') {
-        html += icon('check', 14);
-      } else if (task.status === 'in_progress') {
-        html += icon('clock', 14);
-      }
-      html += '</div>';
-
-      // Body
-      html += '<div class="task-card-body" data-action="toggle" data-id="' + task.id + '" data-status="' + task.status + '">';
-
-      // Title
-      html += '<div class="task-card-title">' + escapeHtml(task.title) + '</div>';
-
-      // Description
-      if (task.description) {
-        html += '<div class="task-card-desc">' + escapeHtml(task.description) + '</div>';
-      }
-
-      // Footer: priority badge + due date
-      html += '<div class="task-card-footer">';
-      html += '<span class="' + priorityBadgeClass(task.priority) + '">' + escapeHtml(t(task.priority)) + '</span>';
-
-      if (task.due_date) {
-        var dueClass = overdue ? 'task-due overdue' : 'task-due';
-        html += '<span class="' + dueClass + '">';
-        html += icon('clock', 14);
-        html += ' ' + formatDate(task.due_date);
-        if (overdue) html += ' (' + t('overdue') + ')';
-        html += '</span>';
-      }
-
-      html += '</div>'; // footer
-      html += '</div>'; // body
-
-      // Delete button
-      html += '<div class="task-card-actions">';
-      html += '<button class="task-delete-btn" data-action="delete" data-id="' + task.id + '" data-title="' + escapeHtml(task.title) + '" aria-label="' + t('delete') + '">';
-      html += icon('trash', 16);
-      html += '</button>';
-      html += '</div>';
-
-      html += '</div>'; // task-card
-    });
-
-    listEl.innerHTML = html;
-  }
-
-  // ── Render: Empty State ───────────────────────────────────────────────
-  function renderEmptyState() {
-    $('emptyIcon').innerHTML = icon('tasks', 28);
-
-    var emptyTitles = {
-      all: 'no_tasks_all',
-      todo: 'no_tasks_todo',
-      in_progress: 'no_tasks_in_progress',
-      done: 'no_tasks_done'
-    };
-    var emptyDescs = {
-      all: 'desc_all',
-      todo: 'desc_todo',
-      in_progress: 'desc_in_progress',
-      done: 'desc_done'
-    };
-
-    $('emptyTitle').textContent = t(emptyTitles[state.filter] || 'no_tasks_all');
-    $('emptyDesc').textContent = t(emptyDescs[state.filter] || 'desc_all');
-
-    var addBtn = $('emptyAddBtn');
-    addBtn.textContent = t('add_first_task');
-    addBtn.innerHTML = icon('plus', 18) + ' ' + t('add_first_task');
-    addBtn.classList.toggle('hidden', state.filter !== 'all');
-  }
-
-  // ── Render: Static Labels ─────────────────────────────────────────────
-  function renderLabels() {
-    $('headerTitle').textContent = t('tasks_title');
-    $('addBtn').innerHTML = icon('plus', 20);
-
-    // Modal labels
-    $('modalTitle').textContent = t('add_task');
-    $('modalCloseBtn').innerHTML = icon('x', 18);
-    $('labelTitle').textContent = t('title');
-    $('inputTitle').placeholder = t('title_placeholder');
-    $('labelDesc').textContent = t('description');
-    $('inputDesc').placeholder = t('desc_placeholder');
-    $('labelPriority').textContent = t('priority');
-    $('optLow').textContent = t('low');
-    $('optMedium').textContent = t('medium');
-    $('optHigh').textContent = t('high');
-    $('labelDueDate').textContent = t('due_date');
-    $('modalCancelBtn').textContent = t('cancel');
-    $('modalSaveBtn').textContent = t('save');
-
-    // Delete modal labels
-    $('deleteModalTitle').textContent = t('delete_task');
-    $('deleteModalCloseBtn').innerHTML = icon('x', 18);
-    $('deleteModalCancelBtn').textContent = t('cancel');
-    $('deleteModalConfirmBtn').textContent = t('delete');
-  }
-
-  // ── Modal: Add Task ───────────────────────────────────────────────────
-  function openAddModal() {
-    $('modalTitle').textContent = t('add_task');
-    $('inputTitle').value = '';
-    $('inputDesc').value = '';
-    $('inputPriority').value = 'medium';
-    $('inputDueDate').value = '';
-    $('taskModal').classList.add('active');
-    setTimeout(function() { $('inputTitle').focus(); }, 300);
-  }
-
-  function closeAddModal() {
-    $('taskModal').classList.remove('active');
-  }
-
-  function saveTask() {
-    var title = $('inputTitle').value.trim();
-    if (!title) {
-      $('inputTitle').focus();
-      return;
-    }
-    var data = {
-      title: title,
-      description: $('inputDesc').value.trim(),
-      priority: $('inputPriority').value,
-      status: 'todo',
-      due_date: $('inputDueDate').value || null
-    };
-
-    $('modalSaveBtn').disabled = true;
-    $('modalSaveBtn').textContent = t('loading');
-
-    createTask(data)
-      .then(function() {
-        closeAddModal();
-      })
-      .catch(function(err) {
-        console.error('Failed to create task:', err);
-      })
-      .finally(function() {
-        $('modalSaveBtn').disabled = false;
-        $('modalSaveBtn').textContent = t('save');
-      });
-  }
-
-  // ── Modal: Delete Confirm ─────────────────────────────────────────────
-  function openDeleteModal(id, title) {
-    state.deleteTarget = id;
-    $('deleteModalMsg').textContent = t('delete_confirm');
-    $('deleteModal').classList.add('active');
-  }
-
-  function closeDeleteModal() {
-    $('deleteModal').classList.remove('active');
-    state.deleteTarget = null;
-  }
-
-  function confirmDelete() {
-    if (!state.deleteTarget) return;
-    var id = state.deleteTarget;
-
-    $('deleteModalConfirmBtn').disabled = true;
-    $('deleteModalConfirmBtn').textContent = t('loading');
-
-    deleteTask(id)
-      .then(function() {
-        closeDeleteModal();
-      })
-      .catch(function(err) {
-        console.error('Failed to delete task:', err);
-      })
-      .finally(function() {
-        $('deleteModalConfirmBtn').disabled = false;
-        $('deleteModalConfirmBtn').textContent = t('delete');
-      });
-  }
-
-  // ── Event Delegation ──────────────────────────────────────────────────
-
-  // Tab clicks
-  $('statusTabs').addEventListener('click', function(e) {
-    var tab = e.target.closest('.tab');
-    if (!tab) return;
-    state.filter = tab.getAttribute('data-filter');
-    renderContent();
+  // Sort: high priority first, then by creation date
+  tasks.sort((a,b)=>{
+    const po={high:0,medium:1,low:2};
+    if(a.status==='done'&&b.status!=='done') return 1;
+    if(a.status!=='done'&&b.status==='done') return -1;
+    return (po[a.priority]||1)-(po[b.priority]||1);
   });
 
-  // Task list clicks (toggle status + delete)
-  $('taskList').addEventListener('click', function(e) {
-    // Delete button
-    var deleteBtn = e.target.closest('[data-action="delete"]');
-    if (deleteBtn) {
-      e.stopPropagation();
-      var id = parseInt(deleteBtn.getAttribute('data-id'), 10);
-      var title = deleteBtn.getAttribute('data-title');
-      openDeleteModal(id, title);
-      return;
-    }
+  const el = document.getElementById('taskList');
+  if (!tasks.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-icon">🎯</div><h3>No tasks</h3><p>Add your first task below</p></div>`;
+    return;
+  }
 
-    // Toggle status (click on indicator or body)
-    var toggleEl = e.target.closest('[data-action="toggle"]');
-    if (toggleEl) {
-      var taskId = parseInt(toggleEl.getAttribute('data-id'), 10);
-      var currentStatus = toggleEl.getAttribute('data-status');
-      var newStatus = nextStatus(currentStatus);
-      updateTask(taskId, { status: newStatus });
-      return;
-    }
-  });
+  el.innerHTML = tasks.map(t=>`
+    <div class="list-item task-item ${t.status==='done'?'done':''}" onclick="toggleTask(${t.id})">
+      <div class="check-circle">${t.status==='done'?'✓':''}</div>
+      <div class="priority-dot p-${t.priority||'medium'}"></div>
+      <div class="list-item-body">
+        <div class="list-item-title">${esc(t.title)}</div>
+        <div class="list-item-sub">${t.due_date?'📅 '+fmtDate(t.due_date)+'  ':''}${t.description?esc(t.description.slice(0,40))+'...':''}</div>
+      </div>
+      <button class="btn btn-ghost btn-icon" onclick="deleteTask(event,${t.id})" style="color:var(--text3)">🗑</button>
+    </div>`).join('');
+}
 
-  // Add button in header
-  $('addBtn').addEventListener('click', openAddModal);
+function esc(s){ return (s||'').replace(/</g,'&lt;'); }
+function fmtDate(s){ return s?new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''; }
+function setFilter(f,el){ filter=f; document.querySelectorAll('.filter-tab').forEach(b=>b.classList.remove('active')); el.classList.add('active'); render(); }
+function openModal(){ document.getElementById('modal').classList.add('open'); }
+function closeModal(){ document.getElementById('modal').classList.remove('open'); }
+function closeIfBg(e){ if(e.target.id==='modal') closeModal(); }
 
-  // Add button in empty state
-  $('emptyAddBtn').addEventListener('click', openAddModal);
+async function toggleTask(id){
+  const t = allTasks.find(x=>x.id===id);
+  if(!t) return;
+  const newStatus = t.status==='done'?'todo':'done';
+  await fetch(`${API}/tasks/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:newStatus})});
+  t.status=newStatus;
+  render();
+}
 
-  // Modal: close
-  $('modalCloseBtn').addEventListener('click', closeAddModal);
-  $('modalCancelBtn').addEventListener('click', closeAddModal);
-  $('taskModal').addEventListener('click', function(e) {
-    if (e.target === $('taskModal')) closeAddModal();
-  });
+async function deleteTask(e,id){
+  e.stopPropagation();
+  await fetch(`${API}/tasks/${id}`,{method:'DELETE'});
+  allTasks = allTasks.filter(t=>t.id!==id);
+  render();
+  showToast('Deleted');
+}
 
-  // Modal: save
-  $('modalSaveBtn').addEventListener('click', saveTask);
+async function addTask(){
+  const title = document.getElementById('inTitle').value.trim();
+  if(!title) return showToast('Enter a title');
+  await fetch(`${API}/tasks`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    uid, title,
+    description: document.getElementById('inDesc').value,
+    priority: document.getElementById('inPriority').value,
+    due_date: document.getElementById('inDue').value || null,
+    status:'todo',
+  })});
+  closeModal();
+  showToast('✅ Task added!');
+  document.getElementById('inTitle').value='';
+  document.getElementById('inDesc').value='';
+  load();
+}
 
-  // Modal: save on Enter in title field
-  $('inputTitle').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      saveTask();
-    }
-  });
+function showToast(msg,ms=2000){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),ms);
+}
 
-  // Delete modal: close
-  $('deleteModalCloseBtn').addEventListener('click', closeDeleteModal);
-  $('deleteModalCancelBtn').addEventListener('click', closeDeleteModal);
-  $('deleteModal').addEventListener('click', function(e) {
-    if (e.target === $('deleteModal')) closeDeleteModal();
-  });
-
-  // Delete modal: confirm
-  $('deleteModalConfirmBtn').addEventListener('click', confirmDelete);
-
-  // ── Init ──────────────────────────────────────────────────────────────
-  initApp().then(function(app) {
-    state.uid = app.uid;
-    state.lang = app.lang;
-
-    renderLabels();
-    renderTabs();
-
-    $('app').style.display = '';
-
-    loadTasks();
-  });
-
-})();
+load();
 </script>
 </body>
 </html>

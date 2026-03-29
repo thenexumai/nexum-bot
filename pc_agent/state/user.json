@@ -1,0 +1,16 @@
+{
+  "uid": null,
+  "username": null,
+  "first_name": null,
+  "preferences": {
+    "lang": "auto",
+    "voice": "off",
+    "theme": "dark"
+  },
+  "pc_agent": {
+    "device_id": null,
+    "device_name": null,
+    "platform": null,
+    "linked_at": null
+  }
+}

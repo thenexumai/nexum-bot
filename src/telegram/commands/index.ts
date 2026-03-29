@@ -1,19 +1,12 @@
-import type { Bot } from 'grammy';
-import { registerGeneralCommands, DM_COMMANDS, GROUP_COMMANDS } from './general';
-import { registerMiniAppCommands } from './mini-apps';
-import { registerByokCommands } from './byok';
-import { registerPcAgentCommands, setupExecApprovalCallbacks } from './pc-agent';
-import { registerAdminCommands } from './admin';
+import { Bot } from 'grammy';
+import { setupGeneralCommands } from './general';
+import { setupAdminCommands } from './admin';
+import { setupByokCommands } from './byok';
+import { setupPcAgentCommands } from './pc_agent';
 
-export function setupCommands(bot: Bot): void {
-  bot.api.setMyCommands(DM_COMMANDS, { scope: { type: 'all_private_chats' } }).catch(() => {});
-  bot.api.setMyCommands(GROUP_COMMANDS, { scope: { type: 'all_group_chats' } }).catch(() => {});
-
-  registerGeneralCommands(bot);
-  registerMiniAppCommands(bot);
-  registerByokCommands(bot);
-  registerPcAgentCommands(bot);
-  registerAdminCommands(bot);
+export function registerCommands(bot: Bot) {
+  setupGeneralCommands(bot);
+  setupAdminCommands(bot);
+  setupByokCommands(bot);
+  setupPcAgentCommands(bot);
 }
-
-export { setupExecApprovalCallbacks };
