@@ -4,7 +4,7 @@
  * Inspired by OpenClaw's state management system.
  */
 
-import { db } from '../core/db';
+import db from '../core/db'; // ✅ FIXED: db.ts uses default export
 
 export interface UserContext {
   uid: number;

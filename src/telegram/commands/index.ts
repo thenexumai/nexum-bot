@@ -1,12 +1,35 @@
 import { Bot } from 'grammy';
 import { setupGeneralCommands } from './general';
-import { setupAdminCommands } from './admin';
-import { setupByokCommands } from './byok';
 import { setupPcAgentCommands } from './pc_agent';
+import { setupByokCommands } from './byok';
+import { setupAdminCommands } from './admin';
+import { setupEvolutionCommands } from './evolution';
+import { CONFIG } from '../../core/config';
 
-export function registerCommands(bot: Bot) {
-  setupGeneralCommands(bot);
-  setupAdminCommands(bot);
-  setupByokCommands(bot);
-  setupPcAgentCommands(bot);
+export function setupCommands(bot: Bot) {
+    setupGeneralCommands(bot);
+    setupPcAgentCommands(bot);
+    setupByokCommands(bot);
+    setupAdminCommands(bot);
+    setupEvolutionCommands(bot);
+
+    // Register bot commands list (shown in Telegram menu)
+    bot.api.setMyCommands([
+        { command: 'start',      description: '🚀 Запустить NEXUM' },
+        { command: 'help',       description: '📚 Справка' },
+        { command: 'status',     description: '📊 Мой статус и план' },
+        { command: 'apps',       description: '📱 Открыть Mini Apps' },
+        { command: 'new',        description: '🔄 Сбросить сессию' },
+        { command: 'memory',     description: '🧠 Моя память' },
+        { command: 'forget',     description: '🗑 Очистить память' },
+        { command: 'remind',     description: '⏰ Установить напоминание' },
+        { command: 'reminders',  description: '📋 Список напоминаний' },
+        { command: 'search',     description: '🔍 Поиск в интернете' },
+        { command: 'byok',       description: '🔑 Добавить свой API ключ' },
+        { command: 'link_pc',    description: '🖥 Подключить PC Агент' },
+        { command: 'pc_status',  description: '🖥 Статус PC Агента' },
+        { command: 'screenshot', description: '📸 Снимок экрана' },
+        { command: 'tariffs',    description: '💎 Тарифы и подписка' },
+        { command: 'lang',       description: '🌍 Язык (ru/en)' },
+    ]).catch(() => {});
 }

@@ -1,7 +1,7 @@
 {
   "name": "nexum-bot",
   "version": "1.0.0",
-  "description": "NEXUM - Revolutionary Self-Improving AI Assistant",
+  "description": "NEXUM v1.0 - Revolutionary Self-Improving AI Assistant Platform",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -20,7 +20,8 @@
     "node-fetch": "^3.3.2",
     "ws": "^8.16.0",
     "js-yaml": "^4.1.0",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "chalk": "^4.1.2"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.8",

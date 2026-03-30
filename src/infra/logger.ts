@@ -1,62 +1,62 @@
-// OpenClaw-style beautiful colored logger
+import chalk from 'chalk';
 
-const COLORS = {
-  reset: '\x1b[0m',
-  bright: '\x1b[1m',
-  dim: '\x1b[2m',
-  red: '\x1b[31m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  blue: '\x1b[34m',
-  magenta: '\x1b[35m',
-  cyan: '\x1b[36m',
-  white: '\x1b[37m',
-  gray: '\x1b[90m',
-};
-
-type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'SUCCESS';
-
-const LEVEL_COLORS: Record<LogLevel, string> = {
-  DEBUG: COLORS.gray,
-  INFO:  COLORS.cyan,
-  WARN:  COLORS.yellow,
-  ERROR: COLORS.red,
-  SUCCESS: COLORS.green,
-};
-
-const LEVEL_ICONS: Record<LogLevel, string> = {
-  DEBUG: '●',
-  INFO:  '◆',
-  WARN:  '▲',
-  ERROR: '✖',
-  SUCCESS: '✔',
-};
-
-function timestamp(): string {
-  const now = new Date();
-  return now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
+export enum LogLevel {
+    DEBUG = 0,
+    INFO = 1,
+    SUCCESS = 2,
+    WARN = 3,
+    ERROR = 4
 }
 
-function format(level: LogLevel, module: string, message: string, data?: unknown): string {
-  const ts  = `${COLORS.dim}[${timestamp()}]${COLORS.reset}`;
-  const lv  = `${LEVEL_COLORS[level]}${LEVEL_ICONS[level]} ${level.padEnd(7)}${COLORS.reset}`;
-  const mod = `${COLORS.magenta}[${module}]${COLORS.reset}`;
-  const msg = message;
-  const extra = data !== undefined ? `\n  ${COLORS.dim}${JSON.stringify(data, null, 2)}${COLORS.reset}` : '';
-  return `${ts} ${lv} ${mod} ${msg}${extra}`;
+export class Logger {
+    private static minLevel: LogLevel = LogLevel.DEBUG;
+
+    private static getTime(): string {
+        const now = new Date();
+        return now.toISOString().replace('T', ' ').substring(0, 19);
+    }
+
+    private static formatMessage(level: string, color: any, scope: string, message: string): string {
+        const timeStr = chalk.gray(`[${this.getTime()}]`);
+        const levelStr = color(`[${level.padEnd(7)}]`);
+        const scopeStr = chalk.cyan(`[${scope.toUpperCase()}]`);
+        return `${timeStr} ${levelStr} ${scopeStr} ${message}`;
+    }
+
+    static debug(scope: string, message: string) {
+        if (this.minLevel <= LogLevel.DEBUG) {
+            console.log(this.formatMessage('DEBUG', chalk.magenta, scope, message));
+        }
+    }
+
+    static info(scope: string, message: string) {
+        if (this.minLevel <= LogLevel.INFO) {
+            console.log(this.formatMessage('INFO', chalk.blue, scope, message));
+        }
+    }
+
+    static success(scope: string, message: string) {
+        if (this.minLevel <= LogLevel.SUCCESS) {
+            console.log(this.formatMessage('SUCCESS', chalk.green, scope, message));
+        }
+    }
+
+    static warn(scope: string, message: string) {
+        if (this.minLevel <= LogLevel.WARN) {
+            console.log(this.formatMessage('WARN', chalk.yellow, scope, message));
+        }
+    }
+
+    static error(scope: string, message: string, error?: any) {
+        if (this.minLevel <= LogLevel.ERROR) {
+            console.error(this.formatMessage('ERROR', chalk.red, scope, message));
+            if (error) {
+                if (error instanceof Error) {
+                    console.error(chalk.red(error.stack));
+                } else {
+                    console.error(error);
+                }
+            }
+        }
+    }
 }
-
-export const logger = {
-  debug: (module: string, message: string, data?: unknown) =>
-    console.log(format('DEBUG', module, message, data)),
-  info: (module: string, message: string, data?: unknown) =>
-    console.log(format('INFO', module, message, data)),
-  warn: (module: string, message: string, data?: unknown) =>
-    console.warn(format('WARN', module, message, data)),
-  error: (module: string, message: string, data?: unknown) =>
-    console.error(format('ERROR', module, message, data)),
-  success: (module: string, message: string, data?: unknown) =>
-    console.log(format('SUCCESS', module, message, data)),
-};
-
-export default logger;

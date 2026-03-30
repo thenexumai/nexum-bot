@@ -1,192 +1,137 @@
-import { getNextKey } from '../core/config';
-import logger from '../infra/logger';
+import { Logger } from '../infra/logger';
+import { getSoulContext } from '../soul/index';
+import { getContext, updateContext } from '../state/user-context';
+import { TOOLS, handleToolUse } from './tools';
+import { chatUnified, Message } from './router';
+import { KnowledgeGraph } from '../core/memory/knowledge_graph';
+import { Perplexer } from './perplexer';
 import db from '../core/db';
+import type { WebSearchResult } from '../tools/web/provider';
 
-interface Message { role: 'user' | 'assistant'; content: string; }
-
-interface ExecutorOptions {
-  uid: number;
-  messages: Message[];
-  systemPrompt?: string;
-  byokProvider?: string;
-  byokKey?: string;
-  onToken?: (token: string) => void;
+export interface AIResult {
+    content: string;
+    sources?: WebSearchResult[];
+    tool_used?: string | null;
 }
 
-// Get BYOK key for user
-function getByokKey(uid: number, provider: string): string | null {
-  const user = db.prepare('SELECT byok_keys FROM users WHERE uid = ?').get(uid) as
-    { byok_keys: string } | undefined;
-  if (!user) return null;
-  const keys = JSON.parse(user.byok_keys ?? '{}');
-  return keys[provider] ?? null;
-}
+/**
+ * Core AI executor.
+ *
+ * @param prompt       - User message
+ * @param uid          - Telegram user ID (optional for REST calls from agent.html)
+ * @param history      - Prior conversation messages for context (optional)
+ * @param streamCallback - Called with each streamed chunk (optional, for Telegram handler)
+ */
+export const executeAI = async (
+    prompt: string,
+    uid?: number,
+    history: { role: string; content: string }[] = [],
+    streamCallback?: (text: string) => void,
+): Promise<AIResult> => {
+    Logger.info('agent', `NEXUM Engine: Processing for UID ${uid ?? 'anonymous'}`);
 
-// ── Provider adapters ─────────────────────────────────────────────────────────
-
-async function callGroq(key: string, messages: Message[], system?: string): Promise<string> {
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: [
-        ...(system ? [{ role: 'system', content: system }] : []),
-        ...messages,
-      ],
-      max_tokens: 2048,
-    }),
-  });
-  const data = await res.json() as { choices: { message: { content: string } }[] };
-  return data.choices[0].message.content;
-}
-
-async function callGemini(key: string, messages: Message[], system?: string): Promise<string> {
-  const contents = messages.map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }],
-  }));
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: system ? { parts: [{ text: system }] } : undefined,
-        contents,
-        generationConfig: { maxOutputTokens: 2048 },
-      }),
-    }
-  );
-  const data = await res.json() as { candidates: { content: { parts: { text: string }[] } }[] };
-  return data.candidates[0].content.parts[0].text;
-}
-
-async function callDeepSeek(key: string, messages: Message[], system?: string): Promise<string> {
-  const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'deepseek-chat',
-      messages: [
-        ...(system ? [{ role: 'system', content: system }] : []),
-        ...messages,
-      ],
-      max_tokens: 2048,
-    }),
-  });
-  const data = await res.json() as { choices: { message: { content: string } }[] };
-  return data.choices[0].message.content;
-}
-
-async function callClaude(key: string, messages: Message[], system?: string): Promise<string> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-3-5-haiku-20241022',
-      max_tokens: 2048,
-      system: system ?? undefined,
-      messages,
-    }),
-  });
-  const data = await res.json() as { content: { type: string; text: string }[] };
-  return data.content.find(b => b.type === 'text')?.text ?? '';
-}
-
-async function callOpenRouter(key: string, messages: Message[], system?: string): Promise<string> {
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://nexum.ai',
-    },
-    body: JSON.stringify({
-      model: 'meta-llama/llama-3.3-70b-instruct',
-      messages: [
-        ...(system ? [{ role: 'system', content: system }] : []),
-        ...messages,
-      ],
-      max_tokens: 2048,
-    }),
-  });
-  const data = await res.json() as { choices: { message: { content: string } }[] };
-  return data.choices[0].message.content;
-}
-
-// ── Provider order and fallback ──────────────────────────────────────────────
-
-type ProviderFn = (key: string, messages: Message[], system?: string) => Promise<string>;
-
-const PROVIDERS: Array<{ name: string; fn: ProviderFn; keyGetter: () => string | null }> = [
-  { name: 'groq',       fn: callGroq,       keyGetter: () => getNextKey('groq') },
-  { name: 'gemini',     fn: callGemini,     keyGetter: () => getNextKey('gemini') },
-  { name: 'deepseek',   fn: callDeepSeek,   keyGetter: () => getNextKey('deepseek') },
-  { name: 'claude',     fn: callClaude,     keyGetter: () => getNextKey('claude') },
-  { name: 'openrouter', fn: callOpenRouter, keyGetter: () => getNextKey('openrouter') },
-];
-
-export async function executeAI(options: ExecutorOptions): Promise<string> {
-  const { uid, messages, systemPrompt, onToken } = options;
-
-  // 1. Try BYOK first
-  const byokProviders = ['claude', 'groq', 'gemini', 'deepseek', 'openrouter'];
-  for (const prov of byokProviders) {
-    const key = getByokKey(uid, prov);
-    if (key) {
-      const fn = PROVIDERS.find(p => p.name === prov)?.fn;
-      if (fn) {
+    // ── deep_search shortcut (triggered by mode=search in agent.html) ──
+    if (prompt.startsWith('[deep_search] ')) {
+        const query = prompt.slice('[deep_search] '.length).trim();
+        Logger.info('agent', `Deep search mode: ${query}`);
         try {
-          logger.debug('executor', `Using BYOK ${prov} for uid=${uid}`);
-          const result = await fn(key, messages, systemPrompt);
-          if (onToken) onToken(result);
-          return result;
+            const result = await Perplexer.deepSearch(query, uid);
+            streamCallback?.(result.answer);
+            return { content: result.answer, sources: result.sources, tool_used: 'deep_search' };
         } catch (e) {
-          logger.warn('executor', `BYOK ${prov} failed`, e);
+            Logger.error('agent', 'Perplexer failed', e);
+            // fall through to normal chat
         }
-      }
     }
-  }
 
-  // 2. Rotate through system providers
-  for (const provider of PROVIDERS) {
-    const key = provider.keyGetter();
-    if (!key) continue;
-    try {
-      logger.debug('executor', `Trying ${provider.name}`);
-      const result = await provider.fn(key, messages, systemPrompt);
-      if (onToken) onToken(result);
-      return result;
-    } catch (e) {
-      logger.warn('executor', `${provider.name} failed, trying next`, e);
+    const user = uid
+        ? db.prepare('SELECT subscription_plan, lang FROM users WHERE uid = ?').get(uid) as any
+        : null;
+
+    const userCtx = uid ? getContext(uid) : null;
+
+    // Long-term memory (only when uid is known)
+    const longTermMemory = uid
+        ? await KnowledgeGraph.getContext(uid, prompt).catch(() => '')
+        : '';
+
+    const systemPrompt = `
+${getSoulContext()}
+
+USER STATE:
+- Language: ${user?.lang || 'ru'}
+- Plan: ${user?.subscription_plan || 'free'}
+- PC Agent: ${userCtx?.pcAgentConnected ? 'ONLINE' : 'OFFLINE'}
+
+LONG-TERM MEMORY ABOUT USER:
+${longTermMemory || 'No facts recalled yet.'}
+
+MISSION: Be the ultimate personal AI. Use tools when needed.
+Always respond in the user's language (${user?.lang || 'ru'}).
+    `.trim();
+
+    // Build message array: system + history + current prompt
+    const historyMessages: Message[] = history
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+
+    let messages: Message[] = [
+        { role: 'system', content: systemPrompt },
+        ...historyMessages,
+        { role: 'user', content: prompt },
+    ];
+
+    let iterations = 0;
+    const maxIterations = 5;
+    let lastToolUsed: string | null = null;
+
+    while (iterations < maxIterations) {
+        iterations++;
+        try {
+            const assistantMessage = await chatUnified(messages, uid, TOOLS);
+            messages.push(assistantMessage);
+
+            if (assistantMessage.content) {
+                streamCallback?.(assistantMessage.content);
+            }
+
+            // No tool calls → done
+            if (!assistantMessage.tool_calls?.length) {
+                if (uid) {
+                    updateContext(uid, { lastActivity: Date.now() });
+                    KnowledgeGraph.addFact(uid, prompt + '\n' + assistantMessage.content).catch(() => {});
+                }
+                return {
+                    content: assistantMessage.content || '',
+                    tool_used: lastToolUsed,
+                };
+            }
+
+            // Execute tool calls
+            for (const toolCall of assistantMessage.tool_calls) {
+                const name = toolCall.function?.name;
+                lastToolUsed = name;
+                let args: any = {};
+                try { args = JSON.parse(toolCall.function?.arguments || '{}'); } catch { }
+
+                Logger.info('agent', `Tool call: ${name}`);
+                const result = await handleToolUse(name, args, uid);
+
+                messages.push({
+                    role: 'tool',
+                    tool_call_id: toolCall.id,
+                    name,
+                    content: String(result),
+                });
+            }
+
+        } catch (err) {
+            Logger.error('agent', `Iteration ${iterations} failed`, err);
+            if (iterations >= maxIterations) {
+                return { content: '❌ Не удалось получить ответ. Попробуй позже.' };
+            }
+        }
     }
-  }
 
-  throw new Error('All AI providers failed');
-}
-
-// ── Session helpers ──────────────────────────────────────────────────────────
-
-export function getSession(uid: number): Message[] {
-  const row = db.prepare('SELECT messages FROM sessions WHERE uid = ?').get(uid) as
-    { messages: string } | undefined;
-  return row ? JSON.parse(row.messages) : [];
-}
-
-export function addToSession(uid: number, role: 'user' | 'assistant', content: string) {
-  const messages = getSession(uid);
-  messages.push({ role, content });
-  const trimmed = messages.slice(-40); // keep last 40 messages
-  db.prepare(
-    "INSERT OR REPLACE INTO sessions (uid, messages, updated_at) VALUES (?, ?, datetime('now'))"
-  ).run(uid, JSON.stringify(trimmed));
-}
-
-export function clearSession(uid: number) {
-  db.prepare("DELETE FROM sessions WHERE uid = ?").run(uid);
-}
+    return { content: '✅ Задача выполнена.' };
+};

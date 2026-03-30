@@ -1,148 +1,290 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>NEXUM</title>
 <link rel="stylesheet" href="/shared/design-system.css">
 <style>
-  .hero {
-    text-align: center; padding: 32px 0 24px;
+  .hub-hero {
+    text-align: center;
+    padding: 32px 0 20px;
   }
-  .hero-logo {
-    width: 72px; height: 72px; border-radius: 20px;
-    background: linear-gradient(135deg, var(--accent) 0%, #9c55ff 100%);
+  .hub-logo {
+    width: 76px; height: 76px;
+    border-radius: 22px;
+    background: linear-gradient(135deg, #6c63ff 0%, #9c55ff 100%);
     display: flex; align-items: center; justify-content: center;
-    font-size: 2rem; margin: 0 auto 16px;
-    box-shadow: 0 8px 32px rgba(108,99,255,.4);
+    font-size: 2.2rem; margin: 0 auto 14px;
+    box-shadow: 0 8px 32px rgba(108,99,255,.45);
   }
-  .hero h1 { font-size: 1.8rem; letter-spacing: -.03em; }
-  .hero p   { color: var(--text2); font-size: .9rem; margin-top: 6px; }
+  .hub-title { font-size: 1.9rem; font-weight: 800; letter-spacing: -.03em; }
+  .hub-sub   { color: var(--text2); font-size: .88rem; margin-top: 5px; }
 
-  .apps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
-  .app-icon {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 18px 10px 14px;
-    text-align: center; cursor: pointer; text-decoration: none;
-    transition: all .15s; display: block;
-  }
-  .app-icon:hover { border-color: var(--accent); background: var(--surface2); transform: translateY(-2px); }
-  .app-icon-emoji { font-size: 1.8rem; display: block; margin-bottom: 6px; }
-  .app-icon-label { font-size: .75rem; font-weight: 600; color: var(--text2); }
-
+  /* Plan card */
   .plan-card {
-    background: linear-gradient(135deg, var(--accent-dim) 0%, rgba(156,85,255,.1) 100%);
-    border: 1px solid rgba(108,99,255,.3);
-    border-radius: var(--radius-lg); padding: 20px;
+    background: linear-gradient(135deg, rgba(108,99,255,.12), rgba(156,85,255,.08));
+    border: 1px solid rgba(108,99,255,.25);
+    border-radius: var(--radius-lg);
+    padding: 16px 18px;
     margin-bottom: 20px;
+    display: flex; justify-content: space-between; align-items: center;
   }
-  .plan-row { display: flex; justify-content: space-between; align-items: center; }
-  .plan-name { font-weight: 700; font-size: 1.1rem; }
-  .plan-limits { font-size: .8rem; color: var(--text2); margin-top: 8px; }
+  .plan-info { display: flex; flex-direction: column; gap: 3px; }
+  .plan-name { font-weight: 700; font-size: 1rem; }
+  .plan-usage{ font-size: .78rem; color: var(--text2); }
+  .plan-badge {
+    background: var(--accent); color: #fff;
+    font-size: .72rem; font-weight: 700;
+    padding: 4px 10px; border-radius: 20px;
+    letter-spacing: .03em;
+  }
+  .plan-badge.free   { background: var(--surface2); color: var(--text2); }
+  .plan-badge.middle { background: var(--yellow); color: #000; }
+  .plan-badge.pro    { background: linear-gradient(90deg,#6c63ff,#9c55ff); }
 
-  .usage-bar { height: 6px; background: var(--border); border-radius: 3px; margin-top: 10px; }
-  .usage-fill { height: 100%; border-radius: 3px; background: var(--accent); transition: width .3s; }
+  /* Usage bar */
+  .usage-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 8px; }
+  .usage-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .4s; }
+
+  /* App grid */
+  .section-label {
+    font-size: .72rem; font-weight: 700; color: var(--text3);
+    text-transform: uppercase; letter-spacing: .08em;
+    margin: 0 0 10px;
+  }
+  .apps-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+  .app-tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 8px 12px;
+    text-align: center;
+    cursor: pointer;
+    text-decoration: none;
+    transition: border-color .15s, transform .15s, background .15s;
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+  }
+  .app-tile:hover, .app-tile:active {
+    border-color: var(--accent);
+    background: var(--surface2);
+    transform: translateY(-2px);
+  }
+  .app-tile-icon { font-size: 1.7rem; line-height: 1; }
+  .app-tile-name { font-size: .73rem; font-weight: 600; color: var(--text2); line-height: 1.2; }
+  .app-tile-count {
+    font-size: .65rem; font-weight: 700;
+    background: var(--accent-dim); color: var(--accent);
+    padding: 2px 7px; border-radius: 10px; min-width: 20px;
+  }
+
+  /* Status row */
+  .status-row {
+    display: flex; gap: 10px; margin-bottom: 20px;
+  }
+  .status-card {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    text-align: center;
+  }
+  .status-card-icon { font-size: 1.4rem; margin-bottom: 4px; }
+  .status-card-label { font-size: .7rem; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .status-card-value { font-size: 1rem; font-weight: 700; color: var(--text); margin-top: 2px; }
+
+  /* Quick action */
+  .quick-send {
+    display: flex; gap: 8px; margin-bottom: 24px;
+  }
+  .quick-input {
+    flex: 1; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px 14px;
+    color: var(--text); font-size: .9rem; font-family: var(--font);
+    outline: none; transition: border-color .15s;
+  }
+  .quick-input:focus { border-color: var(--accent); }
+  .quick-input::placeholder { color: var(--text3); }
+  .quick-btn {
+    background: var(--accent); color: #fff; border: none;
+    border-radius: var(--radius); padding: 0 18px;
+    font-size: 1.1rem; cursor: pointer; flex-shrink: 0;
+    transition: opacity .15s;
+  }
+  .quick-btn:active { opacity: .8; }
+
+  .skeleton {
+    background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.2s infinite;
+    border-radius: 6px;
+    height: 14px;
+  }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+  .tg-tip {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    font-size: .83rem;
+    color: var(--text2);
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+  .tg-tip strong { color: var(--text); }
 </style>
 </head>
 <body>
-<div class="page" style="padding-bottom:24px">
+<div class="page" id="app" style="padding-bottom:24px">
+
   <!-- Hero -->
-  <div class="hero">
-    <div class="hero-logo">⚡</div>
-    <h1>NEXUM</h1>
-    <p>Your AI-powered life assistant</p>
+  <div class="hub-hero">
+    <div class="hub-logo">⚡</div>
+    <div class="hub-title">NEXUM</div>
+    <div class="hub-sub" id="greeting">Загрузка...</div>
   </div>
 
-  <!-- Plan Card -->
-  <div class="plan-card" id="planCard">
-    <div class="plan-row">
-      <div>
-        <div class="plan-label" style="font-size:.75rem;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Current Plan</div>
-        <div class="plan-name" id="planName">Free</div>
-      </div>
-      <span class="badge badge-accent" id="planBadge">FREE</span>
+  <!-- Plan card -->
+  <div class="plan-card">
+    <div class="plan-info">
+      <div class="plan-name" id="planName">—</div>
+      <div class="plan-usage" id="planUsage">— / — сообщений сегодня</div>
+      <div class="usage-bar"><div class="usage-fill" id="usageBar" style="width:0%"></div></div>
     </div>
-    <div class="plan-limits" id="planLimits">Loading...</div>
-    <div class="usage-bar">
-      <div class="usage-fill" id="usageFill" style="width:0%"></div>
+    <div class="plan-badge free" id="planBadge">FREE</div>
+  </div>
+
+  <!-- Status row -->
+  <div class="status-row">
+    <div class="status-card">
+      <div class="status-card-icon">🖥</div>
+      <div class="status-card-label">PC Agent</div>
+      <div class="status-card-value" id="pcStatus">—</div>
+    </div>
+    <div class="status-card">
+      <div class="status-card-icon">🧠</div>
+      <div class="status-card-label">Память</div>
+      <div class="status-card-value" id="memCount">—</div>
+    </div>
+    <div class="status-card">
+      <div class="status-card-icon">✅</div>
+      <div class="status-card-label">Задачи</div>
+      <div class="status-card-value" id="taskCount">—</div>
     </div>
   </div>
 
-  <!-- Apps -->
-  <div style="font-size:.75rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Mini Apps</div>
+  <!-- Apps grid -->
+  <div class="section-label">Приложения</div>
   <div class="apps-grid" id="appsGrid">
-    <a class="app-icon" href="/finance.html?uid=UID">
-      <span class="app-icon-emoji">💰</span>
-      <span class="app-icon-label">Finance</span>
-    </a>
-    <a class="app-icon" href="/tasks.html?uid=UID">
-      <span class="app-icon-emoji">✅</span>
-      <span class="app-icon-label">Tasks</span>
-    </a>
-    <a class="app-icon" href="/notes.html?uid=UID">
-      <span class="app-icon-emoji">📝</span>
-      <span class="app-icon-label">Notes</span>
-    </a>
-    <a class="app-icon" href="/calendar.html?uid=UID">
-      <span class="app-icon-emoji">📅</span>
-      <span class="app-icon-label">Calendar</span>
-    </a>
-    <a class="app-icon" href="/habits.html?uid=UID">
-      <span class="app-icon-emoji">🔥</span>
-      <span class="app-icon-label">Habits</span>
-    </a>
-    <a class="app-icon" href="/contacts.html?uid=UID">
-      <span class="app-icon-emoji">👥</span>
-      <span class="app-icon-label">Contacts</span>
-    </a>
-    <a class="app-icon" href="/agent.html?uid=UID">
-      <span class="app-icon-emoji">🖥</span>
-      <span class="app-icon-label">PC Agent</span>
-    </a>
-    <a class="app-icon" href="/settings.html?uid=UID">
-      <span class="app-icon-emoji">⚙️</span>
-      <span class="app-icon-label">Settings</span>
-    </a>
+    <a class="app-tile" id="tile-tasks"    href="tasks.html">   <span class="app-tile-icon">✅</span><span class="app-tile-name">Задачи</span>   <span class="app-tile-count" id="cnt-tasks">…</span></a>
+    <a class="app-tile" id="tile-finance"  href="finance.html"> <span class="app-tile-icon">💰</span><span class="app-tile-name">Финансы</span>  <span class="app-tile-count" id="cnt-finance">…</span></a>
+    <a class="app-tile" id="tile-notes"    href="notes.html">   <span class="app-tile-icon">📝</span><span class="app-tile-name">Заметки</span>  <span class="app-tile-count" id="cnt-notes">…</span></a>
+    <a class="app-tile" id="tile-calendar" href="calendar.html"><span class="app-tile-icon">📅</span><span class="app-tile-name">Календарь</span><span class="app-tile-count" id="cnt-cal">…</span></a>
+    <a class="app-tile" id="tile-habits"   href="habits.html">  <span class="app-tile-icon">💪</span><span class="app-tile-name">Привычки</span> <span class="app-tile-count" id="cnt-habits">…</span></a>
+    <a class="app-tile" id="tile-contacts" href="contacts.html"><span class="app-tile-icon">📇</span><span class="app-tile-name">Контакты</span> <span class="app-tile-count" id="cnt-contacts">…</span></a>
+    <a class="app-tile" id="tile-agent"    href="agent.html">   <span class="app-tile-icon">🤖</span><span class="app-tile-name">AI Агент</span> <span class="app-tile-count">NEW</span></a>
+    <a class="app-tile" id="tile-browser"  href="browser.html"> <span class="app-tile-icon">🌐</span><span class="app-tile-name">Браузер</span>  <span class="app-tile-count">BETA</span></a>
+    <a class="app-tile" id="tile-settings" href="settings.html"><span class="app-tile-icon">⚙️</span><span class="app-tile-name">Настройки</span><span class="app-tile-count">—</span></a>
   </div>
 
-  <!-- Quick stats -->
-  <div style="font-size:.75rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Quick Stats</div>
-  <div class="stat-grid" id="quickStats">
-    <div class="stat-card"><div class="stat-label">Messages Today</div><div class="stat-value" id="msgCount">—</div></div>
-    <div class="stat-card"><div class="stat-label">Tasks Done</div><div class="stat-value amount-positive" id="tasksDone">—</div></div>
+  <!-- Tip -->
+  <div class="tg-tip">
+    💡 <strong>Совет:</strong> Напиши боту в Telegram и NEXUM автоматически добавит задачи, расходы и заметки — просто обычным текстом.
   </div>
+
 </div>
+
+<div class="toast" id="toast"></div>
 
 <script>
 const uid = new URLSearchParams(location.search).get('uid') || 0;
+const API = '/api';
+const PLAN_LABELS = { free: 'FREE', middle: 'MIDDLE', pro: 'PRO' };
+const PLAN_LIMITS = { free: 50, middle: 200, pro: 9999 };
 
-// Fix all UID placeholders
-document.querySelectorAll('a[href*="UID"]').forEach(a => {
-  a.href = a.href.replace('UID', uid);
-});
-
-async function loadStatus() {
-  try {
-    const data = await fetch(`/api/status?uid=${uid}`).then(r=>r.json());
-    document.getElementById('planName').textContent = (data.plan||'Free').toUpperCase().replace('MIDDLE','Standard');
-    document.getElementById('planBadge').textContent = (data.plan||'free').toUpperCase();
-    document.getElementById('planLimits').textContent = `${data.messagesUsedToday||0} / ${data.dailyLimit||70} messages today`;
-    const pct = data.dailyLimit ? Math.round((data.messagesUsedToday||0)/data.dailyLimit*100) : 0;
-    document.getElementById('usageFill').style.width = Math.min(pct,100)+'%';
-    document.getElementById('msgCount').textContent = data.messagesUsedToday || 0;
-  } catch {}
+// Append uid to all app links
+if (uid) {
+  document.querySelectorAll('.app-tile[href]').forEach(a => {
+    a.href = a.getAttribute('href') + '?uid=' + uid;
+  });
 }
 
-async function loadStats() {
+async function load() {
+  if (!uid) {
+    document.getElementById('greeting').textContent = 'Открой через Telegram бота';
+    return;
+  }
+
   try {
-    const tasks = await fetch(`/api/tasks?uid=${uid}`).then(r=>r.json());
-    const done = tasks.filter(t=>t.status==='done').length;
-    document.getElementById('tasksDone').textContent = done;
-  } catch {}
+    // Load user info
+    const user = await fetch(`${API}/me?uid=${uid}`).then(r => r.ok ? r.json() : null);
+    if (user) {
+      const plan  = user.subscription_plan || 'free';
+      const limit = PLAN_LIMITS[plan] || 50;
+      const used  = user.msg_count_today || 0;
+      const pct   = Math.min(100, Math.round(used / limit * 100));
+
+      document.getElementById('greeting').textContent =
+        `Привет, ${user.first_name || 'друг'}! 👋`;
+      document.getElementById('planName').textContent =
+        `${plan === 'pro' ? '💎' : plan === 'middle' ? '⚡' : '🆓'} ${plan.charAt(0).toUpperCase() + plan.slice(1)} план`;
+      document.getElementById('planUsage').textContent =
+        `${used} / ${limit === 9999 ? '∞' : limit} сообщений сегодня`;
+      document.getElementById('usageBar').style.width = pct + '%';
+
+      const badge = document.getElementById('planBadge');
+      badge.textContent = PLAN_LABELS[plan] || 'FREE';
+      badge.className   = `plan-badge ${plan}`;
+    }
+
+    // Load counts in parallel
+    const [tasks, finance, notes, habits, contacts, calendar] = await Promise.all([
+      fetch(`${API}/tasks?uid=${uid}`).then(r => r.json()).catch(() => []),
+      fetch(`${API}/finance?uid=${uid}`).then(r => r.json()).catch(() => []),
+      fetch(`${API}/notes?uid=${uid}`).then(r => r.json()).catch(() => []),
+      fetch(`${API}/habits?uid=${uid}`).then(r => r.json()).catch(() => []),
+      fetch(`${API}/contacts?uid=${uid}`).then(r => r.json()).catch(() => []),
+      fetch(`${API}/calendar?uid=${uid}`).then(r => r.json()).catch(() => []),
+    ]);
+
+    const activeTasks = tasks.filter(t => t.status !== 'done').length;
+    document.getElementById('cnt-tasks').textContent    = activeTasks || tasks.length;
+    document.getElementById('cnt-finance').textContent  = finance.length;
+    document.getElementById('cnt-notes').textContent    = notes.length;
+    document.getElementById('cnt-habits').textContent   = habits.filter(h => h.done_today).length + '/' + habits.length;
+    document.getElementById('cnt-contacts').textContent = contacts.length;
+    document.getElementById('cnt-cal').textContent      = calendar.length;
+
+    // Status cards
+    document.getElementById('taskCount').textContent = activeTasks + ' активных';
+    document.getElementById('memCount').textContent  = '—';
+    document.getElementById('pcStatus').textContent  = '—';
+
+  } catch(e) {
+    document.getElementById('greeting').textContent = 'Ошибка загрузки';
+  }
 }
 
-loadStatus();
-loadStats();
+function showToast(msg, ms=2200) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), ms);
+}
+
+// Telegram WebApp init
+if (window.Telegram?.WebApp) {
+  window.Telegram.WebApp.ready();
+  window.Telegram.WebApp.expand();
+}
+
+load();
 </script>
 </body>
 </html>

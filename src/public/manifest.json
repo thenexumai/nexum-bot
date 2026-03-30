@@ -1,0 +1,17 @@
+{
+  "name": "NEXUM Ecosystem",
+  "short_name": "NEXUM",
+  "description": "Revolutionary Self-Improving AI Platform",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#050507",
+  "theme_color": "#6c63ff",
+  "icons": [
+    {
+      "src": "/NEXUM LOGO.PNG",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

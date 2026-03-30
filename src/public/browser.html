@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NEXUM Browser — Ecosystem Hub</title>
+<link rel="stylesheet" href="/shared/design-system.css">
+<style>
+  body { background: #050507; color: #fff; overflow: hidden; }
+  .nexus-layout { display: grid; grid-template-columns: 1fr 350px; height: 100vh; }
+  .browser-viewport { display: flex; flex-direction: column; background: #000; border-right: 1px solid #1a1d27; }
+  .ai-sidebar { background: #0a0a0f; display: flex; flex-direction: column; }
+  
+  .address-bar { background: #13131a; padding: 12px 20px; display: flex; gap: 12px; align-items: center; }
+  .url-input { flex: 1; background: #1c1c26; border: 1px solid #2a2a38; border-radius: 8px; color: #fff; padding: 8px 16px; outline: none; }
+  
+  .live-stream { flex: 1; position: relative; overflow: auto; display: flex; justify-content: center; background: #000; }
+  .live-image { max-width: 100%; height: auto; cursor: crosshair; box-shadow: 0 0 40px rgba(108,99,255,0.1); }
+  
+  .sidebar-chat { flex: 1; overflow-y: auto; padding: 20px; font-size: 0.9rem; }
+  .chat-input-area { padding: 20px; background: #13131a; border-top: 1px solid #1a1d27; }
+  .chat-box { width: 100%; background: #1c1c26; border: 1px solid #2a2a38; border-radius: 12px; padding: 12px; color: #fff; resize: none; min-height: 80px; outline: none; }
+  
+  .status-indicator { display: flex; align-items: center; gap: 8px; font-size: 0.7rem; color: #9395a5; }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: #22d3a5; box-shadow: 0 0 10px #22d3a5; }
+</style>
+</head>
+<body>
+
+<div class="nexus-layout">
+  <!-- LEFT: Browser Viewport -->
+  <div class="browser-viewport">
+    <div class="address-bar">
+      <div class="logo-dot">N</div>
+      <input class="url-input" id="urlInput" placeholder="Enter URL or ask AI to find something..." onkeydown="if(event.key==='Enter')navigate()">
+      <div class="status-indicator">
+        <div class="pulse"></div>
+        <span>AGENT LINKED</span>
+      </div>
+    </div>
+    
+    <div class="live-stream" id="viewport">
+      <img id="screen" class="live-image" src="" style="display:none">
+      <div id="loader" style="margin-top: 200px; color: #5c5f72;">NEXUM Browser Engine Standby...</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: AI Intelligence -->
+  <div class="ai-sidebar">
+    <div style="padding: 16px; border-bottom: 1px solid #1a1d27;">
+      <h2 style="font-size: 1rem; letter-spacing: 1px;">INTELLIGENCE</h2>
+    </div>
+    
+    <div class="sidebar-chat" id="chat">
+      <div style="color: #9395a5; font-style: italic;">Welcome to NEXUM Browser. I can analyze pages, extract data, and perform actions for you.</div>
+    </div>
+
+    <div class="chat-input-area">
+      <textarea class="chat-box" id="aiInput" placeholder="Ask anything about this page..."></textarea>
+      <button class="btn btn-primary" style="width: 100%; margin-top: 10px;" onclick="askAI()">Execute AI Reasoning</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const uid = 387182659;
+let currentUrl = '';
+
+async function navigate() {
+    const url = document.getElementById('urlInput').value;
+    if(!url) return;
+    
+    document.getElementById('loader').innerText = 'Establishing secure AI tunnel...';
+    
+    const res = await fetch(`/api/pc/command`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid, type: 'browser_navigate', payload: { url } })
+    }).then(r => r.json());
+
+    if(res.ok) {
+        currentUrl = url;
+        refreshView();
+    }
+}
+
+async function refreshView() {
+    const res = await fetch(`/api/pc/command`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid, type: 'browser_screenshot', payload: {} })
+    }).then(r => r.json());
+
+    if(res.data) {
+        document.getElementById('loader').style.display = 'none';
+        const img = document.getElementById('screen');
+        img.src = `data:image/png;base64,${res.data}`;
+        img.style.display = 'block';
+    }
+}
+
+async function askAI() {
+    const prompt = document.getElementById('aiInput').value;
+    if(!prompt) return;
+    
+    const chat = document.getElementById('chat');
+    chat.innerHTML += `<div style="margin-top:15px; font-weight:bold;">User: ${prompt}</div>`;
+    document.getElementById('aiInput').value = '';
+
+    // Вызов AI через наш Unified Engine
+    chat.innerHTML += `<div id="thinking" style="color: #6c63ff; margin-top:5px;">NEXUM is thinking...</div>`;
+    
+    // В реальности тут будет fetch к /api/ai/execute
+}
+
+// Auto-refresh every 5 seconds if active
+setInterval(() => {
+    if(currentUrl) refreshView();
+}, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "appId": "ai.nexum.app",
+  "appName": "NEXUM",
+  "webDir": "../../portal/dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}

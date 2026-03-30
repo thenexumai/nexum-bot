@@ -1,175 +1,220 @@
 import Database from 'better-sqlite3';
-import fs from 'fs';
+import { Logger } from '../infra/logger';
 import path from 'path';
-import { config } from './config';
-import logger from '../infra/logger';
+import fs from 'fs';
 
-const dbDir = path.dirname(config.dbPath);
-if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+// Ensure data directory exists
+const dataDir = path.join(process.cwd(), 'data');
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
-export const db = new Database(config.dbPath);
+const dbPath = process.env.DB_PATH || path.join(dataDir, 'nexum.db');
+const db = new Database(dbPath);
+
+// WAL mode for better concurrent reads
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
-export function initDb() {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      uid               INTEGER PRIMARY KEY,
-      username          TEXT,
-      first_name        TEXT,
-      subscription_plan TEXT NOT NULL DEFAULT 'free',
-      subscription_expires_at TEXT,
-      lang              TEXT NOT NULL DEFAULT 'ru',
-      byok_keys         TEXT DEFAULT '{}',
-      msg_count_today   INTEGER DEFAULT 0,
-      msg_date          TEXT,
-      created_at        TEXT DEFAULT (datetime('now'))
-    );
+export const initDB = () => {
+    Logger.info('db', `Opening database: ${dbPath}`);
 
-    CREATE TABLE IF NOT EXISTS finance (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      uid        INTEGER NOT NULL,
-      type       TEXT NOT NULL CHECK(type IN ('income','expense')),
-      amount     REAL NOT NULL,
-      currency   TEXT DEFAULT 'UZS',
-      category   TEXT DEFAULT 'other',
-      note       TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS users (
+            uid                   INTEGER PRIMARY KEY,
+            username              TEXT,
+            first_name            TEXT,
+            subscription_plan     TEXT    DEFAULT 'free',
+            subscription_expires_at DATETIME,
+            lang                  TEXT    DEFAULT 'ru',
+            msg_count_today       INTEGER DEFAULT 0,
+            msg_date              TEXT    DEFAULT '',
+            created_at            DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
 
-    CREATE TABLE IF NOT EXISTS tasks (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      uid         INTEGER NOT NULL,
-      title       TEXT NOT NULL,
-      description TEXT,
-      status      TEXT DEFAULT 'todo' CHECK(status IN ('todo','in_progress','done')),
-      priority    TEXT DEFAULT 'medium' CHECK(priority IN ('low','medium','high')),
-      due_date    TEXT,
-      created_at  TEXT DEFAULT (datetime('now'))
-    );
+        CREATE TABLE IF NOT EXISTS finance (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid        INTEGER NOT NULL,
+            type       TEXT NOT NULL CHECK(type IN ('income','expense')),
+            amount     REAL NOT NULL,
+            currency   TEXT DEFAULT 'USD',
+            category   TEXT DEFAULT 'other',
+            note       TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (uid) REFERENCES users(uid)
+        );
 
-    CREATE TABLE IF NOT EXISTS notes (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      uid        INTEGER NOT NULL,
-      title      TEXT,
-      content    TEXT NOT NULL,
-      tags       TEXT DEFAULT '[]',
-      pinned     INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
+        CREATE TABLE IF NOT EXISTS tasks (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid         INTEGER NOT NULL,
+            title       TEXT NOT NULL,
+            description TEXT,
+            status      TEXT DEFAULT 'todo',
+            priority    TEXT DEFAULT 'medium',
+            due_date    DATETIME,
+            updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (uid) REFERENCES users(uid)
+        );
 
-    CREATE TABLE IF NOT EXISTS calendar_events (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      uid        INTEGER NOT NULL,
-      title      TEXT NOT NULL,
-      start_time TEXT NOT NULL,
-      end_time   TEXT,
-      all_day    INTEGER DEFAULT 0,
-      notes      TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
+        CREATE TABLE IF NOT EXISTS notes (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid        INTEGER NOT NULL,
+            title      TEXT,
+            content    TEXT,
+            tags       TEXT,
+            pinned     INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (uid) REFERENCES users(uid)
+        );
 
-    CREATE TABLE IF NOT EXISTS contacts (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      uid        INTEGER NOT NULL,
-      name       TEXT NOT NULL,
-      phone      TEXT,
-      email      TEXT,
-      company    TEXT,
-      notes      TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
+        CREATE TABLE IF NOT EXISTS calendar (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid        INTEGER NOT NULL,
+            title      TEXT NOT NULL,
+            start      DATETIME NOT NULL,
+            end        DATETIME,
+            all_day    INTEGER DEFAULT 0,
+            color      TEXT DEFAULT '#6c63ff',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (uid) REFERENCES users(uid)
+        );
 
-    CREATE TABLE IF NOT EXISTS habits (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      uid         INTEGER NOT NULL,
-      name        TEXT NOT NULL,
-      frequency   TEXT DEFAULT 'daily',
-      streak      INTEGER DEFAULT 0,
-      best_streak INTEGER DEFAULT 0,
-      last_check  TEXT,
-      created_at  TEXT DEFAULT (datetime('now'))
-    );
+        CREATE TABLE IF NOT EXISTS contacts (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid        INTEGER NOT NULL,
+            name       TEXT NOT NULL,
+            phone      TEXT,
+            email      TEXT,
+            company    TEXT,
+            notes      TEXT,
+            avatar     TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (uid) REFERENCES users(uid)
+        );
 
-    CREATE TABLE IF NOT EXISTS reminders (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      chat_id    INTEGER NOT NULL,
-      text       TEXT NOT NULL,
-      fire_at    TEXT NOT NULL,
-      done       INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
+        CREATE TABLE IF NOT EXISTS habits (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid          INTEGER NOT NULL,
+            name         TEXT NOT NULL,
+            icon         TEXT DEFAULT '✅',
+            frequency    TEXT DEFAULT 'daily',
+            streak       INTEGER DEFAULT 0,
+            best_streak  INTEGER DEFAULT 0,
+            last_done    TEXT DEFAULT '',
+            created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (uid) REFERENCES users(uid)
+        );
 
-    CREATE TABLE IF NOT EXISTS memory (
-      uid        INTEGER NOT NULL,
-      key        TEXT NOT NULL,
-      value      TEXT NOT NULL,
-      updated_at TEXT DEFAULT (datetime('now')),
-      PRIMARY KEY (uid, key)
-    );
+        CREATE TABLE IF NOT EXISTS habit_logs (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            habit_id   INTEGER NOT NULL,
+            uid        INTEGER NOT NULL,
+            done_date  TEXT NOT NULL,
+            UNIQUE(habit_id, done_date)
+        );
 
-    CREATE TABLE IF NOT EXISTS sessions (
-      uid        INTEGER PRIMARY KEY,
-      messages   TEXT DEFAULT '[]',
-      updated_at TEXT DEFAULT (datetime('now'))
-    );
+        CREATE TABLE IF NOT EXISTS reminders (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id    INTEGER NOT NULL,
+            uid        INTEGER,
+            text       TEXT NOT NULL,
+            fire_at    DATETIME NOT NULL,
+            done       INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
 
-    CREATE TABLE IF NOT EXISTS audit_log (
-      id        INTEGER PRIMARY KEY AUTOINCREMENT,
-      uid       INTEGER,
-      action    TEXT NOT NULL,
-      details   TEXT,
-      timestamp TEXT DEFAULT (datetime('now'))
-    );
+        CREATE TABLE IF NOT EXISTS memory (
+            uid        INTEGER NOT NULL,
+            key        TEXT NOT NULL,
+            value      TEXT,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (uid, key),
+            FOREIGN KEY (uid) REFERENCES users(uid)
+        );
 
-    CREATE TABLE IF NOT EXISTS evolution_fixes (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      error_hash  TEXT UNIQUE,
-      error_msg   TEXT,
-      file_path   TEXT,
-      line_num    INTEGER,
-      diff_patch  TEXT,
-      explanation TEXT,
-      status      TEXT DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),
-      created_at  TEXT DEFAULT (datetime('now')),
-      resolved_at TEXT
-    );
+        CREATE TABLE IF NOT EXISTS sessions (
+            uid        INTEGER PRIMARY KEY,
+            messages   TEXT NOT NULL DEFAULT '[]',
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
 
-    CREATE TABLE IF NOT EXISTS pc_links (
-      uid       INTEGER PRIMARY KEY,
-      code      TEXT UNIQUE,
-      connected INTEGER DEFAULT 0,
-      agent_info TEXT,
-      linked_at TEXT DEFAULT (datetime('now'))
-    );
-  `);
+        CREATE TABLE IF NOT EXISTS byok_keys (
+            uid        INTEGER NOT NULL,
+            provider   TEXT NOT NULL,
+            key        TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (uid, provider)
+        );
 
-  logger.success('db', `Database initialised at ${config.dbPath}`);
-}
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid        INTEGER,
+            action     TEXT NOT NULL,
+            details    TEXT,
+            timestamp  DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+        CREATE TABLE IF NOT EXISTS evolution_errors (
+            id          TEXT PRIMARY KEY,
+            source      TEXT NOT NULL,
+            message     TEXT NOT NULL,
+            stack       TEXT,
+            context     TEXT,
+            occurrences INTEGER DEFAULT 1,
+            first_seen  TEXT DEFAULT (datetime('now')),
+            last_seen   TEXT DEFAULT (datetime('now')),
+            resolved    INTEGER DEFAULT 0
+        );
 
-export function getOrCreateUser(uid: number, username?: string, firstName?: string) {
-  const existing = db.prepare('SELECT * FROM users WHERE uid = ?').get(uid);
-  if (existing) return existing as Record<string, unknown>;
-  db.prepare(
-    'INSERT INTO users (uid, username, first_name) VALUES (?, ?, ?)'
-  ).run(uid, username ?? null, firstName ?? null);
-  return db.prepare('SELECT * FROM users WHERE uid = ?').get(uid) as Record<string, unknown>;
-}
+        CREATE TABLE IF NOT EXISTS evolution_fixes (
+            id            TEXT PRIMARY KEY,
+            error_id      TEXT NOT NULL,
+            analysis      TEXT NOT NULL,
+            suggested_fix TEXT NOT NULL,
+            file_path     TEXT,
+            line_numbers  TEXT,
+            status        TEXT DEFAULT 'pending',
+            created_at    TEXT DEFAULT (datetime('now')),
+            updated_at    TEXT DEFAULT (datetime('now'))
+        );
+    `);
 
-export function incrementMsgCount(uid: number): number {
-  const today = new Date().toISOString().slice(0, 10);
-  const user = db.prepare('SELECT msg_count_today, msg_date FROM users WHERE uid = ?').get(uid) as
-    { msg_count_today: number; msg_date: string } | undefined;
-  if (!user) return 0;
-  if (user.msg_date !== today) {
-    db.prepare('UPDATE users SET msg_count_today = 1, msg_date = ? WHERE uid = ?').run(today, uid);
-    return 1;
-  }
-  const newCount = user.msg_count_today + 1;
-  db.prepare('UPDATE users SET msg_count_today = ? WHERE uid = ?').run(newCount, uid);
-  return newCount;
-}
+    Logger.success('db', 'Database initialized ✅');
+};
+
+// ============================================================
+//  USER HELPERS
+// ============================================================
+
+export const getOrCreateUser = (
+    uid: number,
+    username?: string,
+    firstName?: string
+): any => {
+    let user = db.prepare('SELECT * FROM users WHERE uid = ?').get(uid) as any;
+    if (!user) {
+        db.prepare(`
+            INSERT OR IGNORE INTO users (uid, username, first_name, msg_count_today, msg_date)
+            VALUES (?, ?, ?, 0, '')
+        `).run(uid, username || '', firstName || '');
+        user = db.prepare('SELECT * FROM users WHERE uid = ?').get(uid) as any;
+    }
+    return user;
+};
+
+export const incrementMsgCount = (uid: number): number => {
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const user = db.prepare('SELECT msg_count_today, msg_date FROM users WHERE uid = ?').get(uid) as any;
+
+    if (!user) return 0;
+
+    // Reset counter if it's a new day
+    if (user.msg_date !== today) {
+        db.prepare('UPDATE users SET msg_count_today = 1, msg_date = ? WHERE uid = ?').run(today, uid);
+        return 1;
+    }
+
+    db.prepare('UPDATE users SET msg_count_today = msg_count_today + 1 WHERE uid = ?').run(uid);
+    return (user.msg_count_today || 0) + 1;
+};
 
 export default db;

@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>NEXUM Browser</title>
+<style>
+/* ══ DARK THEME ══ */
+[data-theme="dark"] {
+  --bg:        #0a0a0f;
+  --bg2:       #0d0d14;
+  --surface:   #111118;
+  --surface2:  #16161e;
+  --border:    #1e1e2c;
+  --border2:   #28283a;
+  --text:      #e8e9f0;
+  --text2:     #8a8b9e;
+  --text3:     #52536a;
+  --input-bg:  #14141c;
+  --tab-bg:    #0a0a10;
+  --tab-act:   #111118;
+  --sidebar:   #0c0c13;
+  --hover:     rgba(255,255,255,.04);
+  --shadow:    0 2px 20px rgba(0,0,0,.5);
+  --logo-filter: invert(1) brightness(2);
+  --new-tab-bg: #0a0a0f;
+  --card-bg:   #111118;
+  --card-border:#1e1e2c;
+}
+/* ══ LIGHT THEME ══ */
+[data-theme="light"] {
+  --bg:        #f2f2f6;
+  --bg2:       #eaeaef;
+  --surface:   #ffffff;
+  --surface2:  #f7f7fa;
+  --border:    #e0e0ea;
+  --border2:   #ccccda;
+  --text:      #0e0e18;
+  --text2:     #55556e;
+  --text3:     #9090a8;
+  --input-bg:  #f8f8fc;
+  --tab-bg:    #e6e6ee;
+  --tab-act:   #ffffff;
+  --sidebar:   #f0f0f6;
+  --hover:     rgba(0,0,0,.04);
+  --shadow:    0 2px 20px rgba(0,0,0,.1);
+  --logo-filter: invert(0) brightness(.1);
+  --new-tab-bg: #f2f2f6;
+  --card-bg:   #ffffff;
+  --card-border:#e0e0ea;
+}
+:root {
+  --accent:    #6c63ff;
+  --accent-h:  #5a52ee;
+  --accent-dim:rgba(108,99,255,.12);
+  --green:     #22d3a5;
+  --red:       #ff5a7e;
+  --yellow:    #f5c842;
+}
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+html,body { height:100%; overflow:hidden; font-family:-apple-system,'SF Pro Display','Segoe UI',sans-serif; background:var(--bg); color:var(--text); user-select:none; }
+
+/* ══ LAYOUT ══ */
+.app { display:flex; flex-direction:column; height:100vh; }
+.titlebar { height:40px; background:var(--bg2); -webkit-app-region:drag; display:flex; align-items:center; padding-left:80px; border-bottom:1px solid var(--border); flex-shrink:0; position:relative; }
+.titlebar-center { position:absolute; left:50%; transform:translateX(-50%); font-size:.72rem; font-weight:600; letter-spacing:.12em; color:var(--text3); text-transform:uppercase; }
+.titlebar-right { margin-left:auto; display:flex; align-items:center; gap:6px; padding-right:14px; -webkit-app-region:no-drag; }
+.theme-btn { background:none; border:1px solid var(--border); border-radius:6px; color:var(--text2); padding:3px 10px; font-size:.72rem; cursor:pointer; transition:all .15s; }
+.theme-btn:hover { border-color:var(--accent); color:var(--accent); }
+.conn-dot { width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 6px var(--green); }
+.conn-dot.off { background:var(--text3); box-shadow:none; }
+
+/* ══ TABS ══ */
+.tabbar { height:38px; background:var(--tab-bg); display:flex; align-items:flex-end; padding:0 6px; border-bottom:1px solid var(--border); flex-shrink:0; gap:2px; -webkit-app-region:drag; overflow:hidden; }
+.tab { display:flex; align-items:center; gap:6px; min-width:120px; max-width:220px; height:30px; background:var(--tab-bg); border:1px solid transparent; border-bottom:none; border-radius:8px 8px 0 0; padding:0 10px; cursor:pointer; font-size:.78rem; color:var(--text3); transition:all .15s; -webkit-app-region:no-drag; flex-shrink:0; position:relative; }
+.tab.active { background:var(--tab-act); border-color:var(--border); color:var(--text); }
+.tab:hover:not(.active) { background:var(--surface2); color:var(--text2); }
+.tab .favicon { width:14px; height:14px; border-radius:3px; flex-shrink:0; }
+.tab .tab-title { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tab .tab-close { width:16px; height:16px; border-radius:4px; border:none; background:none; color:var(--text3); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:.7rem; flex-shrink:0; -webkit-app-region:no-drag; opacity:0; transition:opacity .1s, background .1s; }
+.tab:hover .tab-close, .tab.active .tab-close { opacity:1; }
+.tab .tab-close:hover { background:var(--hover); color:var(--red); }
+.tab-add { width:28px; height:28px; border:1px solid var(--border); border-radius:7px; background:none; color:var(--text3); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:1rem; margin-bottom:2px; transition:all .15s; -webkit-app-region:no-drag; flex-shrink:0; }
+.tab-add:hover { background:var(--hover); color:var(--text); }
+
+/* ══ MAIN AREA ══ */
+.main { display:flex; flex:1; overflow:hidden; }
+
+/* ══ LEFT SIDEBAR (like Perplexity Comet) ══ */
+.left-sidebar { width:220px; background:var(--sidebar); border-right:1px solid var(--border); display:flex; flex-direction:column; flex-shrink:0; transition:width .2s; overflow:hidden; }
+.left-sidebar.collapsed { width:0; border-right:none; }
+.sidebar-logo { padding:16px 16px 12px; display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--border); }
+.sidebar-logo img { width:24px; height:24px; filter:var(--logo-filter); }
+.sidebar-logo .brand { font-size:.82rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text2); }
+.sidebar-section { padding:8px; flex-shrink:0; }
+.sidebar-label { font-size:.65rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text3); padding:6px 8px 4px; }
+.sidebar-item { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer; font-size:.82rem; color:var(--text2); transition:all .15s; }
+.sidebar-item:hover { background:var(--hover); color:var(--text); }
+.sidebar-item.active { background:var(--accent-dim); color:var(--accent); }
+.sidebar-item .icon { width:16px; text-align:center; font-size:.9rem; flex-shrink:0; }
+.sidebar-divider { height:1px; background:var(--border); margin:4px 12px; }
+.sidebar-history { flex:1; overflow-y:auto; padding:8px; }
+.sidebar-history::-webkit-scrollbar { width:3px; }
+.sidebar-history::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
+.hist-item { padding:6px 10px; border-radius:7px; cursor:pointer; font-size:.77rem; color:var(--text3); transition:all .15s; display:flex; align-items:center; gap:8px; overflow:hidden; }
+.hist-item:hover { background:var(--hover); color:var(--text2); }
+.hist-item .h-favicon { width:12px; height:12px; border-radius:2px; flex-shrink:0; }
+.hist-item .h-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* ══ BROWSER CONTENT ══ */
+.browser-area { flex:1; display:flex; flex-direction:column; min-width:0; }
+.navbar { height:48px; background:var(--surface); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:6px; padding:0 10px; flex-shrink:0; }
+.nav-btn { width:32px; height:32px; border:none; border-radius:8px; background:none; color:var(--text2); cursor:pointer; font-size:1rem; display:flex; align-items:center; justify-content:center; transition:all .1s; flex-shrink:0; }
+.nav-btn:hover { background:var(--hover); color:var(--text); }
+.nav-btn:disabled { opacity:.3; cursor:not-allowed; }
+.url-wrap { flex:1; display:flex; align-items:center; background:var(--input-bg); border:1px solid var(--border); border-radius:10px; padding:0 12px; gap:8px; transition:border-color .15s; }
+.url-wrap:focus-within { border-color:var(--accent); }
+.url-secure { font-size:.75rem; color:var(--green); flex-shrink:0; }
+.url-secure.insecure { color:var(--text3); }
+#urlBar { flex:1; background:none; border:none; outline:none; color:var(--text); font-size:.84rem; height:32px; }
+#urlBar::placeholder { color:var(--text3); }
+.url-ai-btn { background:none; border:none; color:var(--text3); cursor:pointer; font-size:.78rem; padding:3px 8px; border-radius:6px; transition:all .15s; white-space:nowrap; flex-shrink:0; }
+.url-ai-btn:hover { background:var(--accent-dim); color:var(--accent); }
+.progress { height:2px; background:var(--accent); width:0; transition:width .25s; position:absolute; top:0; left:0; right:0; display:none; z-index:100; }
+
+/* ══ WEBVIEW CONTAINER ══ */
+.webview-wrap { flex:1; position:relative; }
+webview { position:absolute; inset:0; width:100%; height:100%; border:none; }
+
+/* ══ NEW TAB PAGE ══ */
+.new-tab-page { position:absolute; inset:0; background:var(--new-tab-bg); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; overflow-y:auto; }
+.new-tab-logo { display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:10px; }
+.new-tab-logo img { width:52px; height:52px; filter:var(--logo-filter); }
+.new-tab-logo span { font-size:1.1rem; font-weight:700; letter-spacing:.2em; text-transform:uppercase; color:var(--text2); }
+.new-tab-search { width:100%; max-width:560px; background:var(--surface); border:1px solid var(--border); border-radius:14px; display:flex; align-items:center; padding:0 16px; gap:10px; transition:border-color .15s, box-shadow .15s; }
+.new-tab-search:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-dim); }
+.new-tab-search input { flex:1; background:none; border:none; outline:none; color:var(--text); font-size:.95rem; height:48px; }
+.new-tab-search input::placeholder { color:var(--text3); }
+.new-tab-search button { background:none; border:none; color:var(--text2); cursor:pointer; font-size:1.1rem; padding:6px; border-radius:8px; transition:all .15s; }
+.new-tab-search button:hover { color:var(--accent); }
+.quick-links { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; width:100%; max-width:560px; }
+.quick-link { background:var(--card-bg); border:1px solid var(--card-border); border-radius:12px; padding:14px 10px; display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; transition:all .15s; text-decoration:none; }
+.quick-link:hover { border-color:var(--accent); transform:translateY(-1px); box-shadow:var(--shadow); }
+.quick-link .ql-icon { width:28px; height:28px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:1rem; background:var(--surface2); }
+.quick-link .ql-name { font-size:.72rem; color:var(--text2); font-weight:500; }
+
+/* ══ AI SIDEBAR ══ */
+.ai-sidebar { width:340px; background:var(--sidebar); border-left:1px solid var(--border); display:flex; flex-direction:column; flex-shrink:0; transition:width .2s; overflow:hidden; }
+.ai-sidebar.collapsed { width:0; border-left:none; }
+.ai-header { padding:14px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+.ai-header .ai-title { display:flex; align-items:center; gap:8px; font-size:.8rem; font-weight:700; color:var(--text2); }
+.ai-header .ai-dot { width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 5px var(--green); animation:pulse 2s infinite; }
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.ai-header-btns { display:flex; gap:4px; }
+.ai-hbtn { background:none; border:1px solid var(--border); border-radius:7px; color:var(--text3); font-size:.7rem; padding:3px 9px; cursor:pointer; transition:all .15s; }
+.ai-hbtn:hover { border-color:var(--accent); color:var(--accent); }
+.ai-log { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; }
+.ai-log::-webkit-scrollbar { width:3px; }
+.ai-log::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
+.ai-msg { font-size:.82rem; line-height:1.55; animation:fadeUp .18s ease; }
+@keyframes fadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.ai-msg.user { background:var(--surface2); border-radius:10px; padding:8px 12px; align-self:flex-end; color:var(--text); }
+.ai-msg.ai { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:10px 12px; color:var(--text); }
+.ai-msg.sys { color:var(--text3); font-size:.74rem; text-align:center; font-style:italic; }
+.ai-msg.ai code { font-family:monospace; font-size:.78rem; background:var(--bg2); padding:1px 5px; border-radius:4px; }
+.ai-msg.ai pre { background:var(--bg2); border-radius:7px; padding:8px; overflow-x:auto; font-size:.76rem; font-family:monospace; margin:5px 0; }
+.thinking { display:flex; gap:4px; padding:10px 12px; background:var(--surface); border:1px solid var(--border); border-radius:10px; }
+.thinking span { width:6px; height:6px; border-radius:50%; background:var(--accent); opacity:.3; animation:dot 1.2s infinite; }
+.thinking span:nth-child(2){animation-delay:.2s}.thinking span:nth-child(3){animation-delay:.4s}
+@keyframes dot{0%,80%,100%{opacity:.2;transform:scale(.8)}40%{opacity:1;transform:scale(1.1)}}
+.ai-input-area { padding:10px; border-top:1px solid var(--border); flex-shrink:0; }
+.ai-input-wrap { background:var(--input-bg); border:1px solid var(--border); border-radius:10px; display:flex; flex-direction:column; transition:border-color .15s; }
+.ai-input-wrap:focus-within { border-color:var(--accent); }
+#aiInput { background:none; border:none; outline:none; color:var(--text); resize:none; min-height:50px; max-height:110px; padding:10px 12px; font-size:.82rem; font-family:inherit; width:100%; }
+#aiInput::placeholder { color:var(--text3); }
+.ai-input-footer { display:flex; align-items:center; justify-content:space-between; padding:4px 8px 6px; }
+.ai-mode-btns { display:flex; gap:4px; }
+.ai-mode-btn { background:none; border:1px solid transparent; border-radius:6px; color:var(--text3); font-size:.7rem; padding:2px 8px; cursor:pointer; transition:all .15s; }
+.ai-mode-btn:hover { color:var(--text2); }
+.ai-mode-btn.active { border-color:var(--accent); color:var(--accent); background:var(--accent-dim); }
+#aiSendBtn { width:28px; height:28px; border-radius:7px; background:var(--accent); border:none; color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:.85rem; transition:filter .15s, transform .1s; flex-shrink:0; }
+#aiSendBtn:hover { filter:brightness(1.12); }
+#aiSendBtn:active { transform:scale(.92); }
+#aiSendBtn:disabled { background:var(--border2); cursor:not-allowed; }
+
+/* ══ TOGGLE BUTTONS ══ */
+.toggle-ai { position:fixed; right:0; top:50%; transform:translateY(-50%); width:18px; height:44px; background:var(--surface); border:1px solid var(--border); border-right:none; border-radius:6px 0 0 6px; cursor:pointer; color:var(--text3); font-size:.65rem; z-index:200; display:flex; align-items:center; justify-content:center; transition:all .15s; }
+.toggle-ai:hover { color:var(--text); background:var(--surface2); }
+.toggle-left { position:fixed; left:0; top:50%; transform:translateY(-50%); width:18px; height:44px; background:var(--surface); border:1px solid var(--border); border-left:none; border-radius:0 6px 6px 0; cursor:pointer; color:var(--text3); font-size:.65rem; z-index:200; display:flex; align-items:center; justify-content:center; transition:all .15s; display:none; }
+
+/* ══ CONTEXT MENU ══ */
+.ctx-menu { position:fixed; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:4px; box-shadow:var(--shadow); z-index:999; min-width:160px; display:none; }
+.ctx-item { padding:7px 14px; border-radius:6px; font-size:.8rem; cursor:pointer; color:var(--text2); transition:all .1s; }
+.ctx-item:hover { background:var(--hover); color:var(--text); }
+.ctx-divider { height:1px; background:var(--border); margin:3px 6px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ══ TITLEBAR ══ -->
+  <div class="titlebar">
+    <span class="titlebar-center">NEXUM BROWSER</span>
+    <div class="titlebar-right">
+      <div class="conn-dot" id="connDot" title="NEXUM server"></div>
+      <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">☀ Светлая</button>
+    </div>
+  </div>
+
+  <!-- ══ TABS ══ -->
+  <div class="tabbar" id="tabbar">
+    <!-- tabs injected by JS -->
+    <button class="tab-add" onclick="addTab()" title="Новая вкладка">+</button>
+  </div>
+
+  <!-- ══ MAIN ══ -->
+  <div class="main">
+
+    <!-- LEFT SIDEBAR -->
+    <div class="left-sidebar" id="leftSidebar">
+      <div class="sidebar-logo">
+        <img src="nexum-logo.png" alt="N">
+        <span class="brand">Nexum</span>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-item active" onclick="openNewTab()">
+          <span class="icon">⊕</span> Новая беседа
+        </div>
+        <div class="sidebar-item" onclick="focusUrl()">
+          <span class="icon">🔍</span> Поиск
+        </div>
+        <div class="sidebar-item" onclick="toggleAI()">
+          <span class="icon">✦</span> AI Ассистент
+        </div>
+      </div>
+
+      <div class="sidebar-divider"></div>
+      <div class="sidebar-label">Недавние</div>
+      <div class="sidebar-history" id="historyList"></div>
+    </div>
+
+    <!-- BROWSER AREA -->
+    <div class="browser-area">
+      <div class="progress" id="progress"></div>
+
+      <!-- NAVBAR -->
+      <div class="navbar">
+        <button class="nav-btn" id="backBtn" onclick="navBack()" title="Назад" disabled>←</button>
+        <button class="nav-btn" id="fwdBtn" onclick="navForward()" title="Вперёд" disabled>→</button>
+        <button class="nav-btn" id="reloadBtn" onclick="navReload()" title="Обновить">↻</button>
+        <button class="nav-btn" onclick="goHome()" title="Домой">⌂</button>
+
+        <div class="url-wrap">
+          <span class="url-secure" id="secureIcon">🔒</span>
+          <input id="urlBar" type="text" placeholder="Введи URL или поисковый запрос..."
+            onkeydown="if(event.key==='Enter')navigate(this.value)"
+            onfocus="this.select()">
+          <button class="url-ai-btn" onclick="summarizePage()" title="Суммаризовать страницу">✦ AI</button>
+        </div>
+
+        <button class="nav-btn" onclick="toggleLeftSidebar()" title="Боковая панель">☰</button>
+        <button class="nav-btn" onclick="toggleAI()" title="AI ассистент">✦</button>
+      </div>
+
+      <!-- WEBVIEW AREA — each tab has its own webview + new-tab-page -->
+      <div class="webview-wrap" id="webviewWrap">
+        <!-- injected by JS -->
+      </div>
+    </div>
+
+    <!-- AI SIDEBAR -->
+    <div class="ai-sidebar" id="aiSidebar">
+      <div class="ai-header">
+        <div class="ai-title">
+          <div class="ai-dot"></div>
+          NEXUM Intelligence
+        </div>
+        <div class="ai-header-btns">
+          <button class="ai-hbtn" onclick="summarizePage()">Страница</button>
+          <button class="ai-hbtn" onclick="clearAiChat()">Очистить</button>
+        </div>
+      </div>
+
+      <div class="ai-log" id="aiLog">
+        <div class="ai-msg sys">Открой страницу и задай вопрос. Я вижу всё что ты читаешь.</div>
+      </div>
+
+      <div class="ai-input-area">
+        <div class="ai-input-wrap">
+          <textarea id="aiInput" placeholder="Спроси об этой странице..." rows="2"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAI()}"
+            oninput="autoResize(this)"></textarea>
+          <div class="ai-input-footer">
+            <div class="ai-mode-btns">
+              <button class="ai-mode-btn active" id="mode-chat" onclick="setMode('chat')">Чат</button>
+              <button class="ai-mode-btn" id="mode-search" onclick="setMode('search')">Поиск</button>
+              <button class="ai-mode-btn" id="mode-sum" onclick="summarizePage()">Суммари</button>
+            </div>
+            <button id="aiSendBtn" onclick="sendAI()">↑</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- .main -->
+</div><!-- .app -->
+
+<!-- CONTEXT MENU -->
+<div class="ctx-menu" id="ctxMenu">
+  <div class="ctx-item" onclick="ctxAction('back')">← Назад</div>
+  <div class="ctx-item" onclick="ctxAction('forward')">→ Вперёд</div>
+  <div class="ctx-item" onclick="ctxAction('reload')">↻ Обновить</div>
+  <div class="ctx-divider"></div>
+  <div class="ctx-item" onclick="ctxAction('newtab')">⊕ Новая вкладка</div>
+  <div class="ctx-item" onclick="ctxAction('summarize')">✦ Суммаризовать</div>
+  <div class="ctx-divider"></div>
+  <div class="ctx-item" onclick="ctxAction('copyurl')">⎘ Копировать URL</div>
+</div>
+
+<script>
+const { ipcRenderer } = require('electron');
+
+// ══ STATE ══
+let tabs = [];
+let activeTab = null;
+let aiMode = 'chat';
+let aiLoading = false;
+let historyItems = [];
+
+// ══ TAB SYSTEM ══
+let tabIdCounter = 0;
+
+function createTab(url = '') {
+  const id = ++tabIdCounter;
+  const tab = { id, url, title: 'Новая вкладка', favicon: null, webview: null, newTabPage: null, canBack: false, canFwd: false };
+  tabs.push(tab);
+  renderTabs();
+  buildTabDOM(tab);
+  activateTab(id);
+  if (url) loadUrl(tab, url);
+  return tab;
+}
+
+function buildTabDOM(tab) {
+  const wrap = document.getElementById('webviewWrap');
+
+  // New-tab page
+  const ntp = document.createElement('div');
+  ntp.className = 'new-tab-page';
+  ntp.id = 'ntp_' + tab.id;
+  ntp.innerHTML = `
+    <div class="new-tab-logo">
+      <img src="nexum-logo.png" alt="N">
+      <span>Nexum</span>
+    </div>
+    <div class="new-tab-search">
+      <span style="color:var(--text3);font-size:1rem">🔍</span>
+      <input placeholder="Поиск или URL..." onkeydown="if(event.key==='Enter')navigate(this.value)">
+      <button onclick="navigate(this.previousElementSibling.value)">→</button>
+    </div>
+    <div class="quick-links">
+      <a class="quick-link" onclick="navigate('https://google.com')">
+        <div class="ql-icon">🌐</div><div class="ql-name">Google</div>
+      </a>
+      <a class="quick-link" onclick="navigate('https://github.com')">
+        <div class="ql-icon">🐱</div><div class="ql-name">GitHub</div>
+      </a>
+      <a class="quick-link" onclick="navigate('https://youtube.com')">
+        <div class="ql-icon">▶</div><div class="ql-name">YouTube</div>
+      </a>
+      <a class="quick-link" onclick="navigate('https://railway.app')">
+        <div class="ql-icon">🚂</div><div class="ql-name">Railway</div>
+      </a>
+    </div>
+  `;
+  wrap.appendChild(ntp);
+  tab.newTabPage = ntp;
+
+  // Webview
+  const wv = document.createElement('webview');
+  wv.id = 'wv_' + tab.id;
+  wv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:none;display:none;';
+  wrap.appendChild(wv);
+  tab.webview = wv;
+
+  // Events
+  wv.addEventListener('did-start-loading', () => onLoadStart(tab));
+  wv.addEventListener('did-stop-loading', () => onLoadStop(tab));
+  wv.addEventListener('did-navigate', e => onNavigate(tab, e.url));
+  wv.addEventListener('did-navigate-in-page', e => onNavigate(tab, e.url));
+  wv.addEventListener('page-title-updated', e => onTitleUpdate(tab, e.title));
+  wv.addEventListener('page-favicon-updated', e => onFavicon(tab, e.favicons));
+  wv.addEventListener('did-fail-load', e => { if (e.errorCode !== -3) onLoadStop(tab); });
+}
+
+function activateTab(id) {
+  activeTab = tabs.find(t => t.id === id);
+  if (!activeTab) return;
+
+  // hide all, show active
+  tabs.forEach(t => {
+    t.webview.style.display = 'none';
+    t.newTabPage.style.display = 'none';
+  });
+
+  if (activeTab.url) {
+    activeTab.webview.style.display = 'block';
+  } else {
+    activeTab.newTabPage.style.display = 'flex';
+  }
+
+  renderTabs();
+  updateNavbar();
+}
+
+function loadUrl(tab, url) {
+  let u = url.trim();
+  if (!u) return;
+  if (!u.includes('.') && !u.startsWith('http')) {
+    u = 'https://www.google.com/search?q=' + encodeURIComponent(u);
+  } else if (!u.startsWith('http')) {
+    u = 'https://' + u;
+  }
+  tab.url = u;
+  tab.newTabPage.style.display = 'none';
+  tab.webview.style.display = 'block';
+  tab.webview.src = u;
+  if (tab === activeTab) document.getElementById('urlBar').value = u;
+}
+
+function closeTab(id, e) {
+  e.stopPropagation();
+  const idx = tabs.findIndex(t => t.id === id);
+  const tab = tabs[idx];
+  tab.webview.remove();
+  tab.newTabPage.remove();
+  tabs.splice(idx, 1);
+
+  if (!tabs.length) { addTab(); return; }
+  if (activeTab?.id === id) {
+    activateTab(tabs[Math.min(idx, tabs.length - 1)].id);
+  } else {
+    renderTabs();
+  }
+}
+
+function renderTabs() {
+  const bar = document.getElementById('tabbar');
+  bar.innerHTML = '';
+  tabs.forEach(t => {
+    const div = document.createElement('div');
+    div.className = 'tab' + (t === activeTab ? ' active' : '');
+    div.innerHTML = `
+      ${t.favicon ? `<img class="favicon" src="${t.favicon}">` : '<span style="font-size:.75rem;opacity:.4">◻</span>'}
+      <span class="tab-title">${esc(t.title)}</span>
+      <button class="tab-close" onclick="closeTab(${t.id}, event)">✕</button>
+    `;
+    div.addEventListener('click', () => activateTab(t.id));
+    bar.appendChild(div);
+  });
+  const addBtn = document.createElement('button');
+  addBtn.className = 'tab-add';
+  addBtn.textContent = '+';
+  addBtn.title = 'Новая вкладка';
+  addBtn.onclick = addTab;
+  bar.appendChild(addBtn);
+}
+
+function addTab() { createTab(); }
+function openNewTab() { addTab(); }
+
+// ══ NAVIGATION ══
+function navigate(input) {
+  if (!activeTab) return;
+  loadUrl(activeTab, input);
+}
+
+function navBack()    { activeTab?.webview?.goBack(); }
+function navForward() { activeTab?.webview?.goForward(); }
+function navReload()  {
+  const wv = activeTab?.webview;
+  if (!wv) return;
+  if (wv.isLoading()) { wv.stop(); } else { wv.reload(); }
+}
+function goHome() {
+  if (!activeTab) return;
+  activeTab.url = '';
+  activeTab.webview.style.display = 'none';
+  activeTab.newTabPage.style.display = 'flex';
+  document.getElementById('urlBar').value = '';
+}
+function focusUrl() {
+  document.getElementById('urlBar').focus();
+  document.getElementById('urlBar').select();
+}
+
+// ══ WEBVIEW EVENTS ══
+function onLoadStart(tab) {
+  if (tab !== activeTab) return;
+  const p = document.getElementById('progress');
+  p.style.display = 'block'; p.style.width = '35%';
+  document.getElementById('reloadBtn').textContent = '✕';
+}
+function onLoadStop(tab) {
+  if (tab !== activeTab) return;
+  const p = document.getElementById('progress');
+  p.style.width = '100%';
+  setTimeout(() => { p.style.display = 'none'; p.style.width = '0'; }, 300);
+  document.getElementById('reloadBtn').textContent = '↻';
+  updateNavbar();
+}
+function onNavigate(tab, url) {
+  tab.url = url;
+  if (tab === activeTab) {
+    document.getElementById('urlBar').value = url;
+    const secure = document.getElementById('secureIcon');
+    if (url.startsWith('https://')) { secure.textContent = '🔒'; secure.className = 'url-secure'; }
+    else { secure.textContent = '⚠'; secure.className = 'url-secure insecure'; }
+    updateNavbar();
+  }
+  addHistory(tab.title || url, url);
+}
+function onTitleUpdate(tab, title) {
+  tab.title = title;
+  if (tab === activeTab) document.title = title + ' — NEXUM';
+  renderTabs();
+}
+function onFavicon(tab, favicons) {
+  if (favicons?.length) { tab.favicon = favicons[0]; renderTabs(); }
+}
+
+function updateNavbar() {
+  const wv = activeTab?.webview;
+  if (!wv) return;
+  try {
+    document.getElementById('backBtn').disabled = !wv.canGoBack();
+    document.getElementById('fwdBtn').disabled = !wv.canGoForward();
+  } catch {}
+}
+
+// ══ HISTORY ══
+function addHistory(title, url) {
+  historyItems = historyItems.filter(h => h.url !== url);
+  historyItems.unshift({ title: title || url, url });
+  if (historyItems.length > 30) historyItems.pop();
+  renderHistory();
+}
+function renderHistory() {
+  const list = document.getElementById('historyList');
+  list.innerHTML = historyItems.slice(0, 15).map(h => `
+    <div class="hist-item" onclick="navigate('${esc(h.url)}')">
+      <span class="h-favicon">🔗</span>
+      <span class="h-title">${esc(h.title)}</span>
+    </div>
+  `).join('');
+}
+
+// ══ SIDEBARS ══
+let leftOpen = true;
+let aiOpen = true;
+
+function toggleLeftSidebar() {
+  leftOpen = !leftOpen;
+  document.getElementById('leftSidebar').classList.toggle('collapsed', !leftOpen);
+}
+function toggleAI() {
+  aiOpen = !aiOpen;
+  document.getElementById('aiSidebar').classList.toggle('collapsed', !aiOpen);
+}
+
+// ══ THEME ══
+let theme = 'dark';
+function toggleTheme() {
+  theme = theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+  document.getElementById('themeBtn').textContent = theme === 'dark' ? '☀ Светлая' : '🌙 Тёмная';
+  localStorage.setItem('nx_theme', theme);
+}
+
+// ══ AI CHAT ══
+function setMode(m) {
+  aiMode = m;
+  document.querySelectorAll('.ai-mode-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('mode-' + m)?.classList.add('active');
+}
+
+async function sendAI() {
+  const input = document.getElementById('aiInput');
+  const text = input.value.trim();
+  if (!text || aiLoading) return;
+  input.value = ''; input.style.height = 'auto';
+
+  appendAiMsg('user', text);
+  await askAI(text);
+}
+
+async function summarizePage() {
+  if (aiLoading || !activeTab?.url) {
+    appendAiMsg('sys', '⚠ Нет активной страницы для суммаризации');
+    return;
+  }
+  appendAiMsg('sys', `✦ Читаю «${activeTab.title || activeTab.url}»...`);
+  let pageText = '';
+  try {
+    pageText = await activeTab.webview.executeJavaScript(
+      '(document.body?.innerText || "").slice(0, 5000)'
+    );
+  } catch { pageText = ''; }
+
+  if (!pageText.trim()) { appendAiMsg('sys', '⚠ Не удалось прочитать страницу'); return; }
+
+  await askAI(`Кратко суммаризуй в 4-5 пунктах на русском:\n\n${pageText}`);
+}
+
+async function askAI(message) {
+  aiLoading = true;
+  document.getElementById('aiSendBtn').disabled = true;
+  const thinkId = appendThinking();
+
+  const pageContext = activeTab?.url
+    ? `[Открыта: "${activeTab.title}" (${activeTab.url})]\n\n`
+    : '';
+
+  const result = await ipcRenderer.invoke('ai-chat', {
+    message: pageContext + message,
+    pageUrl: activeTab?.url || '',
+    pageTitle: activeTab?.title || '',
+    uid: null,
+  });
+
+  removeThinking(thinkId);
+  aiLoading = false;
+  document.getElementById('aiSendBtn').disabled = false;
+  appendAiMsg('ai', result?.content || result?.error || 'Нет ответа');
+}
+
+function appendAiMsg(role, text) {
+  const log = document.getElementById('aiLog');
+  const div = document.createElement('div');
+  div.className = 'ai-msg ' + role;
+  div.innerHTML = role === 'ai' ? renderMD(text) : esc(text);
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+function appendThinking() {
+  const log = document.getElementById('aiLog');
+  const id = 'th_' + Date.now();
+  const div = document.createElement('div');
+  div.className = 'thinking'; div.id = id;
+  div.innerHTML = '<span></span><span></span><span></span>';
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  return id;
+}
+function removeThinking(id) { document.getElementById(id)?.remove(); }
+function clearAiChat() {
+  document.getElementById('aiLog').innerHTML = '<div class="ai-msg sys">Чат очищен.</div>';
+}
+function autoResize(el) { el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,110)+'px'; }
+
+// ══ CONTEXT MENU ══
+document.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const menu = document.getElementById('ctxMenu');
+  menu.style.display = 'block';
+  menu.style.left = Math.min(e.clientX, window.innerWidth - 170) + 'px';
+  menu.style.top = Math.min(e.clientY, window.innerHeight - 200) + 'px';
+});
+document.addEventListener('click', () => {
+  document.getElementById('ctxMenu').style.display = 'none';
+});
+function ctxAction(a) {
+  if (a === 'back') navBack();
+  else if (a === 'forward') navForward();
+  else if (a === 'reload') navReload();
+  else if (a === 'newtab') addTab();
+  else if (a === 'summarize') summarizePage();
+  else if (a === 'copyurl') { require('electron').clipboard.writeText(activeTab?.url || ''); }
+}
+
+// ══ MARKDOWN ══
+function renderMD(text) {
+  let s = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  s = s.replace(/```[\w]*\n?([\s\S]*?)```/g, (_,c) => `<pre><code>${c.trim()}</code></pre>`);
+  s = s.replace(/`([^`]+)`/g, '<code></code>');
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong></strong>');
+  s = s.replace(/\*([^*]+)\*/g, '<em></em>');
+  s = s.replace(/^#{1,3} (.+)$/gm, '<strong style="display:block;margin-top:6px"></strong>');
+  s = s.replace(/^[\-\*] (.+)$/gm, '<li></li>');
+  s = s.replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>');
+  return `<p>${s}</p>`.replace(/<p><\/p>/g,'');
+}
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ══ CONNECTION CHECK ══
+async function checkConn() {
+  try {
+    const r = await fetch('http://localhost:18790/health', { signal: AbortSignal.timeout(2000) });
+    document.getElementById('connDot').classList.toggle('off', !r.ok);
+  } catch {
+    document.getElementById('connDot').classList.add('off');
+  }
+}
+
+// ══ KEYBOARD SHORTCUTS ══
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey) {
+    if (e.key === 't') { e.preventDefault(); addTab(); }
+    else if (e.key === 'w') { e.preventDefault(); if (activeTab) closeTab(activeTab.id, e); }
+    else if (e.key === 'l') { e.preventDefault(); focusUrl(); }
+    else if (e.key === 'r') { e.preventDefault(); navReload(); }
+    else if (e.key === 'b') { e.preventDefault(); toggleLeftSidebar(); }
+  }
+});
+
+// ══ INIT ══
+(function init() {
+  const saved = localStorage.getItem('nx_theme') || 'dark';
+  theme = saved;
+  document.documentElement.setAttribute('data-theme', saved);
+  document.getElementById('themeBtn').textContent = saved === 'dark' ? '☀ Светлая' : '🌙 Тёмная';
+
+  createTab(); // start with one empty tab
+  checkConn();
+  setInterval(checkConn, 15000);
+})();
+</script>
+</body>
+</html>

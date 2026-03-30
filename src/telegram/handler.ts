@@ -1,188 +1,207 @@
-import { Bot, Context } from 'grammy';
-import { getOrCreateUser, incrementMsgCount } from '../core/db';
-import { getUserPlan, checkRateLimit } from '../core/billing';
-import { getPreferences } from '../core/preferences';
-import { detectAndSaveIntent, intentSummary } from '../agent/intents';
-import { executeAI, getSession, addToSession } from '../agent/executor';
-import { buildSystemPrompt } from '../agent/persona';
-import { webSearch } from '../tools/search';
+import { Bot, Context, InlineKeyboard } from 'grammy';
+import { executeAI } from '../agent/executor';
+import { Logger } from '../infra/logger';
 import { transcribeVoice } from '../tools/stt';
-import t from '../i18n';
-import logger from '../infra/logger';
+import { handleApprovalResult } from '../agent/policies/exec-approvals';
+import { setupCommands } from './commands';
+import { CONFIG } from '../core/config';
 import db from '../core/db';
+import fetch from 'node-fetch';
 
-export function setupHandler(bot: Bot) {
+// ============================================================
+//  MAIN BOT SETUP
+// ============================================================
 
-  // Text messages
-  bot.on('message:text', async (ctx) => {
-    const uid   = ctx.from!.id;
-    const text  = ctx.message?.text ?? '';
-    if (!text || text.startsWith('/')) return;
+export const setupBot = (bot: Bot) => {
+    setupCommands(bot);
 
-    const user  = getOrCreateUser(uid, ctx.from?.username, ctx.from?.first_name);
-    const prefs = getPreferences(uid);
-    const lang  = prefs.lang;
-    const count = incrementMsgCount(uid);
-    const plan  = getUserPlan(uid);
+    // --- CALLBACK QUERIES ---
+    bot.on('callback_query:data', async (ctx) => {
+        const data = ctx.callbackQuery.data;
 
-    // Rate limit check
-    if (!checkRateLimit(uid, count)) {
-      await ctx.reply(t(lang, 'limit_reached'), { parse_mode: 'Markdown' });
-      return;
-    }
-
-    // Intent detection + auto-save
-    const intent = detectAndSaveIntent(text, uid);
-    const intentMsg = intentSummary(intent, lang);
-
-    // Build reply
-    const typing = await ctx.reply(t(lang, 'thinking'));
-    try {
-      // Auto-search detection
-      let extraContext = '';
-      const needsSearch = /найди|поищи|что такое|кто такой|search|find|what is|who is/i.test(text);
-      if (needsSearch) {
-        try {
-          const results = await webSearch(text);
-          extraContext = `\n\nSearch results:\n${results}`;
-        } catch { /* silent */ }
-      }
-
-      const history = getSession(uid);
-      addToSession(uid, 'user', text);
-
-      const system = buildSystemPrompt(uid, lang, plan);
-      const response = await executeAI({
-        uid,
-        messages: [...history, { role: 'user', content: text + extraContext }],
-        systemPrompt: system,
-      });
-
-      addToSession(uid, 'assistant', response);
-
-      const reply = (intentMsg ? `${intentMsg}\n\n` : '') + response;
-      await ctx.api.editMessageText(ctx.chat.id, typing.message_id, reply, {
-        parse_mode: 'Markdown',
-      }).catch(() => ctx.reply(reply, { parse_mode: 'Markdown' }));
-
-    } catch (err) {
-      logger.error('handler', 'AI execution failed', err);
-      await ctx.api.editMessageText(ctx.chat.id, typing.message_id, t(lang, 'error_generic'))
-        .catch(() => ctx.reply(t(lang, 'error_generic')));
-    }
-  });
-
-  // Voice messages
-  bot.on('message:voice', async (ctx) => {
-    const uid  = ctx.from!.id;
-    const prefs = getPreferences(uid);
-    const lang  = prefs.lang;
-    getOrCreateUser(uid, ctx.from?.username, ctx.from?.first_name);
-
-    await ctx.reply('🎙️ Transcribing...');
-    try {
-      const fileInfo = await ctx.getFile();
-      const url = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${fileInfo.file_path}`;
-      const res = await fetch(url);
-      const buf = Buffer.from(await res.arrayBuffer());
-      const text = await transcribeVoice(buf);
-      if (!text) { await ctx.reply('❌ Could not transcribe'); return; }
-
-      await ctx.reply(`🎙️ *${text}*`, { parse_mode: 'Markdown' });
-
-      // Process as text
-      const count = incrementMsgCount(uid);
-      const plan  = getUserPlan(uid);
-      if (!checkRateLimit(uid, count)) { await ctx.reply(t(lang, 'limit_reached')); return; }
-
-      const history = getSession(uid);
-      addToSession(uid, 'user', text);
-      const system = buildSystemPrompt(uid, lang, plan);
-      const response = await executeAI({ uid, messages: [...history, { role: 'user', content: text }], systemPrompt: system });
-      addToSession(uid, 'assistant', response);
-      await ctx.reply(response, { parse_mode: 'Markdown' });
-    } catch (e) {
-      logger.error('handler', 'Voice processing failed', e);
-      await ctx.reply(t(lang, 'error_generic'));
-    }
-  });
-
-  // Photo messages
-  bot.on('message:photo', async (ctx) => {
-    const uid   = ctx.from!.id;
-    const prefs = getPreferences(uid);
-    const lang  = prefs.lang;
-    getOrCreateUser(uid, ctx.from?.username, ctx.from?.first_name);
-
-    const caption = ctx.message?.caption ?? 'Опиши это изображение подробно / Describe this image in detail';
-    await ctx.reply('🖼️ Analyzing image...');
-
-    try {
-      const photos = ctx.message.photo;
-      const largest = photos[photos.length - 1];
-      const fileInfo = await ctx.api.getFile(largest.file_id);
-      const url = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${fileInfo.file_path}`;
-      const imgRes = await fetch(url);
-      const imgBuf = Buffer.from(await imgRes.arrayBuffer());
-      const base64 = imgBuf.toString('base64');
-
-      // Use Gemini for vision
-      const { getNextKey } = await import('../core/config');
-      const key = getNextKey('gemini');
-      if (!key) { await ctx.reply('❌ No Gemini key for vision'); return; }
-
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { text: caption },
-                { inline_data: { mime_type: 'image/jpeg', data: base64 } },
-              ],
-            }],
-          }),
+        // PC approval buttons
+        if (data.startsWith('appr_')) {
+            const [actionId, status] = data.replace('appr_', '').split(':');
+            const approved = status === 'allow';
+            handleApprovalResult(actionId, approved);
+            await ctx.answerCallbackQuery(approved ? '✅ Разрешено' : '❌ Отклонено');
+            await ctx.editMessageText(
+                approved ? '✅ Действие выполнено.' : '❌ Действие отклонено.',
+                { reply_markup: undefined }
+            ).catch(() => {});
+            return;
         }
-      );
-      const data = await res.json() as { candidates: { content: { parts: { text: string }[] } }[] };
-      const answer = data.candidates[0].content.parts[0].text;
-      await ctx.reply(answer, { parse_mode: 'Markdown' });
-    } catch (e) {
-      logger.error('handler', 'Photo processing failed', e);
-      await ctx.reply(t(lang, 'error_generic'));
+
+        await ctx.answerCallbackQuery();
+    });
+
+    // --- VOICE MESSAGES ---
+    bot.on('message:voice', async (ctx) => {
+        const uid = ctx.from?.id;
+        if (!uid) return;
+
+        try {
+            await ctx.replyWithChatAction('typing');
+            const file = await ctx.getFile();
+            const url = `https://api.telegram.org/file/bot${bot.token}/${file.file_path}`;
+            const res = await fetch(url);
+            const buffer = Buffer.from(await res.arrayBuffer());
+
+            const text = await transcribeVoice(buffer);
+            if (!text) {
+                await ctx.reply('❌ Не удалось распознать голос. Попробуй ещё раз.');
+                return;
+            }
+
+            await ctx.reply(`🎙 *Распознано:*\n_${safeMarkdown(text)}_`, { parse_mode: 'Markdown' });
+            await processAIRequest(ctx, text, uid);
+        } catch (err) {
+            Logger.error('telegram', 'Voice error', err);
+            await ctx.reply('❌ Ошибка при обработке голоса.');
+        }
+    });
+
+    // --- PHOTOS (screenshot analysis) ---
+    bot.on('message:photo', async (ctx) => {
+        const uid = ctx.from?.id;
+        if (!uid) return;
+        const caption = ctx.message.caption || 'Что на этом изображении?';
+        await processAIRequest(ctx, `[Фото] ${caption}`, uid);
+    });
+
+    // --- TEXT MESSAGES ---
+    bot.on('message:text', async (ctx: Context) => {
+        const uid = ctx.from?.id;
+        if (!uid) return;
+        const text = ctx.message?.text || '';
+        if (text.startsWith('/')) return; // commands handled separately
+        await processAIRequest(ctx, text, uid);
+    });
+};
+
+// ============================================================
+//  CORE AI PROCESSING
+// ============================================================
+
+async function processAIRequest(ctx: Context, text: string, uid: number) {
+    Logger.info('telegram', `Request from UID ${uid}: ${text.slice(0, 80)}`);
+
+    // Ensure user exists in DB
+    ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
+
+    // Check daily message limit
+    const user = db.prepare('SELECT subscription_plan, msg_count_today FROM users WHERE uid = ?').get(uid) as any;
+    const plan = user?.subscription_plan || 'free';
+    const limit = plan === 'pro' ? 9999 : plan === 'middle' ? 200 : 50;
+    const count = user?.msg_count_today || 0;
+
+    if (count >= limit) {
+        await ctx.reply(
+            `⚠️ *Лимит сообщений исчерпан* (${limit}/день)\n\nОбнови план: /tariffs`,
+            { parse_mode: 'Markdown' }
+        );
+        return;
     }
-  });
 
-  // Document messages
-  bot.on('message:document', async (ctx) => {
-    const uid  = ctx.from!.id;
-    const prefs = getPreferences(uid);
-    const lang  = prefs.lang;
-    getOrCreateUser(uid, ctx.from?.username, ctx.from?.first_name);
+    // Increment message count
+    db.prepare('UPDATE users SET msg_count_today = msg_count_today + 1 WHERE uid = ?').run(uid);
 
-    const doc = ctx.message.document;
-    await ctx.reply(`📄 Processing *${doc.file_name}*...`, { parse_mode: 'Markdown' });
+    // Show typing indicator
+    await ctx.replyWithChatAction('typing').catch(() => {});
 
     try {
-      const fileInfo = await ctx.getFile();
-      const url = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${fileInfo.file_path}`;
-      const res = await fetch(url);
-      const text = await res.text();
-      const snippet = text.slice(0, 3000);
+        // Send placeholder
+        const placeholder = await ctx.reply('⏳', { parse_mode: 'Markdown' });
+        let fullResponse = '';
+        let lastEdit = Date.now();
 
-      const count = incrementMsgCount(uid);
-      const plan  = getUserPlan(uid);
-      if (!checkRateLimit(uid, count)) { await ctx.reply(t(lang, 'limit_reached')); return; }
+        await executeAI(text, uid, [], async (chunk: string) => {
+            fullResponse += chunk;
+            // Edit message every 1.5 seconds to avoid flood limits
+            if (Date.now() - lastEdit > 1500 && fullResponse.length > 0) {
+                lastEdit = Date.now();
+                await ctx.api.editMessageText(
+                    ctx.chat!.id,
+                    placeholder.message_id,
+                    truncate(fullResponse) + ' ⏳',
+                    { parse_mode: 'Markdown' }
+                ).catch(() => {});
+            }
+        });
 
-      const userMsg = `Document: "${doc.file_name}"\nContent:\n${snippet}\n\nSummarize and analyze this document.`;
-      const system = buildSystemPrompt(uid, lang, plan);
-      const answer = await executeAI({ uid, messages: [{ role: 'user', content: userMsg }], systemPrompt: system });
-      await ctx.reply(answer, { parse_mode: 'Markdown' });
-    } catch (e) {
-      logger.error('handler', 'Document processing failed', e);
-      await ctx.reply(t(lang, 'error_generic'));
+        // Final edit with full response
+        if (fullResponse) {
+            // Split long messages
+            const chunks = splitMessage(fullResponse);
+            await ctx.api.editMessageText(
+                ctx.chat!.id,
+                placeholder.message_id,
+                chunks[0],
+                { parse_mode: 'Markdown' }
+            ).catch(() => ctx.reply(chunks[0]));
+
+            for (let i = 1; i < chunks.length; i++) {
+                await ctx.reply(chunks[i], { parse_mode: 'Markdown' }).catch(() => {});
+            }
+        } else {
+            await ctx.api.editMessageText(ctx.chat!.id, placeholder.message_id, '🤖 Нет ответа.').catch(() => {});
+        }
+    } catch (err) {
+        Logger.error('telegram', `AI request failed for UID ${uid}`, err);
+        await ctx.reply('❌ Произошла ошибка. Попробуй ещё раз.');
     }
-  });
+}
+
+// ============================================================
+//  APPROVAL BUTTONS (used by exec-approvals.ts)
+// ============================================================
+
+export const sendApprovalButtons = async (
+    bot: Bot,
+    uid: number,
+    actionId: string,
+    action: string,
+    args: any
+) => {
+    const keyboard = new InlineKeyboard()
+        .text('✅ Разрешить', `appr_${actionId}:allow`)
+        .text('❌ Отклонить', `appr_${actionId}:deny`);
+
+    await bot.api.sendMessage(
+        uid,
+        `⚠️ *Запрос на выполнение действия*\n\nДействие: \`${action}\`\nАргументы: \`${JSON.stringify(args).slice(0, 200)}\`\n\nРазрешить?`,
+        { parse_mode: 'Markdown', reply_markup: keyboard }
+    );
+};
+
+// ============================================================
+//  HELPERS
+// ============================================================
+
+function ensureUser(uid: number, username?: string, firstName?: string) {
+    const exists = db.prepare('SELECT uid FROM users WHERE uid = ?').get(uid);
+    if (!exists) {
+        db.prepare('INSERT OR IGNORE INTO users (uid, username, first_name, msg_count_today) VALUES (?, ?, ?, 0)')
+            .run(uid, username || '', firstName || '');
+    }
+}
+
+function safeMarkdown(text: string): string {
+    return text.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&');
+}
+
+function truncate(text: string, max = 3800): string {
+    if (text.length <= max) return text;
+    return text.slice(0, max) + '…';
+}
+
+function splitMessage(text: string, max = 4000): string[] {
+    if (text.length <= max) return [text];
+    const chunks: string[] = [];
+    let remaining = text;
+    while (remaining.length > 0) {
+        chunks.push(remaining.slice(0, max));
+        remaining = remaining.slice(max);
+    }
+    return chunks;
 }

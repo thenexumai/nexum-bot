@@ -1,283 +1,243 @@
 #!/usr/bin/env python3
 """
-NEXUM PC Agent
-Connects to NEXUM server via WebSocket and executes PC capabilities.
-Run: python nexum_agent.py --code ABCD1234 --server wss://your-app.railway.app
+NEXUM PC Agent v1.0
+Connects to NEXUM server via WebSocket and executes AI commands on this machine.
+
+Usage:
+    python nexum_agent.py --token <TOKEN> --server wss://yourapp.railway.app
+    
+Get token from Telegram bot: /link_pc
 """
 
-import argparse
 import asyncio
+import websockets
 import json
+import os
 import sys
+import argparse
+import platform
+import uuid
+import base64
 import signal
-from datetime import datetime
+from io import BytesIO
 
+# Capability imports
 try:
-    import websockets
+    import pyautogui
+    from PIL import Image
+    HAS_GUI = True
 except ImportError:
-    print("[ERROR] Install dependencies: pip install -r requirements.txt")
-    sys.exit(1)
+    HAS_GUI = False
+    print("[WARN] pyautogui/PIL not installed — screenshot/mouse/keyboard disabled")
 
+from capabilities import (
+    run_shell, file_list, file_read, file_write, file_delete, get_sysinfo
+)
 from utils.logger import log
-from capabilities.screenshot import take_screenshot
-from capabilities.shell import run_shell
-from capabilities.filesystem import file_list, file_read, file_write, file_delete
-from capabilities.system import get_sysinfo
-from capabilities.mouse import mouse_move, mouse_click
-from capabilities.keyboard import keyboard_type
-from capabilities.browser import browser_navigate, browser_screenshot, browser_read_page
-from policies.safety import is_safe_path, is_blocked_command
-from state.soul import load_soul
 
-VERSION = "1.0.0"
-RECONNECT_DELAY = 5  # seconds
-MAX_RECONNECT = 20
 
+# ============================================================
+#  NEXUM AGENT
+# ============================================================
 
 class NexumAgent:
-    def __init__(self, server_url: str, pairing_code: str):
+    def __init__(self, server_url: str, token: str):
         self.server_url = server_url
-        self.pairing_code = pairing_code
+        self.token = token
+        self.uid = None
+        self.device_id = str(uuid.uuid4())[:8]
         self.ws = None
-        self.running = True
-        self.reconnect_count = 0
-        self.soul = load_soul()
+        self._running = True
 
-    async def connect(self):
-        """Connect to NEXUM server with auto-reconnect."""
-        while self.running and self.reconnect_count < MAX_RECONNECT:
+    async def start(self):
+        log.info(f"NEXUM Agent v1.0 | Device: {self.device_id} | OS: {platform.system()} {platform.release()}")
+        log.info(f"Connecting to {self.server_url} ...")
+        while self._running:
             try:
-                log.info(f"Connecting to {self.server_url}...")
-                async with websockets.connect(
-                    self.server_url,
-                    ping_interval=30,
-                    ping_timeout=10,
-                ) as ws:
-                    self.ws = ws
-                    self.reconnect_count = 0
-                    await self._handshake()
-                    await self._listen()
-            except websockets.exceptions.ConnectionClosed as e:
-                log.warn(f"Connection closed: {e.code} {e.reason}")
-            except ConnectionRefusedError:
-                log.warn(f"Connection refused — server may be down")
+                await self._connect()
             except Exception as e:
-                log.error(f"Connection error: {e}")
+                log.error(f"Connection lost: {e}")
+                if self._running:
+                    log.info("Reconnecting in 5s...")
+                    await asyncio.sleep(5)
 
-            if self.running:
-                self.reconnect_count += 1
-                delay = min(RECONNECT_DELAY * self.reconnect_count, 60)
-                log.info(f"Reconnecting in {delay}s... (attempt {self.reconnect_count}/{MAX_RECONNECT})")
-                await asyncio.sleep(delay)
+    async def _connect(self):
+        async with websockets.connect(
+            self.server_url,
+            ping_interval=20,
+            ping_timeout=10,
+            extra_headers={"User-Agent": f"NEXUM-Agent/1.0 ({platform.system()})"}
+        ) as ws:
+            self.ws = ws
 
-        if self.reconnect_count >= MAX_RECONNECT:
-            log.error("Max reconnect attempts reached. Exiting.")
+            # Authenticate with one-time token
+            await ws.send(json.dumps({
+                "type": "auth",
+                "token": self.token,
+                "info": {
+                    "os": platform.system(),
+                    "os_version": platform.release(),
+                    "hostname": platform.node(),
+                    "device_id": self.device_id,
+                    "has_gui": HAS_GUI,
+                }
+            }))
 
-    async def _handshake(self):
-        """Authenticate with pairing code."""
-        msg = {
-            "type": "agent_connect",
-            "code": self.pairing_code,
-            "version": VERSION,
-            "platform": sys.platform,
-        }
-        await self.ws.send(json.dumps(msg))
-        log.info("Handshake sent, waiting for server acknowledgment...")
+            log.info("Auth sent, waiting for server response...")
 
-    async def _listen(self):
-        """Main message loop."""
-        log.success(f"Connected! Listening for commands...")
-        async for raw in self.ws:
-            try:
-                msg = json.loads(raw)
-                await self._handle(msg)
-            except json.JSONDecodeError:
-                log.error(f"Invalid JSON from server: {raw[:100]}")
-            except Exception as e:
-                log.error(f"Handler error: {e}")
-                await self._send_error(str(e))
+            async for raw in ws:
+                await self._handle(raw)
 
-    async def _handle(self, msg: dict):
-        """Dispatch incoming command to capability handler."""
-        cmd_type = msg.get("type")
-        cmd_id = msg.get("id")
-        payload = msg.get("payload", {})
-
-        log.debug(f"Command [{cmd_type}] id={cmd_id}")
-
-        if cmd_type == "ping":
-            await self._send({"type": "pong", "id": cmd_id})
-            return
-
-        if cmd_type == "disconnect":
-            log.info("Server requested disconnect")
-            self.running = False
-            return
-
-        handlers = {
-            "screenshot": self._cmd_screenshot,
-            "sysinfo": self._cmd_sysinfo,
-            "shell": self._cmd_shell,
-            "file_list": self._cmd_file_list,
-            "file_read": self._cmd_file_read,
-            "file_write": self._cmd_file_write,
-            "file_delete": self._cmd_file_delete,
-            "mouse_move": self._cmd_mouse_move,
-            "mouse_click": self._cmd_mouse_click,
-            "keyboard_type": self._cmd_keyboard_type,
-            "browser_navigate": self._cmd_browser_navigate,
-            "browser_screenshot": self._cmd_browser_screenshot,
-            "browser_read": self._cmd_browser_read,
-        }
-
-        handler = handlers.get(cmd_type)
-        if not handler:
-            await self._send_result(cmd_id, False, f"Unknown command: {cmd_type}")
-            return
-
+    async def _handle(self, raw: str):
         try:
-            result = await handler(payload)
-            await self._send_result(cmd_id, True, result)
-        except PermissionError as e:
-            log.warn(f"Blocked: {e}")
-            await self._send_result(cmd_id, False, f"BLOCKED: {e}")
-        except Exception as e:
-            log.error(f"Command failed [{cmd_type}]: {e}")
-            await self._send_result(cmd_id, False, str(e))
+            msg = json.loads(raw)
+        except Exception:
+            log.warn(f"Invalid JSON received: {raw[:100]}")
+            return
 
-    # ── Handlers ───────────────────────────────────────────────────────────────
+        msg_type = msg.get("type")
 
-    async def _cmd_screenshot(self, p: dict):
-        path = await take_screenshot()
-        with open(path, "rb") as f:
-            import base64
-            data = base64.b64encode(f.read()).decode()
-        return {"type": "image", "data": data, "format": "png"}
+        if msg_type == "auth_ok":
+            self.uid = msg.get("uid")
+            log.success(f"✅ Authenticated! UID={self.uid} | NEXUM Tunnel is LIVE")
+            return
 
-    async def _cmd_sysinfo(self, p: dict):
-        return get_sysinfo()
+        if msg_type == "auth_error":
+            log.error(f"❌ Auth failed: {msg.get('message')}")
+            log.error("Get a new token with /link_pc in Telegram")
+            self._running = False
+            return
 
-    async def _cmd_shell(self, p: dict):
-        cmd = p.get("command", "").strip()
-        if not cmd:
-            raise ValueError("Empty command")
-        if is_blocked_command(cmd):
-            raise PermissionError(f"Command is blocked by safety policy")
-        timeout = min(int(p.get("timeout", 30)), 60)
-        return await run_shell(cmd, timeout=timeout)
+        if msg_type == "command":
+            action = msg.get("action")
+            args = msg.get("args", {})
+            req_id = msg.get("requestId")
+            log.info(f"← Command: {action}")
 
-    async def _cmd_file_list(self, p: dict):
-        path = p.get("path", ".")
-        if not is_safe_path(path):
-            raise PermissionError(f"Path not allowed: {path}")
-        return file_list(path)
+            try:
+                result = await self._execute(action, args)
+                await self.ws.send(json.dumps({
+                    "type": "result",
+                    "requestId": req_id,
+                    "status": "success",
+                    "result": result
+                }))
+                log.success(f"→ {action} OK")
+            except Exception as e:
+                log.error(f"→ {action} FAILED: {e}")
+                await self.ws.send(json.dumps({
+                    "type": "result",
+                    "requestId": req_id,
+                    "status": "error",
+                    "error": str(e)
+                }))
 
-    async def _cmd_file_read(self, p: dict):
-        path = p.get("path", "")
-        if not is_safe_path(path):
-            raise PermissionError(f"Path not allowed: {path}")
-        return file_read(path)
+        if msg_type == "ping":
+            await self.ws.send(json.dumps({"type": "pong"}))
 
-    async def _cmd_file_write(self, p: dict):
-        path = p.get("path", "")
-        content = p.get("content", "")
-        if not is_safe_path(path):
-            raise PermissionError(f"Path not allowed: {path}")
-        file_write(path, content)
-        return {"ok": True, "path": path}
+    async def _execute(self, action: str, p: dict):
+        # ── Screenshot ──────────────────────────────────────────
+        if action == "screenshot":
+            if not HAS_GUI:
+                raise Exception("GUI not available on this system")
+            shot = pyautogui.screenshot()
+            buf = BytesIO()
+            shot.save(buf, format="PNG")
+            return {"image_b64": base64.b64encode(buf.getvalue()).decode(), "format": "PNG"}
 
-    async def _cmd_file_delete(self, p: dict):
-        path = p.get("path", "")
-        if not is_safe_path(path):
-            raise PermissionError(f"Path not allowed: {path}")
-        file_delete(path)
-        return {"ok": True, "path": path}
+        # ── Shell ───────────────────────────────────────────────
+        if action == "shell":
+            cmd = p.get("command", "")
+            if not cmd:
+                raise Exception("No command provided")
+            return await run_shell(cmd)
 
-    async def _cmd_mouse_move(self, p: dict):
-        x, y = int(p.get("x", 0)), int(p.get("y", 0))
-        mouse_move(x, y)
-        return {"ok": True, "x": x, "y": y}
+        # ── Mouse ───────────────────────────────────────────────
+        if action == "mouse_move":
+            if not HAS_GUI: raise Exception("GUI not available")
+            pyautogui.moveTo(p.get("x", 0), p.get("y", 0), duration=0.2)
+            return "ok"
 
-    async def _cmd_mouse_click(self, p: dict):
-        x = p.get("x")
-        y = p.get("y")
-        button = p.get("button", "left")
-        if x is not None and y is not None:
-            mouse_move(int(x), int(y))
-        mouse_click(button=button)
-        return {"ok": True}
+        if action == "click":
+            if not HAS_GUI: raise Exception("GUI not available")
+            button = p.get("button", "left")
+            double = p.get("double", False)
+            x, y = p.get("x"), p.get("y")
+            if x is not None and y is not None:
+                pyautogui.moveTo(x, y, duration=0.2)
+            if double:
+                pyautogui.doubleClick(button=button)
+            else:
+                pyautogui.click(button=button)
+            return "ok"
 
-    async def _cmd_keyboard_type(self, p: dict):
-        text = p.get("text", "")
-        keyboard_type(text)
-        return {"ok": True, "chars": len(text)}
+        # ── Keyboard ────────────────────────────────────────────
+        if action == "type_text":
+            if not HAS_GUI: raise Exception("GUI not available")
+            text = p.get("text", "")
+            pyautogui.write(text, interval=0.03)
+            return "ok"
 
-    async def _cmd_browser_navigate(self, p: dict):
-        url = p.get("url", "")
-        return await browser_navigate(url)
+        if action == "key_press":
+            if not HAS_GUI: raise Exception("GUI not available")
+            key = p.get("key", "")
+            pyautogui.press(key)
+            return "ok"
 
-    async def _cmd_browser_screenshot(self, p: dict):
-        url = p.get("url")
-        data = await browser_screenshot(url)
-        return {"type": "image", "data": data, "format": "png"}
+        # ── File System ─────────────────────────────────────────
+        if action == "list_files":
+            return await file_list(p.get("path", os.path.expanduser("~")))
 
-    async def _cmd_browser_read(self, p: dict):
-        url = p.get("url", "")
-        return await browser_read_page(url)
+        if action == "read_file":
+            return await file_read(p.get("path"))
 
-    # ── Helpers ────────────────────────────────────────────────────────────────
+        if action == "write_file":
+            return await file_write(p.get("path"), p.get("content", ""))
 
-    async def _send(self, msg: dict):
-        if self.ws:
-            await self.ws.send(json.dumps(msg))
+        if action == "delete_file":
+            return await file_delete(p.get("path"))
 
-    async def _send_result(self, cmd_id: str | None, ok: bool, data):
-        await self._send({
-            "type": "result",
-            "id": cmd_id,
-            "ok": ok,
-            "data": data,
-            "ts": datetime.utcnow().isoformat(),
-        })
+        # ── System ──────────────────────────────────────────────
+        if action == "sysinfo":
+            return await get_sysinfo()
 
-    async def _send_error(self, error: str):
-        await self._send({"type": "error", "message": error})
+        raise Exception(f"Unknown action: {action}")
 
-    def stop(self):
-        self.running = False
-        if self.ws:
-            asyncio.create_task(self.ws.close())
 
+# ============================================================
+#  ENTRY POINT
+# ============================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="NEXUM PC Agent")
-    parser.add_argument("--code", required=True, help="Pairing code from /link command")
-    parser.add_argument("--server", required=True, help="NEXUM WebSocket URL (wss://...)")
-    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser = argparse.ArgumentParser(
+        description="NEXUM PC Agent — connects your PC to NEXUM AI via Telegram"
+    )
+    parser.add_argument(
+        "--token", required=True,
+        help="One-time auth token from /link_pc in Telegram"
+    )
+    parser.add_argument(
+        "--server",
+        default=os.environ.get("NEXUM_SERVER", "wss://nexum-production.up.railway.app"),
+        help="NEXUM WebSocket server URL (default: Railway deployment)"
+    )
     args = parser.parse_args()
 
-    if args.debug:
-        import os
-        os.environ["NEXUM_DEBUG"] = "1"
+    agent = NexumAgent(server_url=args.server, token=args.token)
 
-    print(f"""
-╔══════════════════════════════════════╗
-║     NEXUM PC Agent v{VERSION}          ║
-║  Connecting to: {args.server[:24]}...  ║
-╚══════════════════════════════════════╝
-""")
-
-    agent = NexumAgent(args.server, args.code)
-
-    def handle_signal(sig, frame):
-        log.info("Shutting down...")
-        agent.stop()
+    # Graceful shutdown
+    def shutdown(sig, frame):
+        print("\n[NEXUM] Shutting down...")
+        agent._running = False
         sys.exit(0)
 
-    signal.signal(signal.SIGINT, handle_signal)
-    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGTERM, shutdown)
 
-    asyncio.run(agent.connect())
+    try:
+        asyncio.run(agent.start())
+    except KeyboardInterrupt:
+        print("\n[NEXUM] Bye!")
 
 
 if __name__ == "__main__":

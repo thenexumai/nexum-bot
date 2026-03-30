@@ -1,231 +1,227 @@
-/**
- * NEXUM Agent Router — multi-provider with streaming
- * Priority: BYOK → Cerebras → Groq → Gemini → DeepSeek → Together → OpenRouter → Claude → Grok
- */
-
-import { getProviderKey, type AiProvider } from '../core/config';
-import { db } from '../core/db';
-import { createLogger } from '../infra/logger';
-
-const log = createLogger('router');
+import { Logger } from '../infra/logger';
+import { getProviderKey, getModelChain, FREE_MODEL_CHAIN, ModelConfig } from '../core/config';
+import db from '../core/db';
 
 export interface Message {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+    role: 'system' | 'user' | 'assistant' | 'tool';
+    content: any;
+    tool_call_id?: string;
+    name?: string;
+    tool_calls?: any[];
 }
 
-export type StreamCallback = (token: string) => void;
+// ============================================================
+//  UNIFIED AI ROUTER with automatic fallback chain
+//  Tries providers in order until one succeeds
+// ============================================================
 
-// ── Provider configs ──────────────────────────────────────────────────────────
+export async function chatUnified(
+    messages: Message[],
+    uid: number,
+    tools?: any[]
+): Promise<Message> {
+    // Get user plan for BYOK support
+    const userRow = db.prepare('SELECT subscription_plan FROM users WHERE uid = ?').get(uid) as any;
+    const isPro = userRow?.subscription_plan === 'pro';
 
-interface ProviderConfig {
-  name: string;
-  baseUrl: string;
-  model: string;
-  provider: AiProvider;
-  format: 'openai' | 'anthropic' | 'google';
-}
+    const chain = getModelChain(uid, isPro);
 
-const PROVIDERS: ProviderConfig[] = [
-  { name: 'Cerebras',   provider: 'cerebras',   baseUrl: 'https://api.cerebras.ai/v1',                          model: 'llama-3.3-70b',              format: 'openai' },
-  { name: 'Groq',       provider: 'groq',       baseUrl: 'https://api.groq.com/openai/v1',                      model: 'llama-3.3-70b-versatile',    format: 'openai' },
-  { name: 'Gemini',     provider: 'gemini',     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',    model: 'gemini-2.0-flash',           format: 'google' },
-  { name: 'DeepSeek',   provider: 'deepseek',   baseUrl: 'https://api.deepseek.com/v1',                         model: 'deepseek-chat',              format: 'openai' },
-  { name: 'Together',   provider: 'together',   baseUrl: 'https://api.together.xyz/v1',                         model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', format: 'openai' },
-  { name: 'SambaNova',  provider: 'sambanova',  baseUrl: 'https://api.sambanova.ai/v1',                         model: 'Meta-Llama-3.3-70B-Instruct', format: 'openai' },
-  { name: 'OpenRouter', provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1',                        model: 'deepseek/deepseek-chat',     format: 'openai' },
-  { name: 'Grok',       provider: 'grok',       baseUrl: 'https://api.x.ai/v1',                                 model: 'grok-3-mini',                format: 'openai' },
-  { name: 'Claude',     provider: 'claude',     baseUrl: 'https://api.anthropic.com/v1',                        model: 'claude-sonnet-4-5',          format: 'anthropic' },
-];
-
-// ── OpenAI-compatible chat ─────────────────────────────────────────────────────
-
-async function callOpenAI(
-  cfg: ProviderConfig,
-  key: string,
-  messages: Message[],
-  onToken?: StreamCallback,
-): Promise<string> {
-  const stream = !!onToken;
-
-  const resp = await fetch(`${cfg.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      ...(cfg.provider === 'openrouter' ? { 'HTTP-Referer': 'https://nexum.ai', 'X-Title': 'NEXUM' } : {}),
-    },
-    body: JSON.stringify({
-      model: cfg.model,
-      messages,
-      max_tokens: 1500,
-      temperature: 0.7,
-      stream,
-    }),
-  });
-
-  if (!resp.ok) {
-    const err = await resp.text();
-    throw new Error(`${cfg.name} ${resp.status}: ${err.slice(0, 120)}`);
-  }
-
-  if (!stream || !onToken) {
-    const data = await resp.json() as { choices: { message: { content: string } }[] };
-    return data.choices[0]?.message?.content ?? '';
-  }
-
-  // Streaming
-  const reader = resp.body!.getReader();
-  const decoder = new TextDecoder();
-  let full = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = decoder.decode(value, { stream: true });
-    for (const line of chunk.split('\n')) {
-      if (!line.startsWith('data: ')) continue;
-      const raw = line.slice(6).trim();
-      if (raw === '[DONE]') break;
-      try {
-        const j = JSON.parse(raw) as { choices: { delta: { content?: string } }[] };
-        const token = j.choices[0]?.delta?.content ?? '';
-        if (token) { full += token; onToken(token); }
-      } catch { /* skip malformed */ }
+    if (chain.length === 0) {
+        Logger.error('router', 'No AI providers available!');
+        return { role: 'assistant', content: '❌ Нет доступных AI провайдеров. Добавь API ключ через /byok' };
     }
-  }
-  return full;
-}
 
-// ── Anthropic chat ────────────────────────────────────────────────────────────
+    const errors: string[] = [];
 
-async function callAnthropic(
-  key: string,
-  messages: Message[],
-  onToken?: StreamCallback,
-): Promise<string> {
-  const system = messages.find(m => m.role === 'system')?.content ?? '';
-  const filtered = messages.filter(m => m.role !== 'system');
+    for (const cfg of chain) {
+        const key = getProviderKey(cfg.provider, uid);
+        if (!key) continue;
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 1500,
-      system,
-      messages: filtered,
-      stream: !!onToken,
-    }),
-  });
+        try {
+            Logger.debug('router', `Trying ${cfg.provider} (${cfg.model})`);
 
-  if (!resp.ok) throw new Error(`Claude ${resp.status}`);
+            let result: Message;
+            if (cfg.format === 'openai') {
+                result = await callOpenAI(cfg, key, messages, tools);
+            } else if (cfg.format === 'google') {
+                result = await callGemini(cfg, key, messages, tools);
+            } else if (cfg.format === 'anthropic') {
+                result = await callAnthropic(cfg, key, messages, tools);
+            } else {
+                continue;
+            }
 
-  if (!onToken) {
-    const data = await resp.json() as { content: { text: string }[] };
-    return data.content[0]?.text ?? '';
-  }
+            Logger.debug('router', `✅ ${cfg.provider} responded`);
+            return result;
 
-  const reader = resp.body!.getReader();
-  const decoder = new TextDecoder();
-  let full = '';
+        } catch (err: any) {
+            const msg = err?.message || String(err);
+            Logger.warn('router', `${cfg.provider} failed: ${msg}`);
+            errors.push(`${cfg.provider}: ${msg}`);
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = decoder.decode(value, { stream: true });
-    for (const line of chunk.split('\n')) {
-      if (!line.startsWith('data: ')) continue;
-      try {
-        const j = JSON.parse(line.slice(6)) as { type: string; delta?: { text: string } };
-        if (j.type === 'content_block_delta' && j.delta?.text) {
-          full += j.delta.text;
-          onToken(j.delta.text);
+            // Don't retry on auth errors
+            if (msg.includes('401') || msg.includes('invalid_api_key')) continue;
+            // Rate limit — try next
+            if (msg.includes('429') || msg.includes('rate_limit')) continue;
         }
-      } catch { /* skip */ }
     }
-  }
-  return full;
+
+    Logger.error('router', `All providers failed: ${errors.join(' | ')}`);
+    return {
+        role: 'assistant',
+        content: '⚠️ Все AI провайдеры временно недоступны. Попробуй позже или добавь свой ключ через /byok'
+    };
 }
 
-// ── Gemini chat ───────────────────────────────────────────────────────────────
+// ============================================================
+//  PROVIDER IMPLEMENTATIONS
+// ============================================================
 
-async function callGemini(key: string, messages: Message[]): Promise<string> {
-  const contents = messages
-    .filter(m => m.role !== 'system')
-    .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
+async function callOpenAI(cfg: ModelConfig, key: string, messages: Message[], tools?: any[]): Promise<Message> {
+    const headers: Record<string, string> = {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+    };
+    if (cfg.provider === 'openrouter') {
+        headers['HTTP-Referer'] = 'https://nexum.ai';
+        headers['X-Title'] = 'NEXUM';
+    }
+    if (cfg.provider === 'sambanova') {
+        // SambaNova uses same format but different header
+        headers['Authorization'] = `Basic ${Buffer.from(key).toString('base64')}`;
+    }
 
-  const system = messages.find(m => m.role === 'system')?.content;
+    const body: any = {
+        model: cfg.model,
+        messages: messages.filter(m => m.role !== 'tool' || cfg.supportsTools).map(normalizeMessage),
+        max_tokens: cfg.maxTokens,
+        temperature: 0.6,
+    };
+    if (tools && cfg.supportsTools) {
+        body.tools = tools;
+        body.tool_choice = 'auto';
+    }
 
-  const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const resp = await fetchWithTimeout(`${cfg.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`HTTP ${resp.status}: ${text.slice(0, 200)}`);
+    }
+
+    const data = await resp.json() as any;
+    const choice = data.choices?.[0]?.message;
+    if (!choice) throw new Error('No response in choices');
+
+    return {
+        role: 'assistant',
+        content: choice.content || '',
+        tool_calls: choice.tool_calls,
+    };
+}
+
+async function callGemini(cfg: ModelConfig, key: string, messages: Message[], tools?: any[]): Promise<Message> {
+    const systemMsg = messages.find(m => m.role === 'system');
+    const chatMsgs = messages.filter(m => m.role !== 'system');
+
+    const contents = chatMsgs.map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
+    }));
+
+    const body: any = {
         contents,
-        ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
-        generationConfig: { maxOutputTokens: 1500, temperature: 0.7 },
-      }),
-    },
-  );
-
-  if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
-  const data = await resp.json() as { candidates: { content: { parts: { text: string }[] } }[] };
-  return data.candidates[0]?.content?.parts[0]?.text ?? '';
-}
-
-// ── Main chat function ────────────────────────────────────────────────────────
-
-export async function chat(messages: Message[], byokKeys?: Record<string, string>): Promise<string> {
-  return chatStreaming(messages, undefined, byokKeys);
-}
-
-export async function chatStreaming(
-  messages: Message[],
-  onToken?: StreamCallback,
-  byokKeys?: Record<string, string>,
-): Promise<string> {
-  const errors: string[] = [];
-
-  // Try BYOK first
-  if (byokKeys) {
-    for (const [provider, key] of Object.entries(byokKeys)) {
-      if (!key) continue;
-      try {
-        const cfg = PROVIDERS.find(p => p.provider === provider);
-        if (!cfg) continue;
-        log.debug(`Using BYOK: ${cfg.name}`);
-        if (cfg.format === 'anthropic') return await callAnthropic(key, messages, onToken);
-        if (cfg.format === 'google') return await callGemini(key, messages);
-        return await callOpenAI(cfg, key, messages, onToken);
-      } catch (e) {
-        errors.push(`BYOK ${provider}: ${(e as Error).message}`);
-      }
+        generationConfig: { maxOutputTokens: cfg.maxTokens, temperature: 0.6 },
+    };
+    if (systemMsg) {
+        body.systemInstruction = { parts: [{ text: systemMsg.content }] };
     }
-  }
 
-  // Try system keys in priority order
-  for (const cfg of PROVIDERS) {
-    const key = getProviderKey(cfg.provider);
-    if (!key) continue;
+    const url = `${cfg.baseUrl}/models/${cfg.model}:generateContent?key=${key}`;
+    const resp = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
 
+    if (!resp.ok) throw new Error(`Gemini HTTP ${resp.status}: ${await resp.text()}`);
+
+    const data = await resp.json() as any;
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error('Gemini returned empty response');
+
+    return { role: 'assistant', content: text };
+}
+
+async function callAnthropic(cfg: ModelConfig, key: string, messages: Message[], tools?: any[]): Promise<Message> {
+    const systemMsg = messages.find(m => m.role === 'system');
+    const chatMsgs = messages.filter(m => m.role !== 'system');
+
+    const body: any = {
+        model: cfg.model,
+        max_tokens: cfg.maxTokens,
+        messages: chatMsgs.map(m => ({
+            role: m.role === 'assistant' ? 'assistant' : 'user',
+            content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+        })),
+        system: systemMsg?.content,
+    };
+    if (tools && cfg.supportsTools) {
+        body.tools = tools.map((t: any) => ({
+            name: t.function.name,
+            description: t.function.description,
+            input_schema: t.function.parameters,
+        }));
+    }
+
+    const resp = await fetchWithTimeout(`${cfg.baseUrl}/messages`, {
+        method: 'POST',
+        headers: {
+            'x-api-key': key,
+            'anthropic-version': '2023-06-01',
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) throw new Error(`Anthropic HTTP ${resp.status}: ${await resp.text()}`);
+
+    const data = await resp.json() as any;
+    const textBlock = data.content?.find((b: any) => b.type === 'text');
+    return { role: 'assistant', content: textBlock?.text || '' };
+}
+
+// ============================================================
+//  HELPERS
+// ============================================================
+
+function normalizeMessage(m: Message): any {
+    if (m.role === 'tool') {
+        return { role: 'tool', tool_call_id: m.tool_call_id, content: m.content };
+    }
+    return { role: m.role, content: m.content, tool_calls: m.tool_calls };
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 30000): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      log.debug(`Trying provider: ${cfg.name}`);
-      if (cfg.format === 'anthropic') return await callAnthropic(key, messages, onToken);
-      if (cfg.format === 'google') return await callGemini(key, messages);
-      return await callOpenAI(cfg, key, messages, onToken);
-    } catch (e) {
-      const msg = (e as Error).message;
-      errors.push(`${cfg.name}: ${msg}`);
-      log.warn(`Provider ${cfg.name} failed: ${msg}`);
+        return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
     }
-  }
+}
 
-  log.error(`All providers failed:\n${errors.join('\n')}`);
-  throw new Error('All AI providers failed. Check your API keys.');
+/** Quick test — returns which providers are currently available */
+export async function testProviders(uid: number): Promise<Record<string, boolean>> {
+    const results: Record<string, boolean> = {};
+    for (const cfg of FREE_MODEL_CHAIN) {
+        const key = getProviderKey(cfg.provider, uid);
+        results[cfg.provider] = !!key;
+    }
+    return results;
 }

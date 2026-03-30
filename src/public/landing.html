@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>NEXUM — Intelligence in Motion</title>
+    <style>
+        :root { --bg: #050507; --accent: #6c63ff; --text: #ffffff; }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, sans-serif; overflow-x: hidden; }
+        
+        .hero { height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: radial-gradient(circle at center, #1a1a2e 0%, #050507 100%); }
+        .logo { width: 120px; height: 120px; margin-bottom: 30px; animation: float 6s ease-in-out infinite; }
+        
+        h1 { font-size: 4rem; font-weight: 800; letter-spacing: -2px; margin-bottom: 10px; background: linear-gradient(to bottom, #fff 0%, #9395a5 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        p { font-size: 1.2rem; color: #9395a5; max-width: 600px; margin-bottom: 40px; line-height: 1.6; }
+        
+        .btn-group { display: flex; gap: 20px; }
+        .btn { padding: 16px 32px; border-radius: 30px; font-weight: bold; text-decoration: none; transition: all 0.3s; }
+        .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 0 30px rgba(108,99,255,0.4); }
+        .btn-primary:hover { transform: scale(1.05); box-shadow: 0 0 50px rgba(108,99,255,0.6); }
+        .btn-secondary { border: 1px solid #2a2a38; color: #fff; }
+        .btn-secondary:hover { background: #13131a; }
+        
+        .features { padding: 100px 20px; display: grid; grid-template-columns: repeat(3, 1fr); max-width: 1200px; margin: 0 auto; gap: 40px; }
+        .feature-card { background: #0a0a0f; border: 1px solid #1a1d27; padding: 40px; border-radius: 20px; transition: border 0.3s; }
+        .feature-card:hover { border-color: var(--accent); }
+        .feature-card h3 { color: var(--accent); margin-top: 0; }
+        
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-20px); } }
+    </style>
+</head>
+<body>
+    <div class="hero">
+        <img src="/NEXUM LOGO.PNG" class="logo">
+        <h1>Intelligence in Motion.</h1>
+        <p>The first AI-native ecosystem that connects your Browser, your PC, and your Life into one seamless flow. Free, Private, Revolutionary.</p>
+        <div class="btn-group">
+            <a href="#" class="btn btn-primary">Download NEXUM Browser</a>
+            <a href="https://t.me/nexum_bot" class="btn btn-secondary">Open Telegram Bot</a>
+        </div>
+    </div>
+
+    <div class="features">
+        <div class="feature-card">
+            <h3>AI-Native Browsing</h3>
+            <p>A web portal that understands every pixel. Automate research, extract data, and surf with an agent by your side.</p>
+        </div>
+        <div class="feature-card">
+            <h3>Cross-Device Logic</h3>
+            <p>Sync your discoveries instantly. Find it in your browser, record it in your finance app, and save it to your PC.</p>
+        </div>
+        <div class="feature-card">
+            <h3>Total Safety</h3>
+            <p>Enterprise-grade encryption and two-phase command approvals. You are always in control of your data.</p>
+        </div>
+    </div>
+</body>
+</html>
