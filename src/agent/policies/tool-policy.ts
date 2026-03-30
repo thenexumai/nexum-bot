@@ -3,7 +3,7 @@
  * Controls which PC Agent capabilities each subscription tier can use.
  */
 
-import { getUserTariff } from '../../core/billing';
+import { getUserPlan } from '../../core/billing';
 
 export type CapabilityGroup =
   | 'read_only'      // screenshot, sysinfo, file_read — all tiers
@@ -54,7 +54,7 @@ export interface ToolPolicyResult {
 }
 
 export function checkToolPolicy(uid: number, capability: string): ToolPolicyResult {
-  const plan = getUserTariff(uid);
+  const plan = getUserPlan(uid);
   const group = CAPABILITY_GROUPS[capability];
 
   if (!group) {

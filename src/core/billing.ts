@@ -38,10 +38,19 @@ export const getRateLimit = (uid: number): number => {
 export const setPlan = (uid: number, plan: Plan, days: number) => {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + days);
-    
     db.prepare(`
         UPDATE users 
         SET subscription_plan = ?, subscription_expires_at = ? 
         WHERE uid = ?
     `).run(plan, expiresAt.toISOString(), uid);
+};
+
+/** Alias for setPlan — used in admin commands */
+export const grantPlan = setPlan;
+
+/** Revoke — reset to free */
+export const revokePlan = (uid: number) => {
+    db.prepare(`
+        UPDATE users SET subscription_plan = 'free', subscription_expires_at = NULL WHERE uid = ?
+    `).run(uid);
 };

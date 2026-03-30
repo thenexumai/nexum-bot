@@ -1,12 +1,10 @@
 /**
  * NEXUM Session Manager
- * Manages conversation sessions with automatic expiry and context windows.
+ * In-memory sessions with optional SQLite persistence across restarts.
  */
 
-import { db } from '../core/db';
-import { createLogger } from '../infra/logger';
-
-const log = createLogger('session');
+import db from '../core/db';
+import { Logger } from '../infra/logger';
 
 export interface SessionMessage {
   role: 'user' | 'assistant' | 'system';
@@ -29,7 +27,7 @@ export function addToSession(uid: number, role: SessionMessage['role'], content:
 
   msgs.push({ role, content, ts: Date.now() });
 
-  // Trim to max messages (keep system prompt if present)
+  // Trim to max messages
   if (msgs.length > MAX_MESSAGES) {
     const systemMsgs = msgs.filter(m => m.role === 'system');
     const nonSystem = msgs.filter(m => m.role !== 'system');
@@ -40,7 +38,7 @@ export function addToSession(uid: number, role: SessionMessage['role'], content:
 
 export function clearSession(uid: number): void {
   sessions.delete(uid);
-  log.info(`Session cleared for uid=${uid}`);
+  Logger.info('session', `Session cleared for uid=${uid}`);
 }
 
 export function hasActiveSession(uid: number): boolean {
@@ -50,7 +48,6 @@ export function hasActiveSession(uid: number): boolean {
   return Date.now() - last.ts < SESSION_TTL_MS;
 }
 
-/** Auto-expire stale sessions (run periodically) */
 export function pruneExpiredSessions(): number {
   let pruned = 0;
   const cutoff = Date.now() - SESSION_TTL_MS;
@@ -62,7 +59,7 @@ export function pruneExpiredSessions(): number {
       pruned++;
     }
   }
-  if (pruned > 0) log.debug(`Pruned ${pruned} expired sessions`);
+  if (pruned > 0) Logger.info('session', `Pruned ${pruned} expired sessions`);
   return pruned;
 }
 
@@ -75,7 +72,7 @@ export function getSessionStats(): { active: number; total: number } {
   return { active, total: sessions.size };
 }
 
-/** Serialize session to DB for persistence across restarts */
+/** Persist to DB across restarts */
 export function persistSession(uid: number): void {
   try {
     const msgs = sessions.get(uid);
@@ -86,22 +83,30 @@ export function persistSession(uid: number): void {
       ON CONFLICT(uid) DO UPDATE SET messages = excluded.messages, updated_at = excluded.updated_at
     `).run(uid, JSON.stringify(msgs));
   } catch {
-    // Ignore persistence errors — in-memory is fallback
+    // in-memory fallback — ok
   }
 }
 
-/** Load session from DB (on bot restart) */
+/** Load from DB on restart */
 export function loadSession(uid: number): void {
   try {
     const row = db.prepare(`SELECT messages FROM sessions WHERE uid=?`).get(uid) as { messages: string } | undefined;
     if (row?.messages) {
       const msgs = JSON.parse(row.messages) as SessionMessage[];
-      // Only restore if last message is within TTL
       if (msgs.length && Date.now() - msgs[msgs.length - 1].ts < SESSION_TTL_MS) {
         sessions.set(uid, msgs);
       }
     }
   } catch {
-    // Ignore
+    // ignore
   }
 }
+
+/** Aliases для handler.ts */
+export const getSessionHistory = (uid: number) =>
+  getSession(uid).map(m => ({ role: m.role, content: m.content }));
+
+export const appendToSession = (uid: number, role: 'user' | 'assistant', content: string) => {
+  addToSession(uid, role, content.slice(0, 4000));
+  persistSession(uid);
+};

@@ -1,4 +1,4 @@
-import { Bot } from 'grammy';
+import { Bot, InputFile } from 'grammy';
 import { CONFIG } from '../../core/config';
 import { createLinkToken, agentConnections, pendingRequests } from '../../index';
 import { Logger } from '../../infra/logger';
@@ -62,7 +62,7 @@ export const setupPcAgentCommands = (bot: Bot) => {
         if (response.error) return ctx.reply(`❌ ${response.error}`);
         if (response.data) {
             const buf = Buffer.from(response.data, 'base64');
-            await ctx.replyWithPhoto({ source: buf });
+            await ctx.replyWithPhoto(new InputFile(buf, "screenshot.png"));
         }
     });
 };

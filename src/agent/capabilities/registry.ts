@@ -1,8 +1,8 @@
-import { pcConnections } from '../../index';
+import { agentConnections } from '../../index';
 import { Logger } from '../../infra/logger';
 
 export const sendToPC = async (uid: number, action: string, params: any = {}) => {
-    const ws = pcConnections.get(uid);
+    const ws = agentConnections.get(uid);
     if (!ws) throw new Error('PC Agent not connected');
 
     return new Promise((resolve, reject) => {

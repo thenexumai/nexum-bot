@@ -1,10 +1,10 @@
 import { Logger } from '../infra/logger';
-import { pcConnections } from '../index';
+import { agentConnections } from '../index';
 
 export const browseSite = async (uid: number, url: string, action: string = 'screenshot'): Promise<string> => {
     Logger.info('browser', `Browsing ${url} for user ${uid} (Action: ${action})`);
     
-    const ws = pcConnections.get(uid);
+    const ws = agentConnections.get(uid);
     if (!ws) {
         return 'Error: PC Agent not connected. Browser automation requires the local nexum_agent.py.';
     }

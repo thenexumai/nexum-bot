@@ -310,6 +310,14 @@ export function setupGeneralCommands(bot: Bot) {
         );
     });
 
+    // /clear — clear session history
+    bot.command('clear', async (ctx) => {
+        const uid = ctx.from!.id;
+        const { clearSession } = await import('../../state/session');
+        clearSession(uid);
+        await ctx.reply('История диалога очищена. Начинаем с чистого листа.');
+    });
+
     // /lang
     bot.command('lang', async (ctx) => {
         const uid = ctx.from!.id;

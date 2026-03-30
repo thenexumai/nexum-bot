@@ -3,7 +3,7 @@
  * Tracks memory usage, uptime, API errors, and system health.
  */
 
-import { db } from '../core/db';
+import db from '../core/db';
 import { createLogger } from './logger';
 
 const log = createLogger('monitor');

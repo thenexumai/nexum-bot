@@ -3,7 +3,7 @@
  * Generates suggested fixes and sends them to admin for approval.
  */
 
-import { db } from '../core/db';
+import db from '../core/db';
 import { getProviderKey } from '../core/config';
 import { createLogger } from '../infra/logger';
 import type { CapturedError } from './error-detector';

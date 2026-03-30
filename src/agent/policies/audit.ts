@@ -3,7 +3,7 @@
  * Every capability execution is logged for security and review.
  */
 
-import { db } from '../../core/db';
+import db from '../../core/db';
 import { createLogger } from '../../infra/logger';
 
 const log = createLogger('audit');

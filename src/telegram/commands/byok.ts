@@ -1,7 +1,7 @@
 import { Bot } from 'grammy';
 import { canUseFeature } from '../../core/billing';
 import { getPreferences } from '../../core/preferences';
-import t from '../../i18n';
+import { t } from '../../i18n';
 import db from '../../core/db';
 
 const VALID_PROVIDERS = ['claude', 'groq', 'gemini', 'deepseek', 'grok', 'openrouter', 'together', 'sambanova', 'cerebras'];

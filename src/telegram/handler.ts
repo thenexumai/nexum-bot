@@ -1,4 +1,4 @@
-import { Bot, Context, InlineKeyboard } from 'grammy';
+import { Bot, Context, InlineKeyboard, InputFile } from 'grammy';
 import { executeAI } from '../agent/executor';
 import { Logger } from '../infra/logger';
 import { transcribeVoice } from '../tools/stt';
@@ -6,6 +6,7 @@ import { handleApprovalResult } from '../agent/policies/exec-approvals';
 import { setupCommands } from './commands';
 import { CONFIG } from '../core/config';
 import db from '../core/db';
+import { getSessionHistory, appendToSession, clearSession } from '../state/session';
 import fetch from 'node-fetch';
 
 // ============================================================
@@ -19,14 +20,13 @@ export const setupBot = (bot: Bot) => {
     bot.on('callback_query:data', async (ctx) => {
         const data = ctx.callbackQuery.data;
 
-        // PC approval buttons
         if (data.startsWith('appr_')) {
             const [actionId, status] = data.replace('appr_', '').split(':');
             const approved = status === 'allow';
             handleApprovalResult(actionId, approved);
-            await ctx.answerCallbackQuery(approved ? '✅ Разрешено' : '❌ Отклонено');
+            await ctx.answerCallbackQuery(approved ? 'Разрешено' : 'Отклонено');
             await ctx.editMessageText(
-                approved ? '✅ Действие выполнено.' : '❌ Действие отклонено.',
+                approved ? 'Действие выполнено.' : 'Действие отклонено.',
                 { reply_markup: undefined }
             ).catch(() => {});
             return;
@@ -49,19 +49,19 @@ export const setupBot = (bot: Bot) => {
 
             const text = await transcribeVoice(buffer);
             if (!text) {
-                await ctx.reply('❌ Не удалось распознать голос. Попробуй ещё раз.');
+                await ctx.reply('Не удалось распознать голос. Попробуй ещё раз.');
                 return;
             }
 
-            await ctx.reply(`🎙 *Распознано:*\n_${safeMarkdown(text)}_`, { parse_mode: 'Markdown' });
+            await ctx.reply(`*Распознано:*\n_${safeMarkdown(text)}_`, { parse_mode: 'Markdown' });
             await processAIRequest(ctx, text, uid);
         } catch (err) {
             Logger.error('telegram', 'Voice error', err);
-            await ctx.reply('❌ Ошибка при обработке голоса.');
+            await ctx.reply('Ошибка при обработке голоса.');
         }
     });
 
-    // --- PHOTOS (screenshot analysis) ---
+    // --- PHOTOS ---
     bot.on('message:photo', async (ctx) => {
         const uid = ctx.from?.id;
         if (!uid) return;
@@ -74,7 +74,7 @@ export const setupBot = (bot: Bot) => {
         const uid = ctx.from?.id;
         if (!uid) return;
         const text = ctx.message?.text || '';
-        if (text.startsWith('/')) return; // commands handled separately
+        if (text.startsWith('/')) return;
         await processAIRequest(ctx, text, uid);
     });
 };
@@ -86,10 +86,9 @@ export const setupBot = (bot: Bot) => {
 async function processAIRequest(ctx: Context, text: string, uid: number) {
     Logger.info('telegram', `Request from UID ${uid}: ${text.slice(0, 80)}`);
 
-    // Ensure user exists in DB
     ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
 
-    // Check daily message limit
+    // Check daily limit
     const user = db.prepare('SELECT subscription_plan, msg_count_today FROM users WHERE uid = ?').get(uid) as any;
     const plan = user?.subscription_plan || 'free';
     const limit = plan === 'pro' ? 9999 : plan === 'middle' ? 200 : 50;
@@ -97,41 +96,41 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
 
     if (count >= limit) {
         await ctx.reply(
-            `⚠️ *Лимит сообщений исчерпан* (${limit}/день)\n\nОбнови план: /tariffs`,
+            `*Лимит сообщений исчерпан* (${limit}/день)\n\nОбнови план: /tariffs`,
             { parse_mode: 'Markdown' }
         );
         return;
     }
 
-    // Increment message count
     db.prepare('UPDATE users SET msg_count_today = msg_count_today + 1 WHERE uid = ?').run(uid);
-
-    // Show typing indicator
     await ctx.replyWithChatAction('typing').catch(() => {});
 
     try {
-        // Send placeholder
-        const placeholder = await ctx.reply('⏳', { parse_mode: 'Markdown' });
+        const placeholder = await ctx.reply('...', { parse_mode: 'Markdown' });
         let fullResponse = '';
         let lastEdit = Date.now();
 
-        await executeAI(text, uid, [], async (chunk: string) => {
+        // Load session history
+        const history = getSessionHistory(uid);
+
+        await executeAI(text, uid, history, async (chunk: string) => {
             fullResponse += chunk;
-            // Edit message every 1.5 seconds to avoid flood limits
             if (Date.now() - lastEdit > 1500 && fullResponse.length > 0) {
                 lastEdit = Date.now();
                 await ctx.api.editMessageText(
                     ctx.chat!.id,
                     placeholder.message_id,
-                    truncate(fullResponse) + ' ⏳',
+                    truncate(fullResponse) + ' ...',
                     { parse_mode: 'Markdown' }
                 ).catch(() => {});
             }
         });
 
-        // Final edit with full response
+        // Save to session
+        appendToSession(uid, 'user', text);
+        appendToSession(uid, 'assistant', fullResponse);
+
         if (fullResponse) {
-            // Split long messages
             const chunks = splitMessage(fullResponse);
             await ctx.api.editMessageText(
                 ctx.chat!.id,
@@ -144,16 +143,16 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
                 await ctx.reply(chunks[i], { parse_mode: 'Markdown' }).catch(() => {});
             }
         } else {
-            await ctx.api.editMessageText(ctx.chat!.id, placeholder.message_id, '🤖 Нет ответа.').catch(() => {});
+            await ctx.api.editMessageText(ctx.chat!.id, placeholder.message_id, 'Нет ответа.').catch(() => {});
         }
     } catch (err) {
         Logger.error('telegram', `AI request failed for UID ${uid}`, err);
-        await ctx.reply('❌ Произошла ошибка. Попробуй ещё раз.');
+        await ctx.reply('Произошла ошибка. Попробуй ещё раз.');
     }
 }
 
 // ============================================================
-//  APPROVAL BUTTONS (used by exec-approvals.ts)
+//  APPROVAL BUTTONS
 // ============================================================
 
 export const sendApprovalButtons = async (
@@ -164,12 +163,12 @@ export const sendApprovalButtons = async (
     args: any
 ) => {
     const keyboard = new InlineKeyboard()
-        .text('✅ Разрешить', `appr_${actionId}:allow`)
-        .text('❌ Отклонить', `appr_${actionId}:deny`);
+        .text('Разрешить', `appr_${actionId}:allow`)
+        .text('Отклонить', `appr_${actionId}:deny`);
 
     await bot.api.sendMessage(
         uid,
-        `⚠️ *Запрос на выполнение действия*\n\nДействие: \`${action}\`\nАргументы: \`${JSON.stringify(args).slice(0, 200)}\`\n\nРазрешить?`,
+        `*Запрос на выполнение действия*\n\nДействие: \`${action}\`\nАргументы: \`${JSON.stringify(args).slice(0, 200)}\`\n\nРазрешить?`,
         { parse_mode: 'Markdown', reply_markup: keyboard }
     );
 };

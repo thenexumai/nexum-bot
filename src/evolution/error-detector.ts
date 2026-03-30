@@ -3,7 +3,7 @@
  * Monitors runtime errors and prepares them for analysis.
  */
 
-import { db } from '../core/db';
+import db from '../core/db';
 import { createLogger } from '../infra/logger';
 
 const log = createLogger('evolution:detector');
