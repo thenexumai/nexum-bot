@@ -44,7 +44,11 @@
 <body>
 <header class="app-header">
   <div class="header-logo">
-    <div class="logo-dot">⚙️</div>
+    <div class="logo-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+      </svg>
+    </div>
     <h1>Settings</h1>
   </div>
 </header>
@@ -56,14 +60,14 @@
     <div class="settings-title">Account</div>
     <div class="settings-row plan-row" onclick="showPlan()">
       <div class="row-left">
-        <div class="row-icon">💎</div>
+        <div class="row-icon" style="width:32px;height:32px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center"><svg style="width:16px;height:16px;stroke:var(--accent2);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M18.66 5.34l1.41-1.41"/></svg></div>
         <div><div class="row-label">Plan</div><div class="row-sub" id="planSub">Loading...</div></div>
       </div>
       <div class="row-right">Upgrade →</div>
     </div>
     <div class="settings-row" onclick="showUsage()">
       <div class="row-left">
-        <div class="row-icon">📊</div>
+        <div class="row-icon" style="width:32px;height:32px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center"><svg style="width:16px;height:16px;stroke:var(--accent2);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M18.66 5.34l1.41-1.41"/></svg></div>
         <div><div class="row-label">Usage</div><div class="row-sub" id="usageSub">— / — messages today</div></div>
       </div>
       <div class="row-right">›</div>
@@ -75,7 +79,7 @@
     <div class="settings-title">AI Settings</div>
     <div class="settings-row">
       <div class="row-left">
-        <div class="row-icon">🌐</div>
+        <div class="row-icon" style="width:32px;height:32px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center"><svg style="width:16px;height:16px;stroke:var(--accent2);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M18.66 5.34l1.41-1.41"/></svg></div>
         <div><div class="row-label">Language</div><div class="row-sub">Response language</div></div>
       </div>
       <select class="input" id="langSelect" style="width:auto;padding:4px 8px;font-size:.85rem" onchange="saveLang()">
@@ -85,7 +89,7 @@
     </div>
     <div class="settings-row" onclick="toggleVoice()">
       <div class="row-left">
-        <div class="row-icon">🔊</div>
+        <div class="row-icon" style="width:32px;height:32px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center"><svg style="width:16px;height:16px;stroke:var(--accent2);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M18.66 5.34l1.41-1.41"/></svg></div>
         <div><div class="row-label">Voice Replies</div><div class="row-sub">Reply with audio</div></div>
       </div>
       <label class="toggle" onclick="event.stopPropagation()">
@@ -96,7 +100,7 @@
     </div>
     <div class="settings-row" onclick="toggleFocus()">
       <div class="row-left">
-        <div class="row-icon">🎯</div>
+        <div class="row-icon" style="width:32px;height:32px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center"><svg style="width:16px;height:16px;stroke:var(--accent2);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M18.66 5.34l1.41-1.41"/></svg></div>
         <div><div class="row-label">Focus Mode</div><div class="row-sub">Shorter, direct responses</div></div>
       </div>
       <label class="toggle" onclick="event.stopPropagation()">
@@ -107,7 +111,7 @@
     </div>
     <div class="settings-row">
       <div class="row-left">
-        <div class="row-icon">🤖</div>
+        <div class="row-icon" style="width:32px;height:32px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center"><svg style="width:16px;height:16px;stroke:var(--accent2);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M18.66 5.34l1.41-1.41"/></svg></div>
         <div><div class="row-label">AI Provider</div><div class="row-sub">Model preference</div></div>
       </div>
       <select class="input" id="providerSelect" style="width:auto;padding:4px 8px;font-size:.85rem" onchange="saveProvider()">
@@ -126,14 +130,14 @@
     <div class="settings-title">Privacy & Data</div>
     <div class="settings-row" onclick="clearMemory()">
       <div class="row-left">
-        <div class="row-icon">🧠</div>
+        <div class="row-icon" style="width:32px;height:32px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center"><svg style="width:16px;height:16px;stroke:var(--accent2);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M18.66 5.34l1.41-1.41"/></svg></div>
         <div><div class="row-label">Clear Memory</div><div class="row-sub">Remove long-term context</div></div>
       </div>
       <div class="row-right" style="color:var(--red)">Clear</div>
     </div>
     <div class="settings-row" onclick="clearHistory()">
       <div class="row-left">
-        <div class="row-icon">💬</div>
+        <div class="row-icon" style="width:32px;height:32px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center"><svg style="width:16px;height:16px;stroke:var(--accent2);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M18.66 5.34l1.41-1.41"/></svg></div>
         <div><div class="row-label">Clear Chat History</div><div class="row-sub">Reset conversation sessions</div></div>
       </div>
       <div class="row-right" style="color:var(--red)">Clear</div>
@@ -144,11 +148,11 @@
   <div class="settings-section">
     <div class="settings-title">About</div>
     <div class="settings-row">
-      <div class="row-left"><div class="row-icon">⚡</div><div><div class="row-label">NEXUM</div><div class="row-sub">v1.0.0</div></div></div>
+      <div class="row-left"><div class="row-icon" style="width:32px;height:32px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center"><svg style="width:16px;height:16px;stroke:var(--accent2);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M18.66 5.34l1.41-1.41"/></svg></div><div><div class="row-label">NEXUM</div><div class="row-sub">v1.0.0</div></div></div>
       <div class="row-right badge badge-accent">Latest</div>
     </div>
     <div class="settings-row" onclick="window.open('https://t.me/nexum_support')">
-      <div class="row-left"><div class="row-icon">💬</div><div><div class="row-label">Support</div><div class="row-sub">@nexum_support</div></div></div>
+      <div class="row-left"><div class="row-icon" style="width:32px;height:32px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center"><svg style="width:16px;height:16px;stroke:var(--accent2);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M18.66 5.34l1.41-1.41"/></svg></div><div><div class="row-label">Support</div><div class="row-sub">@nexum_support</div></div></div>
       <div class="row-right">›</div>
     </div>
   </div>
@@ -210,3 +214,4 @@ loadSettings();
 </script>
 </body>
 </html>
+

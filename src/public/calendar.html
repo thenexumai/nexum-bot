@@ -1,76 +1,79 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Calendar — NEXUM</title>
 <link rel="stylesheet" href="/shared/design-system.css">
 <style>
-  .cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-  .cal-nav { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 12px; cursor: pointer; color: var(--text); font-size: 1rem; }
-  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 16px; }
-  .cal-dow  { text-align: center; font-size: .7rem; font-weight: 700; color: var(--text3); padding: 4px 0; text-transform: uppercase; }
-  .cal-day  {
-    aspect-ratio: 1; border-radius: var(--radius-sm);
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    cursor: pointer; font-size: .85rem; font-weight: 500; position: relative;
-    transition: background .1s;
-  }
-  .cal-day:hover    { background: var(--surface2); }
-  .cal-day.other    { color: var(--text3); }
-  .cal-day.today    { background: var(--accent); color: #fff; font-weight: 700; }
-  .cal-day.selected { background: var(--accent-dim); border: 1px solid var(--accent); color: var(--accent2); }
-  .cal-day.has-event::after {
-    content: ''; position: absolute; bottom: 3px;
-    width: 4px; height: 4px; border-radius: 50%; background: var(--green);
-  }
-  .cal-day.today.has-event::after { background: #fff; }
-  .events-section h3 { font-size: .8rem; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
-  .event-item {
-    display: flex; gap: 12px; align-items: flex-start;
-    padding: 12px; border-radius: var(--radius-sm);
-    background: var(--surface); border: 1px solid var(--border);
-    margin-bottom: 8px;
-  }
-  .event-time { font-size: .8rem; color: var(--accent2); font-weight: 700; min-width: 50px; padding-top: 2px; }
-  .event-title { font-weight: 600; font-size: .9rem; }
-  .event-sub   { font-size: .75rem; color: var(--text2); margin-top: 2px; }
-  .event-dot   { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: 6px; }
+  .cal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .cal-nav { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:6px 12px; cursor:pointer; color:var(--text); display:flex; align-items:center; justify-content:center; transition:all .15s; }
+  .cal-nav:hover { border-color:var(--accent); color:var(--accent); }
+  .cal-nav svg { width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; margin-bottom:16px; }
+  .cal-dow  { text-align:center; font-size:.7rem; font-weight:700; color:var(--text3); padding:4px 0; text-transform:uppercase; }
+  .cal-day  { aspect-ratio:1; border-radius:var(--radius-sm); display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; font-size:.85rem; font-weight:500; position:relative; transition:background .1s; }
+  .cal-day:hover    { background:var(--surface2); }
+  .cal-day.other    { color:var(--text3); }
+  .cal-day.today    { background:var(--accent); color:#fff; font-weight:700; }
+  .cal-day.selected { background:var(--accent-dim); border:1px solid var(--accent); color:var(--accent2); }
+  .cal-day.has-event::after { content:''; position:absolute; bottom:3px; width:4px; height:4px; border-radius:50%; background:var(--green); }
+  .cal-day.today.has-event::after { background:#fff; }
+  .events-section h3 { font-size:.8rem; color:var(--text3); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px; }
+  .event-item { display:flex; gap:10px; align-items:flex-start; padding:12px; border-radius:var(--radius-sm); background:var(--surface); border:1px solid var(--border); margin-bottom:8px; }
+  .event-color { width:3px; background:var(--accent); border-radius:2px; align-self:stretch; flex-shrink:0; }
+  .event-body { flex:1; min-width:0; }
+  .event-title { font-weight:600; font-size:.9rem; }
+  .event-sub   { font-size:.75rem; color:var(--text2); margin-top:2px; display:flex; align-items:center; gap:4px; }
+  .event-sub svg { width:12px; height:12px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0; }
+  .event-time { font-size:.8rem; color:var(--accent2); font-weight:700; white-space:nowrap; }
+  .del-btn { background:none; border:none; color:var(--text3); cursor:pointer; padding:4px; border-radius:5px; }
+  .del-btn:hover { color:var(--red); }
+  .del-btn svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 </style>
 </head>
 <body>
+<svg style="display:none">
+  <symbol id="ic-chevron-l" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></symbol>
+  <symbol id="ic-chevron-r" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></symbol>
+  <symbol id="ic-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+  <symbol id="ic-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+  <symbol id="ic-map-pin" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></symbol>
+  <symbol id="ic-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></symbol>
+  <symbol id="ic-cal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></symbol>
+</svg>
+
 <header class="app-header">
   <div class="header-logo">
-    <div class="logo-dot">📅</div>
+    <div class="logo-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+      </svg>
+    </div>
     <h1>Calendar</h1>
   </div>
-  <button class="btn btn-ghost btn-icon" onclick="openModal()">+</button>
+  <button class="btn btn-ghost btn-icon" onclick="openModal()">
+    <svg class="icon"><use href="#ic-plus"/></svg>
+  </button>
 </header>
 
 <div class="page">
-  <!-- Month nav -->
   <div class="cal-header">
-    <button class="cal-nav" onclick="prevMonth()">‹</button>
+    <button class="cal-nav" onclick="prevMonth()"><svg><use href="#ic-chevron-l"/></svg></button>
     <h2 id="monthLabel" style="font-size:1.1rem"></h2>
-    <button class="cal-nav" onclick="nextMonth()">›</button>
+    <button class="cal-nav" onclick="nextMonth()"><svg><use href="#ic-chevron-r"/></svg></button>
   </div>
-
-  <!-- Day-of-week labels -->
   <div class="cal-grid" id="calDow"></div>
-
-  <!-- Calendar grid -->
   <div class="cal-grid" id="calGrid"></div>
 
-  <!-- Events for selected day -->
   <div class="events-section">
-    <h3 id="eventsLabel">Today's Events</h3>
+    <h3 id="eventsLabel">Events</h3>
     <div id="eventsList"></div>
   </div>
 </div>
 
-<button class="fab" onclick="openModal()">+</button>
+<button class="fab" onclick="openModal()"><svg><use href="#ic-plus"/></svg></button>
 
-<!-- Add Event Modal -->
 <div class="modal-overlay" id="modal" onclick="closeIfBg(event)">
   <div class="modal">
     <div class="modal-handle"></div>
@@ -90,8 +93,8 @@
       </div>
     </div>
     <div class="form-group">
-      <label class="form-label">Note (optional)</label>
-      <input class="input" id="inNote" type="text" placeholder="Location, details...">
+      <label class="form-label">Location / Note</label>
+      <input class="input" id="inNote" type="text" placeholder="Add details...">
     </div>
     <button class="btn btn-primary" style="width:100%" onclick="addEvent()">Save Event</button>
   </div>
@@ -104,76 +107,54 @@ const uid = new URLSearchParams(location.search).get('uid') || 0;
 const API = '/api';
 const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-
-let events = [];
-let today = new Date();
-let viewing = new Date(today.getFullYear(), today.getMonth(), 1);
-let selectedDate = toYMD(today);
+let events = [], today = new Date(), viewing = new Date(today.getFullYear(), today.getMonth(), 1), selectedDate = toYMD(today);
 
 function toYMD(d) { return d.toISOString().slice(0,10); }
 
 async function load() {
   try {
     events = await fetch(`${API}/calendar?uid=${uid}`).then(r => r.json());
-    renderCal();
-    renderEvents(selectedDate);
+    renderCal(); renderEvents(selectedDate);
   } catch(e) {}
 }
 
 function renderCal() {
   document.getElementById('monthLabel').textContent = `${MONTHS[viewing.getMonth()]} ${viewing.getFullYear()}`;
-
-  // DOW headers
   document.getElementById('calDow').innerHTML = DOW.map(d => `<div class="cal-dow">${d}</div>`).join('');
-
   const first = new Date(viewing.getFullYear(), viewing.getMonth(), 1);
-  const last  = new Date(viewing.getFullYear(), viewing.getMonth() + 1, 0);
-  const startPad = first.getDay();
+  const last  = new Date(viewing.getFullYear(), viewing.getMonth()+1, 0);
   const todayYMD = toYMD(today);
-
   const eventDays = new Set(events.map(e => e.start?.slice(0,10)).filter(Boolean));
-
   let cells = '';
-  // Pad before
   const prevLast = new Date(viewing.getFullYear(), viewing.getMonth(), 0).getDate();
-  for (let i = startPad - 1; i >= 0; i--) {
-    cells += `<div class="cal-day other">${prevLast - i}</div>`;
-  }
-  // Current month
+  for (let i = first.getDay()-1; i >= 0; i--) cells += `<div class="cal-day other">${prevLast-i}</div>`;
   for (let d = 1; d <= last.getDate(); d++) {
     const ymd = `${viewing.getFullYear()}-${String(viewing.getMonth()+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const isToday    = ymd === todayYMD;
-    const isSelected = ymd === selectedDate;
-    const hasEv      = eventDays.has(ymd);
-    cells += `<div class="cal-day ${isToday?'today':''} ${isSelected&&!isToday?'selected':''} ${hasEv?'has-event':''}" onclick="selectDay('${ymd}')">${d}</div>`;
+    const cls = [ymd===todayYMD?'today':'', ymd===selectedDate&&ymd!==todayYMD?'selected':'', eventDays.has(ymd)?'has-event':''].filter(Boolean).join(' ');
+    cells += `<div class="cal-day ${cls}" onclick="selectDay('${ymd}')">${d}</div>`;
   }
-  // Pad after
-  const remaining = 42 - startPad - last.getDate();
-  for (let d = 1; d <= remaining; d++) {
-    cells += `<div class="cal-day other">${d}</div>`;
-  }
-
+  const rem = 42 - first.getDay() - last.getDate();
+  for (let d = 1; d <= rem; d++) cells += `<div class="cal-day other">${d}</div>`;
   document.getElementById('calGrid').innerHTML = cells;
 }
 
 function renderEvents(ymd) {
   const dayEvents = events.filter(e => e.start?.slice(0,10) === ymd);
-  const label = ymd === toYMD(today) ? "Today's Events" : `Events on ${ymd}`;
-  document.getElementById('eventsLabel').textContent = label;
-
+  document.getElementById('eventsLabel').textContent = ymd === toYMD(today) ? "Today's Events" : `Events — ${ymd}`;
   const el = document.getElementById('eventsList');
   if (!dayEvents.length) {
-    el.innerHTML = `<div class="empty" style="padding:24px"><div class="empty-icon" style="font-size:2rem">📭</div><h3 style="font-size:.9rem">No events</h3></div>`;
-    return;
+    el.innerHTML = `<div class="empty" style="padding:24px 0">
+      <div class="empty-icon"><svg><use href="#ic-cal"/></svg></div>
+      <h3>No events</h3><p>Tap + to add one</p>
+    </div>`; return;
   }
   el.innerHTML = dayEvents.map(e => {
     const time = e.start?.slice(11,16) || '';
-    return `
-    <div class="event-item">
-      <div class="event-dot"></div>
-      <div style="flex:1">
+    return `<div class="event-item">
+      <div class="event-color"></div>
+      <div class="event-body">
         <div class="event-title">${esc(e.title)}</div>
-        ${e.note ? `<div class="event-sub">📍 ${esc(e.note)}</div>` : ''}
+        ${e.note ? `<div class="event-sub"><svg><use href="#ic-map-pin"/></svg>${esc(e.note)}</div>` : ''}
       </div>
       ${time ? `<div class="event-time">${time}</div>` : ''}
     </div>`;
@@ -188,33 +169,19 @@ async function addEvent() {
   const title = document.getElementById('inTitle').value.trim();
   const date  = document.getElementById('inDate').value;
   if (!title || !date) return showToast('Title and date required');
-  const time = document.getElementById('inTime').value;
+  const time  = document.getElementById('inTime').value;
   const start = time ? `${date}T${time}:00` : `${date}T00:00:00`;
-  const body = { uid, title, start, note: document.getElementById('inNote').value, all_day: !time };
-  const res = await fetch(`${API}/calendar`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }).then(r=>r.json());
-  events.push(res);
-  closeModal();
-  renderCal();
-  renderEvents(date);
-  showToast('✅ Event saved!');
-  document.getElementById('inTitle').value='';
-  document.getElementById('inNote').value='';
+  const res   = await fetch(`${API}/calendar`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid,title,start,note:document.getElementById('inNote').value,all_day:!time})}).then(r=>r.json());
+  events.push(res); closeModal(); renderCal(); renderEvents(date);
+  showToast('Event saved');
+  document.getElementById('inTitle').value = document.getElementById('inNote').value = '';
 }
 
-function esc(s) { return (s||'').replace(/</g,'&lt;'); }
-function openModal() {
-  document.getElementById('inDate').value = selectedDate;
-  document.getElementById('modal').classList.add('open');
-}
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function openModal()  { document.getElementById('inDate').value=selectedDate; document.getElementById('modal').classList.add('open'); }
 function closeModal() { document.getElementById('modal').classList.remove('open'); }
 function closeIfBg(e) { if(e.target.id==='modal') closeModal(); }
-function showToast(msg,ms=2000) {
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'),ms);
-}
-
-// Set default date to today
+function showToast(msg,ms=2000) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),ms); }
 document.getElementById('inDate').value = toYMD(today);
 load();
 </script>

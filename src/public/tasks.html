@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -12,37 +12,61 @@
     width: 22px; height: 22px; border-radius: 50%;
     border: 2px solid var(--border2); flex-shrink: 0;
     display: flex; align-items: center; justify-content: center;
-    transition: all .15s; font-size: .7rem;
+    transition: all .15s;
   }
+  .check-circle svg { width: 12px; height: 12px; stroke: #fff; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
   .task-item.done .check-circle { background: var(--green); border-color: var(--green); }
+  .task-item.done .check-circle svg { opacity: 1; }
   .priority-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
   .p-high   { background: var(--red); }
   .p-medium { background: var(--yellow); }
   .p-low    { background: var(--green); }
-  .section-title {
-    font-size: .75rem; font-weight: 700; color: var(--text3);
-    text-transform: uppercase; letter-spacing: .06em;
-    margin: 16px 0 8px;
-  }
   .progress-bar { height: 4px; background: var(--border); border-radius: 2px; margin-bottom: 16px; }
   .progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .3s; }
+  .delete-btn { background: none; border: none; cursor: pointer; color: var(--text3); padding: 6px; border-radius: 6px; transition: color .15s; }
+  .delete-btn:hover { color: var(--red); }
+  .delete-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 </style>
 </head>
 <body>
+
+<svg style="display:none">
+  <symbol id="ic-tasks" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
+  </symbol>
+  <symbol id="ic-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </symbol>
+  <symbol id="ic-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+  </symbol>
+  <symbol id="ic-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+  </symbol>
+  <symbol id="ic-calendar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+  </symbol>
+  <symbol id="ic-empty-tasks" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
+  </symbol>
+</svg>
+
 <header class="app-header">
   <div class="header-logo">
-    <div class="logo-dot">✅</div>
+    <div class="logo-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
+      </svg>
+    </div>
     <h1>Tasks</h1>
   </div>
   <span id="doneCount" class="badge badge-accent">0 / 0</span>
 </header>
 
 <div class="page">
-  <!-- Progress -->
   <div class="progress-bar"><div class="progress-fill" id="progress" style="width:0%"></div></div>
 
-  <!-- Stats -->
-  <div class="stat-grid" style="margin-bottom:12px">
+  <div class="stat-grid">
     <div class="stat-card">
       <div class="stat-label">To Do</div>
       <div class="stat-value" id="todoCnt">0</div>
@@ -53,20 +77,20 @@
     </div>
   </div>
 
-  <!-- Filter -->
   <div class="filter-tabs">
     <button class="filter-tab active" onclick="setFilter('all',this)">All</button>
     <button class="filter-tab" onclick="setFilter('active',this)">Active</button>
     <button class="filter-tab" onclick="setFilter('done',this)">Done</button>
-    <button class="filter-tab" onclick="setFilter('high',this)">🔴 High</button>
+    <button class="filter-tab" onclick="setFilter('high',this)">High Priority</button>
   </div>
 
   <div id="taskList"></div>
 </div>
 
-<button class="fab" onclick="openModal()">+</button>
+<button class="fab" onclick="openModal()">
+  <svg><use href="#ic-plus"/></svg>
+</button>
 
-<!-- Add Task Modal -->
 <div class="modal-overlay" id="modal" onclick="closeIfBg(event)">
   <div class="modal">
     <div class="modal-handle"></div>
@@ -76,7 +100,7 @@
       <input class="input" id="inTitle" type="text" placeholder="What needs to be done?">
     </div>
     <div class="form-group">
-      <label class="form-label">Description (optional)</label>
+      <label class="form-label">Description</label>
       <textarea class="input" id="inDesc" placeholder="Details..."></textarea>
     </div>
     <div class="form-row">
@@ -102,108 +126,103 @@
 <script>
 const uid = new URLSearchParams(location.search).get('uid') || 0;
 const API = '/api';
-let allTasks = [];
-let filter = 'all';
+let allTasks = [], filter = 'all';
 
 async function load() {
   try {
-    allTasks = await fetch(`${API}/tasks?uid=${uid}`).then(r=>r.json());
+    allTasks = await fetch(`${API}/tasks?uid=${uid}`).then(r => r.json());
     render();
   } catch(e) {
-    document.getElementById('taskList').innerHTML = `<div class="empty"><div class="empty-icon">❌</div><h3>${e.message}</h3></div>`;
+    document.getElementById('taskList').innerHTML = `
+      <div class="empty">
+        <div class="empty-icon"><svg><use href="#ic-empty-tasks"/></svg></div>
+        <h3>Could not load tasks</h3><p>${e.message}</p>
+      </div>`;
   }
 }
 
 function render() {
   const total = allTasks.length;
-  const done  = allTasks.filter(t=>t.status==='done').length;
-  const todo  = allTasks.filter(t=>t.status!=='done').length;
+  const done  = allTasks.filter(t => t.status === 'done').length;
   const today = new Date().toDateString();
-  const doneToday = allTasks.filter(t=>t.status==='done' && new Date(t.updated_at||t.created_at).toDateString()===today).length;
+  const doneToday = allTasks.filter(t => t.status === 'done' && new Date(t.updated_at || t.created_at).toDateString() === today).length;
 
-  document.getElementById('doneCount').textContent  = `${done} / ${total}`;
-  document.getElementById('progress').style.width   = total ? `${Math.round(done/total*100)}%` : '0%';
-  document.getElementById('todoCnt').textContent    = todo;
+  document.getElementById('doneCount').textContent = `${done} / ${total}`;
+  document.getElementById('progress').style.width  = total ? `${Math.round(done/total*100)}%` : '0%';
+  document.getElementById('todoCnt').textContent   = allTasks.filter(t => t.status !== 'done').length;
   document.getElementById('doneTodayCnt').textContent = doneToday;
 
   let tasks = [...allTasks];
-  if (filter==='active') tasks = tasks.filter(t=>t.status!=='done');
-  if (filter==='done')   tasks = tasks.filter(t=>t.status==='done');
-  if (filter==='high')   tasks = tasks.filter(t=>t.priority==='high');
-
-  // Sort: high priority first, then by creation date
-  tasks.sort((a,b)=>{
-    const po={high:0,medium:1,low:2};
-    if(a.status==='done'&&b.status!=='done') return 1;
-    if(a.status!=='done'&&b.status==='done') return -1;
-    return (po[a.priority]||1)-(po[b.priority]||1);
+  if (filter === 'active') tasks = tasks.filter(t => t.status !== 'done');
+  if (filter === 'done')   tasks = tasks.filter(t => t.status === 'done');
+  if (filter === 'high')   tasks = tasks.filter(t => t.priority === 'high');
+  tasks.sort((a,b) => {
+    const po = {high:0,medium:1,low:2};
+    if (a.status==='done' && b.status!=='done') return 1;
+    if (a.status!=='done' && b.status==='done') return -1;
+    return (po[a.priority]||1) - (po[b.priority]||1);
   });
 
   const el = document.getElementById('taskList');
   if (!tasks.length) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">🎯</div><h3>No tasks</h3><p>Add your first task below</p></div>`;
-    return;
+    el.innerHTML = `<div class="empty">
+      <div class="empty-icon"><svg><use href="#ic-empty-tasks"/></svg></div>
+      <h3>No tasks</h3><p>Add your first task below</p>
+    </div>`; return;
   }
-
-  el.innerHTML = tasks.map(t=>`
+  el.innerHTML = tasks.map(t => `
     <div class="list-item task-item ${t.status==='done'?'done':''}" onclick="toggleTask(${t.id})">
-      <div class="check-circle">${t.status==='done'?'✓':''}</div>
+      <div class="check-circle"><svg><use href="#ic-check"/></svg></div>
       <div class="priority-dot p-${t.priority||'medium'}"></div>
       <div class="list-item-body">
         <div class="list-item-title">${esc(t.title)}</div>
-        <div class="list-item-sub">${t.due_date?'📅 '+fmtDate(t.due_date)+'  ':''}${t.description?esc(t.description.slice(0,40))+'...':''}</div>
+        <div class="list-item-sub">${t.due_date ? fmtDate(t.due_date) + '  ' : ''}${t.description ? esc(t.description.slice(0,40)) : ''}</div>
       </div>
-      <button class="btn btn-ghost btn-icon" onclick="deleteTask(event,${t.id})" style="color:var(--text3)">🗑</button>
+      <button class="delete-btn" onclick="deleteTask(event,${t.id})">
+        <svg><use href="#ic-trash"/></svg>
+      </button>
     </div>`).join('');
 }
 
-function esc(s){ return (s||'').replace(/</g,'&lt;'); }
-function fmtDate(s){ return s?new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''; }
-function setFilter(f,el){ filter=f; document.querySelectorAll('.filter-tab').forEach(b=>b.classList.remove('active')); el.classList.add('active'); render(); }
-function openModal(){ document.getElementById('modal').classList.add('open'); }
-function closeModal(){ document.getElementById('modal').classList.remove('open'); }
-function closeIfBg(e){ if(e.target.id==='modal') closeModal(); }
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function fmtDate(s) { return s ? new Date(s).toLocaleDateString('ru-RU',{month:'short',day:'numeric'}) : ''; }
+function setFilter(f,el) { filter=f; document.querySelectorAll('.filter-tab').forEach(b=>b.classList.remove('active')); el.classList.add('active'); render(); }
+function openModal()  { document.getElementById('modal').classList.add('open'); }
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+function closeIfBg(e) { if(e.target.id==='modal') closeModal(); }
 
-async function toggleTask(id){
-  const t = allTasks.find(x=>x.id===id);
-  if(!t) return;
-  const newStatus = t.status==='done'?'todo':'done';
-  await fetch(`${API}/tasks/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:newStatus})});
-  t.status=newStatus;
-  render();
+async function toggleTask(id) {
+  const t = allTasks.find(x => x.id === id);
+  if (!t) return;
+  const s = t.status === 'done' ? 'todo' : 'done';
+  await fetch(`${API}/tasks/${id}`, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:s})});
+  t.status = s; render();
 }
-
-async function deleteTask(e,id){
+async function deleteTask(e, id) {
   e.stopPropagation();
-  await fetch(`${API}/tasks/${id}`,{method:'DELETE'});
-  allTasks = allTasks.filter(t=>t.id!==id);
-  render();
-  showToast('Deleted');
+  await fetch(`${API}/tasks/${id}`, {method:'DELETE'});
+  allTasks = allTasks.filter(t => t.id !== id); render();
+  showToast('Task deleted');
 }
-
-async function addTask(){
+async function addTask() {
   const title = document.getElementById('inTitle').value.trim();
-  if(!title) return showToast('Enter a title');
-  await fetch(`${API}/tasks`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+  if (!title) return showToast('Enter a title');
+  await fetch(`${API}/tasks`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
     uid, title,
     description: document.getElementById('inDesc').value,
     priority: document.getElementById('inPriority').value,
     due_date: document.getElementById('inDue').value || null,
-    status:'todo',
+    status: 'todo',
   })});
-  closeModal();
-  showToast('✅ Task added!');
-  document.getElementById('inTitle').value='';
-  document.getElementById('inDesc').value='';
+  closeModal(); showToast('Task added');
+  document.getElementById('inTitle').value = '';
+  document.getElementById('inDesc').value  = '';
   load();
 }
-
-function showToast(msg,ms=2000){
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.classList.add('show');
+function showToast(msg,ms=2000) {
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),ms);
 }
-
 load();
 </script>
 </body>

@@ -1,104 +1,89 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Habits — NEXUM</title>
 <link rel="stylesheet" href="/shared/design-system.css">
 <style>
-  .habit-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 16px;
-    margin-bottom: 10px; transition: border-color .15s;
-  }
-  .habit-card.done-today { border-color: var(--green); background: var(--green-dim); }
-  .habit-header { display: flex; align-items: center; gap: 12px; }
-  .habit-emoji { font-size: 1.6rem; flex-shrink: 0; }
-  .habit-info  { flex: 1; min-width: 0; }
-  .habit-name  { font-weight: 700; font-size: 1rem; }
-  .habit-freq  { font-size: .75rem; color: var(--text2); margin-top: 2px; }
-  .habit-streak { text-align: right; flex-shrink: 0; }
-  .streak-num   { font-size: 1.4rem; font-weight: 800; color: var(--yellow); }
-  .streak-label { font-size: .65rem; color: var(--text3); }
-  .habit-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
-  .week-dots    { display: flex; gap: 4px; }
-  .week-dot {
-    width: 22px; height: 22px; border-radius: 50%;
-    background: var(--border); display: flex; align-items: center;
-    justify-content: center; font-size: .6rem; color: var(--text3);
-  }
-  .week-dot.done { background: var(--green); color: #fff; }
-  .week-dot.today-dot { border: 2px solid var(--accent); }
-  .check-btn {
-    padding: 7px 16px; border-radius: 99px; border: none; cursor: pointer;
-    font-size: .85rem; font-weight: 700; font-family: var(--font);
-    transition: all .15s;
-  }
-  .check-btn.todo   { background: var(--accent); color: #fff; }
-  .check-btn.done   { background: var(--green-dim); color: var(--green); }
-  .overview-ring {
-    width: 80px; height: 80px; flex-shrink: 0;
-  }
-  .summary-row { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
-  .summary-text h2 { font-size: 1.4rem; }
-  .summary-text p  { font-size: .85rem; color: var(--text2); }
+  .habit-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:10px; transition:border-color .15s; }
+  .habit-card.done-today { border-color:var(--green); background:rgba(34,211,165,.05); }
+  .habit-header { display:flex; align-items:center; gap:12px; }
+  .habit-icon { width:42px; height:42px; border-radius:12px; background:var(--surface2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .habit-icon svg { width:20px; height:20px; stroke:var(--accent2); fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  .habit-card.done-today .habit-icon { background:var(--green-dim); border-color:var(--green); }
+  .habit-card.done-today .habit-icon svg { stroke:var(--green); }
+  .habit-info { flex:1; min-width:0; }
+  .habit-name { font-weight:700; font-size:1rem; }
+  .habit-freq { font-size:.75rem; color:var(--text2); margin-top:2px; }
+  .habit-streak { text-align:right; flex-shrink:0; }
+  .streak-num   { font-size:1.4rem; font-weight:800; color:var(--yellow); }
+  .streak-label { font-size:.65rem; color:var(--text3); }
+  .habit-footer { display:flex; align-items:center; justify-content:space-between; margin-top:12px; }
+  .week-dots { display:flex; gap:4px; }
+  .week-dot { width:24px; height:24px; border-radius:50%; background:var(--border); display:flex; align-items:center; justify-content:center; font-size:.6rem; color:var(--text3); font-weight:600; }
+  .week-dot.done { background:var(--green); color:#fff; }
+  .week-dot svg { width:10px; height:10px; stroke:#fff; fill:none; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; }
+  .check-btn { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:7px 14px; cursor:pointer; font-size:.8rem; font-weight:600; color:var(--text2); transition:all .15s; font-family:var(--font); display:flex; align-items:center; gap:6px; }
+  .check-btn svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .check-btn.done { background:var(--green-dim); border-color:var(--green); color:var(--green); }
+  .check-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .del-btn { background:none; border:none; color:var(--text3); cursor:pointer; padding:6px; border-radius:6px; }
+  .del-btn:hover { color:var(--red); }
+  .del-btn svg { width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 </style>
 </head>
 <body>
+<svg style="display:none">
+  <symbol id="ic-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+  <symbol id="ic-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+  <symbol id="ic-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></symbol>
+  <symbol id="ic-zap" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+  <symbol id="ic-repeat" viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></symbol>
+</svg>
+
 <header class="app-header">
   <div class="header-logo">
-    <div class="logo-dot">🔥</div>
+    <div class="logo-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+      </svg>
+    </div>
     <h1>Habits</h1>
   </div>
-  <button class="btn btn-ghost btn-icon" onclick="openModal()">+</button>
+  <span id="streakBadge" class="badge badge-yellow" style="background:var(--yellow-dim);color:var(--yellow)">0 streak</span>
 </header>
 
 <div class="page">
-  <!-- Summary -->
-  <div class="card" style="margin-bottom:16px">
-    <div class="summary-row">
-      <svg class="overview-ring" viewBox="0 0 80 80">
-        <circle cx="40" cy="40" r="32" fill="none" stroke="var(--border)" stroke-width="8"/>
-        <circle cx="40" cy="40" r="32" fill="none" stroke="var(--green)" stroke-width="8"
-          stroke-dasharray="201" stroke-dashoffset="201"
-          stroke-linecap="round" transform="rotate(-90 40 40)"
-          id="ringCircle"/>
-      </svg>
-      <div class="summary-text">
-        <h2 id="doneToday">0 / 0</h2>
-        <p>habits done today</p>
-        <div style="margin-top:6px">
-          <span class="badge badge-yellow" id="bestStreak">🔥 Best: 0 days</span>
-        </div>
-      </div>
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">Done Today</div>
+      <div class="stat-value amount-positive" id="doneTodayCnt">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Habits</div>
+      <div class="stat-value" id="totalCnt">0</div>
     </div>
   </div>
-
   <div id="habitList"></div>
 </div>
 
-<button class="fab" onclick="openModal()">+</button>
+<button class="fab" onclick="openModal()"><svg><use href="#ic-plus"/></svg></button>
 
-<!-- Add Habit Modal -->
 <div class="modal-overlay" id="modal" onclick="closeIfBg(event)">
   <div class="modal">
     <div class="modal-handle"></div>
     <h2>New Habit</h2>
     <div class="form-group">
-      <label class="form-label">Emoji</label>
-      <input class="input" id="inEmoji" type="text" placeholder="🏃" maxlength="2" style="font-size:1.5rem;text-align:center">
-    </div>
-    <div class="form-group">
       <label class="form-label">Habit Name</label>
-      <input class="input" id="inName" type="text" placeholder="Morning run, Read 30 min...">
+      <input class="input" id="inName" type="text" placeholder="Read, Exercise, Meditate...">
     </div>
     <div class="form-group">
       <label class="form-label">Frequency</label>
       <select class="input" id="inFreq">
         <option value="daily">Daily</option>
-        <option value="weekdays">Weekdays (Mon–Fri)</option>
-        <option value="weekends">Weekends</option>
-        <option value="3x_week">3x per week</option>
+        <option value="weekdays">Weekdays</option>
+        <option value="weekly">Weekly</option>
       </select>
     </div>
     <button class="btn btn-primary" style="width:100%" onclick="addHabit()">Create Habit</button>
@@ -111,128 +96,96 @@
 const uid = new URLSearchParams(location.search).get('uid') || 0;
 const API = '/api';
 let habits = [];
-
 const DAYS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
 
 async function load() {
   try {
     habits = await fetch(`${API}/habits?uid=${uid}`).then(r => r.json());
     render();
-  } catch(e) {
-    document.getElementById('habitList').innerHTML = `<div class="empty"><div class="empty-icon">❌</div><h3>${e.message}</h3></div>`;
-  }
+  } catch(e) { showToast('Load error'); }
 }
 
 function render() {
-  const total = habits.length;
-  const doneToday = habits.filter(h => isCheckedToday(h)).length;
-  const bestStreak = habits.reduce((max, h) => Math.max(max, h.best_streak || 0), 0);
-
-  document.getElementById('doneToday').textContent = `${doneToday} / ${total}`;
-  document.getElementById('bestStreak').textContent = `🔥 Best: ${bestStreak} days`;
-
-  // Ring
-  const pct = total ? doneToday / total : 0;
-  const circumference = 201;
-  document.getElementById('ringCircle').style.strokeDashoffset = circumference * (1 - pct);
+  const today = new Date().toDateString();
+  const doneToday = habits.filter(h => h.last_check && new Date(h.last_check).toDateString() === today).length;
+  const maxStreak = habits.reduce((m,h) => Math.max(m, h.streak||0), 0);
+  document.getElementById('doneTodayCnt').textContent = doneToday;
+  document.getElementById('totalCnt').textContent = habits.length;
+  document.getElementById('streakBadge').textContent = maxStreak + ' streak';
 
   const el = document.getElementById('habitList');
   if (!habits.length) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">🔥</div><h3>No habits yet</h3><p>Build your first habit below</p></div>`;
-    return;
+    el.innerHTML = `<div class="empty">
+      <div class="empty-icon"><svg><use href="#ic-zap"/></svg></div>
+      <h3>No habits yet</h3><p>Build your daily routine</p>
+    </div>`; return;
   }
 
-  const today = new Date().getDay();
+  const now = new Date();
   el.innerHTML = habits.map(h => {
-    const done = isCheckedToday(h);
-    const weekDots = DAYS.map((d, i) => {
-      const isToday = i === today;
-      const isDone = isCheckedDay(h, i);
-      return `<div class="week-dot ${isDone ? 'done' : ''} ${isToday ? 'today-dot' : ''}">${d}</div>`;
+    const isDoneToday = h.last_check && new Date(h.last_check).toDateString() === today;
+    const weekDots = Array.from({length:7}, (_,i) => {
+      const d = new Date(now); d.setDate(now.getDate() - (6-i));
+      const dayStr = d.toDateString();
+      const done = h.check_history && h.check_history.some(c => new Date(c).toDateString() === dayStr);
+      return `<div class="week-dot ${done?'done':''}" title="${DAYS[d.getDay()]}">${done?'<svg><use href="#ic-check"/></svg>':DAYS[d.getDay()]}</div>`;
     }).join('');
 
-    return `
-    <div class="habit-card ${done ? 'done-today' : ''}">
+    return `<div class="habit-card ${isDoneToday?'done-today':''}">
       <div class="habit-header">
-        <div class="habit-emoji">${h.emoji || '⭐'}</div>
+        <div class="habit-icon"><svg><use href="#ic-zap"/></svg></div>
         <div class="habit-info">
           <div class="habit-name">${esc(h.name)}</div>
-          <div class="habit-freq">${fmtFreq(h.frequency)}</div>
+          <div class="habit-freq">${h.frequency || 'daily'}</div>
         </div>
         <div class="habit-streak">
-          <div class="streak-num">${h.streak || 0}</div>
+          <div class="streak-num">${h.streak||0}</div>
           <div class="streak-label">streak</div>
         </div>
       </div>
       <div class="habit-footer">
         <div class="week-dots">${weekDots}</div>
-        <button class="check-btn ${done ? 'done' : 'todo'}" onclick="toggleHabit(${h.id})">
-          ${done ? '✓ Done' : 'Check in'}
-        </button>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="check-btn ${isDoneToday?'done':''}" onclick="checkHabit(${h.id})">
+            <svg><use href="#ic-check"/></svg>${isDoneToday ? 'Done' : 'Check in'}
+          </button>
+          <button class="del-btn" onclick="deleteHabit(event,${h.id})"><svg><use href="#ic-trash"/></svg></button>
+        </div>
       </div>
     </div>`;
   }).join('');
 }
 
-function isCheckedToday(h) {
-  if (!h.last_checked) return false;
-  return new Date(h.last_checked).toDateString() === new Date().toDateString();
+async function checkHabit(id) {
+  await fetch(`${API}/habits/${id}/check`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid})});
+  showToast('Checked in!');
+  load();
 }
-
-function isCheckedDay(h, dayIndex) {
-  // Approximate from streak data — server should send week_log ideally
-  if (dayIndex === new Date().getDay()) return isCheckedToday(h);
-  return false;
+async function deleteHabit(e,id) {
+  e.stopPropagation();
+  await fetch(`${API}/habits/${id}`,{method:'DELETE'});
+  habits = habits.filter(h=>h.id!==id); render();
+  showToast('Habit deleted');
 }
-
-function fmtFreq(f) {
-  const map = { daily: 'Every day', weekdays: 'Mon–Fri', weekends: 'Weekends', '3x_week': '3× per week' };
-  return map[f] || f;
-}
-
-function esc(s) { return (s||'').replace(/</g,'&lt;'); }
-
-async function toggleHabit(id) {
-  const h = habits.find(x => x.id === id);
-  if (!h) return;
-  const done = isCheckedToday(h);
-  if (done) return; // can't un-check
-
-  await fetch(`${API}/habits/${id}/checkin`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid }) });
-  h.last_checked = new Date().toISOString();
-  h.streak = (h.streak || 0) + 1;
-  if (h.streak > (h.best_streak || 0)) h.best_streak = h.streak;
-  render();
-  showToast('🔥 Checked in!');
-}
-
 async function addHabit() {
   const name = document.getElementById('inName').value.trim();
-  if (!name) return showToast('Enter habit name');
-  const body = {
-    uid, name,
-    emoji: document.getElementById('inEmoji').value || '⭐',
-    frequency: document.getElementById('inFreq').value,
-    streak: 0, best_streak: 0,
-  };
-  const res = await fetch(`${API}/habits`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
-  habits.unshift(res);
-  closeModal();
-  render();
-  showToast('✅ Habit created!');
+  if (!name) return showToast('Enter a habit name');
+  await fetch(`${API}/habits`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    uid, name, frequency: document.getElementById('inFreq').value
+  })});
+  closeModal(); showToast('Habit created');
   document.getElementById('inName').value = '';
-  document.getElementById('inEmoji').value = '';
+  load();
 }
 
-function openModal() { document.getElementById('modal').classList.add('open'); }
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function openModal()  { document.getElementById('modal').classList.add('open'); }
 function closeModal() { document.getElementById('modal').classList.remove('open'); }
-function closeIfBg(e) { if (e.target.id === 'modal') closeModal(); }
-function showToast(msg, ms = 2000) {
-  const t = document.getElementById('toast');
-  t.textContent = msg; t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), ms);
+function closeIfBg(e) { if(e.target.id==='modal') closeModal(); }
+function showToast(msg,ms=2000) {
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),ms);
 }
-
 load();
 </script>
 </body>

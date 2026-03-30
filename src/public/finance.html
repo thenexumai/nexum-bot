@@ -1,138 +1,107 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Finance — NEXUM</title>
 <link rel="stylesheet" href="/shared/design-system.css">
 <style>
-  .amount-positive { color: var(--green); }
-  .amount-negative { color: var(--red); }
-  .balance-card {
-    background: linear-gradient(135deg, #1a1d27 0%, #252838 100%);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 24px 20px;
-    text-align: center;
-    margin-bottom: 16px;
-    position: relative; overflow: hidden;
-  }
-  .balance-card::before {
-    content: ''; position: absolute; top: -40px; right: -40px;
-    width: 120px; height: 120px;
-    background: var(--accent-dim); border-radius: 50%;
-  }
-  .balance-label { font-size: .8rem; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; }
-  .balance-amount { font-size: 2.4rem; font-weight: 800; margin: 8px 0 4px; letter-spacing: -.03em; }
-  .balance-sub { font-size: .85rem; color: var(--text2); }
-  .txn-type-btn {
-    flex: 1; padding: 10px; border-radius: var(--radius-sm);
-    border: 1px solid var(--border); background: var(--surface);
-    color: var(--text2); font-size: .9rem; font-weight: 600; cursor: pointer;
-    transition: all .15s;
-  }
-  .txn-type-btn.active-income  { background: var(--green-dim); color: var(--green); border-color: rgba(34,211,165,.4); }
-  .txn-type-btn.active-expense { background: var(--red-dim);   color: var(--red);   border-color: rgba(255,90,126,.4); }
-  .filter-tabs { display: flex; gap: 6px; margin-bottom: 12px; overflow-x: auto; padding-bottom: 2px; }
-  .filter-tab {
-    padding: 6px 14px; border-radius: 99px; white-space: nowrap;
-    border: 1px solid var(--border); background: var(--surface);
-    color: var(--text2); font-size: .8rem; font-weight: 500; cursor: pointer;
-  }
-  .filter-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .balance-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:20px; margin-bottom:16px; text-align:center; }
+  .balance-label { font-size:.75rem; color:var(--text3); text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px; }
+  .balance-amount { font-size:2.2rem; font-weight:800; letter-spacing:-.03em; }
+  .balance-sub { font-size:.82rem; color:var(--text2); margin-top:4px; }
+  .tx-item { display:flex; align-items:center; gap:12px; padding:12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); margin-bottom:8px; }
+  .tx-icon { width:38px; height:38px; border-radius:11px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .tx-icon svg { width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  .tx-icon.income  { background:var(--green-dim); color:var(--green); }
+  .tx-icon.expense { background:var(--red-dim); color:var(--red); }
+  .tx-body { flex:1; min-width:0; }
+  .tx-title { font-weight:600; font-size:.92rem; }
+  .tx-date  { font-size:.75rem; color:var(--text3); margin-top:2px; }
+  .tx-amount { font-weight:700; font-size:.95rem; flex-shrink:0; }
+  .tx-amount.income  { color:var(--green); }
+  .tx-amount.expense { color:var(--red); }
+  .cat-badge { display:inline-block; background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:2px 8px; font-size:.7rem; color:var(--text2); margin-left:6px; }
+  .del-btn { background:none; border:none; color:var(--text3); cursor:pointer; padding:6px; border-radius:6px; }
+  .del-btn:hover { color:var(--red); }
+  .del-btn svg { width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 </style>
 </head>
 <body>
+<svg style="display:none">
+  <symbol id="ic-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+  <symbol id="ic-arrow-up" viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></symbol>
+  <symbol id="ic-arrow-down" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></symbol>
+  <symbol id="ic-wallet" viewBox="0 0 24 24"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 3H8a2 2 0 00-2 2v2h12V5a2 2 0 00-2-2z"/><circle cx="17" cy="13" r="1" fill="currentColor"/></symbol>
+  <symbol id="ic-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></symbol>
+  <symbol id="ic-empty-finance" viewBox="0 0 24 24"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><circle cx="17" cy="13" r="1" fill="currentColor"/></symbol>
+</svg>
+
 <header class="app-header">
   <div class="header-logo">
-    <div class="logo-dot">💰</div>
+    <div class="logo-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><circle cx="17" cy="13" r="1" fill="#fff"/>
+      </svg>
+    </div>
     <h1>Finance</h1>
   </div>
-  <button class="btn btn-ghost btn-icon" onclick="openModal()" title="Add">+</button>
+  <button class="btn btn-ghost" style="font-size:.8rem;padding:6px 12px" onclick="openModal()">+ Add</button>
 </header>
 
 <div class="page">
-  <!-- Balance Card -->
   <div class="balance-card">
-    <div class="balance-label">Total Balance</div>
-    <div class="balance-amount" id="balanceAmt">$0.00</div>
-    <div class="balance-sub" id="balanceSub">Loading...</div>
+    <div class="balance-label">Net Balance</div>
+    <div class="balance-amount" id="balAmount" style="color:var(--green)">$0.00</div>
+    <div class="balance-sub" id="balSub">0 income &bull; 0 expenses</div>
   </div>
 
-  <!-- Stats -->
   <div class="stat-grid">
     <div class="stat-card">
       <div class="stat-label">Income</div>
       <div class="stat-value amount-positive" id="totalIncome">$0</div>
-      <div class="stat-sub">this month</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">Expenses</div>
       <div class="stat-value amount-negative" id="totalExpense">$0</div>
-      <div class="stat-sub">this month</div>
     </div>
   </div>
 
-  <!-- Filter -->
   <div class="filter-tabs">
     <button class="filter-tab active" onclick="setFilter('all',this)">All</button>
     <button class="filter-tab" onclick="setFilter('income',this)">Income</button>
     <button class="filter-tab" onclick="setFilter('expense',this)">Expenses</button>
-    <button class="filter-tab" onclick="setFilter('food',this)">Food</button>
-    <button class="filter-tab" onclick="setFilter('transport',this)">Transport</button>
-    <button class="filter-tab" onclick="setFilter('salary',this)">Salary</button>
   </div>
 
-  <!-- Transactions List -->
-  <div id="txnList"></div>
+  <div id="txList"></div>
 </div>
 
-<!-- FAB -->
-<button class="fab" onclick="openModal()">+</button>
+<button class="fab" onclick="openModal()"><svg><use href="#ic-plus"/></svg></button>
 
-<!-- Add Transaction Modal -->
 <div class="modal-overlay" id="modal" onclick="closeIfBg(event)">
   <div class="modal">
     <div class="modal-handle"></div>
     <h2>Add Transaction</h2>
-    <div style="display:flex;gap:8px;margin-bottom:16px">
-      <button class="txn-type-btn active-income" id="btnIncome"  onclick="setType('income')">+ Income</button>
-      <button class="txn-type-btn"               id="btnExpense" onclick="setType('expense')">- Expense</button>
+    <div class="form-group">
+      <label class="form-label">Type</label>
+      <select class="input" id="inType">
+        <option value="expense">Expense</option>
+        <option value="income">Income</option>
+      </select>
     </div>
     <div class="form-group">
       <label class="form-label">Amount</label>
-      <input class="input" id="inAmount" type="number" placeholder="0.00" min="0" step="0.01">
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Category</label>
-        <select class="input" id="inCategory">
-          <option value="salary">Salary</option>
-          <option value="freelance">Freelance</option>
-          <option value="food">Food</option>
-          <option value="transport">Transport</option>
-          <option value="shopping">Shopping</option>
-          <option value="utilities">Utilities</option>
-          <option value="health">Health</option>
-          <option value="entertainment">Entertainment</option>
-          <option value="other">Other</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Currency</label>
-        <select class="input" id="inCurrency">
-          <option value="USD">USD</option>
-          <option value="EUR">EUR</option>
-          <option value="RUB">RUB</option>
-          <option value="UZS">UZS</option>
-        </select>
-      </div>
+      <input class="input" id="inAmount" type="number" placeholder="0.00" step="0.01" min="0">
     </div>
     <div class="form-group">
-      <label class="form-label">Note (optional)</label>
-      <input class="input" id="inNote" type="text" placeholder="What was this for?">
+      <label class="form-label">Description</label>
+      <input class="input" id="inDesc" type="text" placeholder="What was this for?">
     </div>
-    <button class="btn btn-primary" style="width:100%" onclick="addTxn()">Save</button>
+    <div class="form-group">
+      <label class="form-label">Category</label>
+      <input class="input" id="inCat" type="text" placeholder="Food, Transport, Salary...">
+    </div>
+    <button class="btn btn-primary" style="width:100%" onclick="addTx()">Add Transaction</button>
   </div>
 </div>
 
@@ -141,117 +110,84 @@
 <script>
 const uid = new URLSearchParams(location.search).get('uid') || 0;
 const API = '/api';
-let filter = 'all';
-let txnType = 'income';
-
-const CAT_ICONS = {
-  salary:'💼', freelance:'💻', food:'🍔', transport:'🚗',
-  shopping:'🛍', utilities:'💡', health:'❤️', entertainment:'🎮', other:'📦',
-  income:'📈', expense:'📉'
-};
+let txs = [], filter = 'all';
 
 async function load() {
   try {
-    const [txns, summary] = await Promise.all([
-      fetch(`${API}/finance?uid=${uid}`).then(r=>r.json()),
-      fetch(`${API}/finance/summary?uid=${uid}`).then(r=>r.json()).catch(()=>null),
-    ]);
-
-    // Compute balance
-    let income = 0, expense = 0;
-    txns.forEach(t => {
-      if (t.type === 'income') income += +t.amount;
-      else expense += +t.amount;
-    });
-    const balance = income - expense;
-
-    document.getElementById('balanceAmt').textContent = fmt(balance);
-    document.getElementById('balanceAmt').className = 'balance-amount ' + (balance >= 0 ? 'amount-positive' : 'amount-negative');
-    document.getElementById('balanceSub').textContent = `${txns.length} transactions`;
-    document.getElementById('totalIncome').textContent = fmt(income);
-    document.getElementById('totalExpense').textContent = fmt(expense);
-
-    renderList(txns);
-  } catch(e) {
-    document.getElementById('txnList').innerHTML = `<div class="empty"><div class="empty-icon">❌</div><h3>Load failed</h3><p>${e.message}</p></div>`;
-  }
+    txs = await fetch(`${API}/finance?uid=${uid}`).then(r => r.json());
+    render();
+  } catch(e) { showToast('Load error'); }
 }
 
-function renderList(txns) {
-  const filtered = filter === 'all' ? txns
-    : txns.filter(t => t.type === filter || t.category === filter);
+function render() {
+  const income  = txs.filter(t => t.type === 'income').reduce((s,t)  => s + Number(t.amount), 0);
+  const expense = txs.filter(t => t.type === 'expense').reduce((s,t) => s + Number(t.amount), 0);
+  const bal     = income - expense;
 
-  const el = document.getElementById('txnList');
-  if (!filtered.length) {
-    el.innerHTML = `<div class="empty"><div class="empty-icon">💸</div><h3>No transactions</h3><p>Add your first transaction</p></div>`;
-    return;
+  document.getElementById('balAmount').textContent  = fmt(bal);
+  document.getElementById('balAmount').style.color   = bal >= 0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('balSub').textContent      = `${txs.filter(t=>t.type==='income').length} income · ${txs.filter(t=>t.type==='expense').length} expenses`;
+  document.getElementById('totalIncome').textContent  = fmt(income);
+  document.getElementById('totalExpense').textContent = fmt(expense);
+
+  let list = [...txs];
+  if (filter !== 'all') list = list.filter(t => t.type === filter);
+  list.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+
+  const el = document.getElementById('txList');
+  if (!list.length) {
+    el.innerHTML = `<div class="empty">
+      <div class="empty-icon"><svg><use href="#ic-empty-finance"/></svg></div>
+      <h3>No transactions</h3><p>Add your first transaction</p>
+    </div>`; return;
   }
-  el.innerHTML = filtered.map(t => `
-    <div class="list-item fade-in">
-      <div class="list-item-icon" style="background:var(--${t.type==='income'?'green':'red'}-dim)">
-        ${CAT_ICONS[t.category] || '💰'}
+  el.innerHTML = list.map(t => `
+    <div class="tx-item">
+      <div class="tx-icon ${t.type}">
+        <svg><use href="#ic-arrow-${t.type==='income'?'down':'up'}"/></svg>
       </div>
-      <div class="list-item-body">
-        <div class="list-item-title">${t.category || t.type}</div>
-        <div class="list-item-sub">${t.note || ''} · ${fmtDate(t.created_at)}</div>
+      <div class="tx-body">
+        <div class="tx-title">${esc(t.description||t.category||'Transaction')}${t.category?`<span class="cat-badge">${esc(t.category)}</span>`:''}</div>
+        <div class="tx-date">${fmtDate(t.created_at)}</div>
       </div>
-      <div class="list-item-right">
-        <div class="${t.type==='income'?'amount-positive':'amount-negative'}" style="font-weight:700">
-          ${t.type==='income'?'+':'-'}${fmt(t.amount, t.currency)}
-        </div>
-      </div>
+      <div class="tx-amount ${t.type}">${t.type==='income'?'+':'-'}${fmt(t.amount)}</div>
+      <button class="del-btn" onclick="deleteTx(event,${t.id})"><svg><use href="#ic-trash"/></svg></button>
     </div>`).join('');
 }
 
-function fmt(n, currency='USD') {
-  return new Intl.NumberFormat('en-US',{style:'currency',currency,maximumFractionDigits:0}).format(n||0);
-}
-function fmtDate(s) {
-  if (!s) return '';
-  const d = new Date(s);
-  return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
-}
-function setFilter(f, el) {
-  filter = f;
-  document.querySelectorAll('.filter-tab').forEach(b=>b.classList.remove('active'));
-  el.classList.add('active');
-  load();
-}
-function setType(t) {
-  txnType = t;
-  document.getElementById('btnIncome').className  = 'txn-type-btn' + (t==='income'  ? ' active-income'  : '');
-  document.getElementById('btnExpense').className = 'txn-type-btn' + (t==='expense' ? ' active-expense' : '');
-}
-function openModal() { document.getElementById('modal').classList.add('open'); }
+function fmt(n) { return '$' + Math.abs(Number(n)).toFixed(2); }
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function fmtDate(s) { return s ? new Date(s).toLocaleDateString('ru-RU',{month:'short',day:'numeric'}) : ''; }
+function setFilter(f,el) { filter=f; document.querySelectorAll('.filter-tab').forEach(b=>b.classList.remove('active')); el.classList.add('active'); render(); }
+function openModal()  { document.getElementById('modal').classList.add('open'); }
 function closeModal() { document.getElementById('modal').classList.remove('open'); }
-function closeIfBg(e) { if (e.target.id==='modal') closeModal(); }
+function closeIfBg(e) { if(e.target.id==='modal') closeModal(); }
 
-async function addTxn() {
+async function addTx() {
   const amount = parseFloat(document.getElementById('inAmount').value);
   if (!amount || amount <= 0) return showToast('Enter a valid amount');
-  const body = {
-    uid, type: txnType,
-    amount,
-    category: document.getElementById('inCategory').value,
-    currency: document.getElementById('inCurrency').value,
-    note: document.getElementById('inNote').value,
-  };
-  try {
-    await fetch(`${API}/finance`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
-    closeModal();
-    showToast('✅ Saved!');
-    document.getElementById('inAmount').value='';
-    document.getElementById('inNote').value='';
-    load();
-  } catch(e) { showToast('Error: '+e.message); }
+  await fetch(`${API}/finance`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    uid, amount,
+    type: document.getElementById('inType').value,
+    description: document.getElementById('inDesc').value,
+    category: document.getElementById('inCat').value,
+  })});
+  closeModal(); showToast('Transaction added');
+  document.getElementById('inAmount').value = '';
+  document.getElementById('inDesc').value   = '';
+  document.getElementById('inCat').value    = '';
+  load();
 }
-
-function showToast(msg, ms=2500) {
-  const t = document.getElementById('toast');
-  t.textContent = msg; t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'), ms);
+async function deleteTx(e,id) {
+  e.stopPropagation();
+  await fetch(`${API}/finance/${id}`,{method:'DELETE'});
+  txs = txs.filter(t=>t.id!==id); render();
+  showToast('Deleted');
 }
-
+function showToast(msg,ms=2000) {
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),ms);
+}
 load();
 </script>
 </body>

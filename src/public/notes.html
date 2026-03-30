@@ -1,68 +1,80 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Notes — NEXUM</title>
 <link rel="stylesheet" href="/shared/design-system.css">
 <style>
-  .notes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .note-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 14px;
-    cursor: pointer; transition: border-color .15s, transform .1s;
-    position: relative; min-height: 120px;
-  }
-  .note-card:hover { border-color: var(--border2); transform: translateY(-1px); }
-  .note-card.pinned { border-color: var(--accent); }
-  .note-card-title { font-weight: 700; font-size: .9rem; margin-bottom: 6px; }
-  .note-card-body  { font-size: .78rem; color: var(--text2); line-height: 1.5; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
-  .note-card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
-  .note-card-date   { font-size: .7rem; color: var(--text3); }
-  .pin-icon { position: absolute; top: 10px; right: 10px; font-size: .8rem; opacity: .7; }
-  .editor-area { min-height: 200px; font-size: .95rem; line-height: 1.7; }
-  .search-bar { margin-bottom: 12px; }
+  .note-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:10px; cursor:pointer; transition:border-color .15s; }
+  .note-card:hover { border-color:var(--border2); }
+  .note-title { font-weight:600; font-size:.95rem; margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .note-preview { font-size:.82rem; color:var(--text2); line-height:1.5; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .note-meta { font-size:.72rem; color:var(--text3); margin-top:8px; display:flex; justify-content:space-between; align-items:center; }
+  .note-tag { background:var(--accent-dim); color:var(--accent2); padding:2px 8px; border-radius:99px; font-size:.7rem; }
+  .search-wrap { position:relative; margin-bottom:14px; }
+  .search-wrap svg { position:absolute; left:12px; top:50%; transform:translateY(-50%); width:16px; height:16px; stroke:var(--text3); fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  .search-wrap .input { padding-left:36px; }
+  /* Editor */
+  .editor-overlay { position:fixed; inset:0; background:var(--bg); z-index:150; display:flex; flex-direction:column; transform:translateX(100%); transition:transform .25s cubic-bezier(.4,0,.2,1); }
+  .editor-overlay.open { transform:translateX(0); }
+  .editor-header { display:flex; align-items:center; gap:12px; padding:0 16px; height:56px; border-bottom:1px solid var(--border); flex-shrink:0; }
+  .editor-back { background:none; border:none; color:var(--text2); cursor:pointer; padding:6px; border-radius:8px; }
+  .editor-back svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .editor-back:hover { color:var(--text); }
+  #edTitle { flex:1; background:none; border:none; outline:none; color:var(--text); font-size:1.05rem; font-weight:600; font-family:var(--font); }
+  #edTitle::placeholder { color:var(--text3); }
+  .editor-save { background:var(--accent); color:#fff; border:none; border-radius:8px; padding:7px 16px; font-size:.85rem; font-weight:600; cursor:pointer; }
+  #edBody { flex:1; background:none; border:none; outline:none; color:var(--text2); font-size:.92rem; font-family:var(--font); line-height:1.7; resize:none; padding:16px; }
+  #edBody::placeholder { color:var(--text3); }
+  .editor-footer { padding:10px 16px; border-top:1px solid var(--border); flex-shrink:0; }
 </style>
 </head>
 <body>
+<svg style="display:none">
+  <symbol id="ic-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+  <symbol id="ic-note" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></symbol>
+  <symbol id="ic-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+  <symbol id="ic-back" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></symbol>
+  <symbol id="ic-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></symbol>
+</svg>
+
 <header class="app-header">
   <div class="header-logo">
-    <div class="logo-dot">📝</div>
+    <div class="logo-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
+      </svg>
+    </div>
     <h1>Notes</h1>
   </div>
-  <span class="badge badge-accent" id="noteCount">0</span>
+  <span id="noteCount" class="badge badge-accent">0</span>
 </header>
 
 <div class="page">
-  <div class="search-bar">
-    <input class="input" id="searchInput" type="search" placeholder="Search notes..." oninput="onSearch()">
+  <div class="search-wrap">
+    <svg><use href="#ic-search"/></svg>
+    <input class="input" id="searchInput" placeholder="Search notes..." oninput="render()">
   </div>
-  <div class="notes-grid" id="noteGrid"></div>
+  <div id="noteList"></div>
 </div>
 
-<button class="fab" onclick="openNew()">+</button>
+<button class="fab" onclick="openEditor(null)">
+  <svg><use href="#ic-plus"/></svg>
+</button>
 
-<!-- Note Editor Modal -->
-<div class="modal-overlay" id="modal" onclick="closeIfBg(event)">
-  <div class="modal" style="border-radius:var(--radius-lg) var(--radius-lg) 0 0">
-    <div class="modal-handle"></div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <h2 id="modalTitle">New Note</h2>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost btn-icon" id="pinBtn" onclick="togglePin()" title="Pin">📌</button>
-        <button class="btn btn-danger btn-icon" id="deleteBtn" onclick="deleteNote()" title="Delete" style="display:none">🗑</button>
-      </div>
+<!-- Editor -->
+<div class="editor-overlay" id="editor">
+  <div class="editor-header">
+    <button class="editor-back" onclick="closeEditor()"><svg><use href="#ic-back"/></svg></button>
+    <input id="edTitle" type="text" placeholder="Title...">
+    <button class="editor-save" onclick="saveNote()">Save</button>
+  </div>
+  <textarea id="edBody" placeholder="Write your note here..."></textarea>
+  <div class="editor-footer">
+    <div class="form-group" style="margin:0">
+      <input class="input" id="edTags" type="text" placeholder="Tags (comma separated)">
     </div>
-    <div class="form-group">
-      <input class="input" id="inTitle" type="text" placeholder="Title">
-    </div>
-    <div class="form-group">
-      <textarea class="input editor-area" id="inContent" placeholder="Start writing..."></textarea>
-    </div>
-    <div class="form-group">
-      <input class="input" id="inTags" type="text" placeholder="Tags: work, personal, ideas">
-    </div>
-    <button class="btn btn-primary" style="width:100%" onclick="saveNote()">Save Note</button>
   </div>
 </div>
 
@@ -71,111 +83,69 @@
 <script>
 const uid = new URLSearchParams(location.search).get('uid') || 0;
 const API = '/api';
-let notes = [];
-let editId = null;
-let isPinned = false;
-let searchQ = '';
+let notes = [], editingId = null;
 
 async function load() {
   try {
-    notes = await fetch(`${API}/notes?uid=${uid}`).then(r=>r.json());
+    notes = await fetch(`${API}/notes?uid=${uid}`).then(r => r.json());
     render();
-  } catch(e) {
-    document.getElementById('noteGrid').innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">❌</div><h3>${e.message}</h3></div>`;
-  }
+  } catch(e) { showToast('Load error: ' + e.message); }
 }
 
 function render() {
-  const q = searchQ.toLowerCase();
-  let filtered = q
-    ? notes.filter(n => n.title?.toLowerCase().includes(q) || n.content?.toLowerCase().includes(q))
-    : notes;
-
-  // Pinned first
-  filtered.sort((a,b) => (b.pinned||0)-(a.pinned||0));
-
-  document.getElementById('noteCount').textContent = filtered.length;
-  const el = document.getElementById('noteGrid');
-
-  if (!filtered.length) {
-    el.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📝</div><h3>No notes yet</h3><p>Tap + to create your first note</p></div>`;
-    return;
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  let list = q ? notes.filter(n => (n.title+n.content+n.tags).toLowerCase().includes(q)) : notes;
+  document.getElementById('noteCount').textContent = list.length;
+  const el = document.getElementById('noteList');
+  if (!list.length) {
+    el.innerHTML = `<div class="empty">
+      <div class="empty-icon"><svg><use href="#ic-note"/></svg></div>
+      <h3>${q ? 'No results' : 'No notes yet'}</h3>
+      <p>${q ? 'Try a different search' : 'Tap + to create your first note'}</p>
+    </div>`; return;
   }
-
-  el.innerHTML = filtered.map(n => `
-    <div class="note-card ${n.pinned?'pinned':''}" onclick="openEdit(${n.id})">
-      ${n.pinned ? '<div class="pin-icon">📌</div>' : ''}
-      <div class="note-card-title">${esc(n.title||'Untitled')}</div>
-      <div class="note-card-body">${esc(n.content||'')}</div>
-      <div class="note-card-footer">
-        <span class="note-card-date">${fmtDate(n.created_at)}</span>
-        ${n.tags ? `<span class="badge badge-accent" style="font-size:.65rem">${esc(n.tags.split(',')[0].trim())}</span>` : ''}
+  el.innerHTML = list.map(n => `
+    <div class="note-card" onclick="openEditor(${n.id})">
+      <div class="note-title">${esc(n.title || 'Untitled')}</div>
+      <div class="note-preview">${esc(n.content || '')}</div>
+      <div class="note-meta">
+        <span>${fmtDate(n.created_at)}</span>
+        ${n.tags ? `<span class="note-tag">${esc(n.tags.split(',')[0].trim())}</span>` : ''}
       </div>
     </div>`).join('');
 }
 
-function esc(s){ return (s||'').replace(/</g,'&lt;'); }
-function fmtDate(s){ return s?new Date(s).toLocaleDateString('en-US',{month:'short',day:'numeric'}):''; }
-function onSearch(){ searchQ=document.getElementById('searchInput').value; render(); }
-
-function openNew(){
-  editId=null; isPinned=false;
-  document.getElementById('modalTitle').textContent='New Note';
-  document.getElementById('inTitle').value='';
-  document.getElementById('inContent').value='';
-  document.getElementById('inTags').value='';
-  document.getElementById('deleteBtn').style.display='none';
-  document.getElementById('pinBtn').textContent='📌';
-  document.getElementById('modal').classList.add('open');
-  setTimeout(()=>document.getElementById('inTitle').focus(),300);
+function openEditor(id) {
+  editingId = id;
+  const n = id ? notes.find(x => x.id === id) : null;
+  document.getElementById('edTitle').value = n?.title || '';
+  document.getElementById('edBody').value  = n?.content || '';
+  document.getElementById('edTags').value  = n?.tags || '';
+  document.getElementById('editor').classList.add('open');
+  document.getElementById('edTitle').focus();
 }
+function closeEditor() { document.getElementById('editor').classList.remove('open'); }
 
-function openEdit(id){
-  const n=notes.find(x=>x.id===id);
-  if(!n) return;
-  editId=id; isPinned=!!n.pinned;
-  document.getElementById('modalTitle').textContent='Edit Note';
-  document.getElementById('inTitle').value=n.title||'';
-  document.getElementById('inContent').value=n.content||'';
-  document.getElementById('inTags').value=n.tags||'';
-  document.getElementById('deleteBtn').style.display='flex';
-  document.getElementById('pinBtn').textContent=isPinned?'📍':'📌';
-  document.getElementById('modal').classList.add('open');
-}
-
-function togglePin(){ isPinned=!isPinned; document.getElementById('pinBtn').textContent=isPinned?'📍':'📌'; }
-function closeModal(){ document.getElementById('modal').classList.remove('open'); }
-function closeIfBg(e){ if(e.target.id==='modal') closeModal(); }
-
-async function saveNote(){
-  const title=document.getElementById('inTitle').value.trim();
-  const content=document.getElementById('inContent').value.trim();
-  if(!title&&!content) return showToast('Write something first');
-  const body={uid,title:title||'Untitled',content,tags:document.getElementById('inTags').value,pinned:isPinned?1:0};
-  if(editId){
-    await fetch(`${API}/notes/${editId}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const n=notes.find(x=>x.id===editId);
-    if(n) Object.assign(n,body);
+async function saveNote() {
+  const title   = document.getElementById('edTitle').value.trim() || 'Untitled';
+  const content = document.getElementById('edBody').value;
+  const tags    = document.getElementById('edTags').value.trim();
+  if (editingId) {
+    await fetch(`${API}/notes/${editingId}`, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,content,tags})});
+    showToast('Note updated');
   } else {
-    const res=await fetch(`${API}/notes`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
-    notes.unshift(res);
+    await fetch(`${API}/notes`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid,title,content,tags})});
+    showToast('Note saved');
   }
-  closeModal(); render(); showToast('✅ Saved!');
+  closeEditor(); load();
 }
 
-async function deleteNote(){
-  if(!editId) return;
-  await fetch(`${API}/notes/${editId}`,{method:'DELETE'});
-  notes=notes.filter(n=>n.id!==editId);
-  closeModal(); render(); showToast('Deleted');
-}
-
-function showToast(msg,ms=2000){
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.classList.add('show');
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function fmtDate(s) { return s ? new Date(s).toLocaleDateString('ru-RU',{month:'short',day:'numeric'}) : ''; }
+function showToast(msg,ms=2000) {
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),ms);
 }
-
 load();
 </script>
 </body>

@@ -24,7 +24,8 @@
 <body>
 <header class="app-header">
   <div class="header-logo">
-    <div class="logo-dot">👥</div>
+    <div class="logo-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></div>
     <h1>Contacts</h1>
   </div>
   <span class="badge badge-accent" id="countBadge">0</span>
@@ -37,7 +38,9 @@
   <div id="contactList"></div>
 </div>
 
-<button class="fab" onclick="openAdd()">+</button>
+<button class="fab" onclick="openAdd()">
+  <svg class="icon icon-lg" style="fill:none;stroke:#fff;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+</button>
 
 <!-- Add/Edit Modal -->
 <div class="modal-overlay" id="addModal" onclick="closeIfBg(event,'addModal')">
@@ -88,8 +91,8 @@
     </div>
     <div id="detailRows"></div>
     <div class="contact-actions">
-      <button class="btn btn-ghost" style="flex:1" onclick="editCurrent()">✏️ Edit</button>
-      <button class="btn btn-primary" style="flex:1" id="callBtn">📞 Call</button>
+      <button class="btn btn-ghost" style="flex:1" onclick="editCurrent()">Edit</button>
+      <button class="btn btn-primary" style="flex:1" id="callBtn">Call</button>
     </div>
   </div>
 </div>
@@ -112,7 +115,7 @@ async function load() {
     contacts = await fetch(`${API}/contacts?uid=${uid}`).then(r => r.json());
     render();
   } catch(e) {
-    document.getElementById('contactList').innerHTML = `<div class="empty"><div class="empty-icon">❌</div><h3>${e.message}</h3></div>`;
+    document.getElementById('contactList').innerHTML = `<div class="empty"><div class="empty-icon"><svg><use href="#ic-person"/></svg></div><h3>${e.message}</h3></div>`;
   }
 }
 
@@ -126,7 +129,7 @@ function render() {
   document.getElementById('countBadge').textContent = list.length;
 
   if (!list.length) {
-    document.getElementById('contactList').innerHTML = `<div class="empty"><div class="empty-icon">👤</div><h3>No contacts</h3><p>Add your first contact</p></div>`;
+    document.getElementById('contactList').innerHTML = `<div class="empty"><div class="empty-icon"><svg><use href="#ic-person"/></svg></div><h3>No contacts</h3><p>Add your first contact</p></div>`;
     return;
   }
 
@@ -163,10 +166,10 @@ function openDetail(id) {
   document.getElementById('detailCompany').textContent = c.company || '';
 
   const rows = [
-    c.phone   && `<div class="detail-row"><div class="detail-icon">📞</div><div><div class="detail-val">${esc(c.phone)}</div><div class="detail-key">Phone</div></div></div>`,
-    c.email   && `<div class="detail-row"><div class="detail-icon">✉️</div><div><div class="detail-val">${esc(c.email)}</div><div class="detail-key">Email</div></div></div>`,
-    c.company && `<div class="detail-row"><div class="detail-icon">🏢</div><div><div class="detail-val">${esc(c.company)}</div><div class="detail-key">Company</div></div></div>`,
-    c.notes   && `<div class="detail-row"><div class="detail-icon">📝</div><div><div class="detail-val">${esc(c.notes)}</div><div class="detail-key">Notes</div></div></div>`,
+    c.phone   && `<div class="detail-row"><div class="detail-icon" style="color:var(--green)"><svg class="icon" style="fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 8.81 19.79 19.79 0 01.03 1.18 2 2 0 012 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg></div><div><div class="detail-val">${esc(c.phone)}</div><div class="detail-key">Phone</div></div></div>`,
+    c.email   && `<div class="detail-row"><div class="detail-icon" style="color:var(--accent2)"><svg class="icon" style="fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div><div><div class="detail-val">${esc(c.email)}</div><div class="detail-key">Email</div></div></div>`,
+    c.company && `<div class="detail-row"><div class="detail-icon" style="color:var(--blue)"><svg class="icon" style="fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M6 22V4a2 2 0 012-2h8a2 2 0 012 2v18z"/><path d="M6 12H4a2 2 0 00-2 2v6a2 2 0 002 2h2"/><path d="M18 9h2a2 2 0 012 2v9a2 2 0 01-2 2h-2"/><line x1="10" y1="6" x2="10" y2="6"/><line x1="14" y1="6" x2="14" y2="6"/><line x1="10" y1="10" x2="10" y2="10"/><line x1="14" y1="10" x2="14" y2="10"/><line x1="10" y1="14" x2="10" y2="14"/><line x1="14" y1="14" x2="14" y2="14"/></svg></div><div><div class="detail-val">${esc(c.company)}</div><div class="detail-key">Company</div></div></div>`,
+    c.notes   && `<div class="detail-row"><div class="detail-icon" style="color:var(--yellow)"><svg class="icon" style="fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div><div><div class="detail-val">${esc(c.notes)}</div><div class="detail-key">Notes</div></div></div>`,
   ].filter(Boolean).join('');
 
   document.getElementById('detailRows').innerHTML = rows || '<p style="color:var(--text3);font-size:.85rem">No details</p>';

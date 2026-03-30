@@ -1,4 +1,6 @@
-/* NEXUM Design System — Dark Theme */
+/* ════════════════════════════════════════════════════════════
+   NEXUM Design System v2 — Dark Theme + SVG Icon System
+   ════════════════════════════════════════════════════════════ */
 
 :root {
   --bg:         #0d0f14;
@@ -41,9 +43,7 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
 html { font-size: 16px; -webkit-text-size-adjust: 100%; }
-
 body {
   font-family: var(--font);
   background: var(--bg);
@@ -53,6 +53,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ── SVG Icon System ──────────────────────────────────────────────────────── */
+.nx-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.nx-icon svg { display: block; }
+
 /* ── Typography ─────────────────────────────────────────────────────────── */
 h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; }
 h2 { font-size: 1.2rem; font-weight: 600; }
@@ -60,12 +67,7 @@ h3 { font-size: 1rem;   font-weight: 600; }
 p  { line-height: 1.6; color: var(--text2); }
 
 /* ── Cards ──────────────────────────────────────────────────────────────── */
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px;
-}
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
 .card-sm { padding: 12px; border-radius: var(--radius-sm); }
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
@@ -101,16 +103,11 @@ p  { line-height: 1.6; color: var(--text2); }
 }
 .input:focus { border-color: var(--accent); }
 .input::placeholder { color: var(--text3); }
-
 select.input { cursor: pointer; }
 textarea.input { resize: vertical; min-height: 80px; }
 
 /* ── Badges ──────────────────────────────────────────────────────────────── */
-.badge {
-  display: inline-flex; align-items: center;
-  padding: 3px 8px; border-radius: 99px;
-  font-size: .75rem; font-weight: 600;
-}
+.badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 99px; font-size: .75rem; font-weight: 600; }
 .badge-accent  { background: var(--accent-dim); color: var(--accent2); }
 .badge-green   { background: var(--green-dim);  color: var(--green); }
 .badge-red     { background: var(--red-dim);    color: var(--red); }
@@ -129,13 +126,14 @@ textarea.input { resize: vertical; min-height: 80px; }
   backdrop-filter: blur(20px);
 }
 .app-header h1 { font-size: 1.1rem; }
-.header-logo { display: flex; align-items: center; gap: 8px; }
-.logo-dot {
-  width: 28px; height: 28px; border-radius: 8px;
+.header-logo { display: flex; align-items: center; gap: 10px; }
+.logo-mark {
+  width: 30px; height: 30px; border-radius: 9px;
   background: var(--accent);
   display: flex; align-items: center; justify-content: center;
-  font-size: .85rem; font-weight: 700; color: #fff;
+  flex-shrink: 0;
 }
+.logo-mark svg { width: 17px; height: 17px; fill: #fff; }
 
 /* ── Bottom tabs ─────────────────────────────────────────────────────────── */
 .tab-bar {
@@ -149,13 +147,13 @@ textarea.input { resize: vertical; min-height: 80px; }
 }
 .tab-item {
   flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 2px;
+  align-items: center; justify-content: center; gap: 3px;
   cursor: pointer; text-decoration: none;
-  color: var(--text3); font-size: .65rem; font-weight: 500;
+  color: var(--text3); font-size: .62rem; font-weight: 500;
   transition: color .15s;
   border: none; background: none; font-family: var(--font);
 }
-.tab-item svg { width: 22px; height: 22px; }
+.tab-item svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .tab-item.active { color: var(--accent); }
 
 /* ── Page ────────────────────────────────────────────────────────────────── */
@@ -173,11 +171,11 @@ textarea.input { resize: vertical; min-height: 80px; }
   border-radius: 50%; border: none; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 4px 20px rgba(108,99,255,.5);
-  font-size: 1.4rem; font-weight: 300;
   transition: transform .15s, box-shadow .15s;
   z-index: 90;
 }
 .fab:hover { transform: scale(1.08); box-shadow: 0 6px 28px rgba(108,99,255,.6); }
+.fab svg { width: 22px; height: 22px; stroke: #fff; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ── Modal ───────────────────────────────────────────────────────────────── */
 .modal-overlay {
@@ -201,16 +199,24 @@ textarea.input { resize: vertical; min-height: 80px; }
   border-top: 1px solid var(--border);
 }
 .modal-overlay.open .modal { transform: translateY(0); }
-.modal-handle {
-  width: 40px; height: 4px; border-radius: 2px;
-  background: var(--border2); margin: 0 auto 20px;
-}
+.modal-handle { width: 40px; height: 4px; border-radius: 2px; background: var(--border2); margin: 0 auto 20px; }
 .modal h2 { margin-bottom: 16px; }
 
 /* ── Form groups ─────────────────────────────────────────────────────────── */
 .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .form-label { font-size: .8rem; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .05em; }
 .form-row   { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* ── Filter tabs ─────────────────────────────────────────────────────────── */
+.filter-tabs { display: flex; gap: 6px; margin-bottom: 14px; overflow-x: auto; scrollbar-width: none; }
+.filter-tabs::-webkit-scrollbar { display: none; }
+.filter-tab {
+  padding: 6px 14px; border-radius: 99px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text2); font-size: .8rem; font-weight: 500;
+  cursor: pointer; white-space: nowrap; transition: all .15s; font-family: var(--font);
+}
+.filter-tab.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
 
 /* ── List items ──────────────────────────────────────────────────────────── */
 .list-item {
@@ -223,34 +229,28 @@ textarea.input { resize: vertical; min-height: 80px; }
   transition: border-color .15s;
 }
 .list-item:hover { border-color: var(--border2); }
-.list-item-icon {
-  width: 36px; height: 36px; border-radius: 10px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1.1rem; flex-shrink: 0;
-}
+.list-item-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.list-item-icon svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .list-item-body { flex: 1; min-width: 0; }
 .list-item-title { font-weight: 600; font-size: .95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .list-item-sub   { font-size: .8rem; color: var(--text2); margin-top: 2px; }
 .list-item-right { flex-shrink: 0; text-align: right; }
 
 /* ── Empty state ─────────────────────────────────────────────────────────── */
-.empty {
-  text-align: center; padding: 48px 24px;
-  display: flex; flex-direction: column; align-items: center; gap: 12px;
-}
-.empty-icon { font-size: 3rem; opacity: .4; }
+.empty { text-align: center; padding: 48px 24px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.empty-icon { width: 56px; height: 56px; opacity: .25; }
+.empty-icon svg { width: 56px; height: 56px; stroke: var(--text2); fill: none; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
 .empty h3   { color: var(--text2); font-weight: 500; }
 .empty p    { font-size: .85rem; color: var(--text3); max-width: 220px; }
 
 /* ── Stat cards ──────────────────────────────────────────────────────────── */
 .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
-.stat-card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 14px 12px;
-}
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 12px; }
 .stat-label { font-size: .75rem; color: var(--text3); font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
 .stat-value { font-size: 1.5rem; font-weight: 700; margin-top: 4px; }
 .stat-sub   { font-size: .75rem; color: var(--text2); margin-top: 2px; }
+.amount-positive { color: var(--green); }
+.amount-negative { color: var(--red); }
 
 /* ── Divider ─────────────────────────────────────────────────────────────── */
 .divider { height: 1px; background: var(--border); margin: 16px 0; }
@@ -276,3 +276,9 @@ textarea.input { resize: vertical; min-height: 80px; }
   pointer-events: none; white-space: nowrap; z-index: 300;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ── SVG Icons helper ─────────────────────────────────────────────────────── */
+/* Usage: <svg class="icon"><use href="#icon-tasks"/></svg> */
+.icon { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: inline-block; vertical-align: middle; }
+.icon-sm { width: 16px; height: 16px; }
+.icon-lg { width: 24px; height: 24px; }
