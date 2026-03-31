@@ -11,10 +11,8 @@ export interface Message {
 }
 
 // ============================================================
-//  UNIFIED AI ROUTER with automatic fallback chain
-//  Tries providers in order until one succeeds
+//  UNIFIED AI ROUTER — non-streaming with tool-use loop
 // ============================================================
-
 export async function chatUnified(
     messages: Message[],
     uid: number,
@@ -48,8 +46,6 @@ export async function chatUnified(
             const msg = err?.message || String(err);
             Logger.warn('router', `${cfg.provider} failed: ${msg}`);
             errors.push(`${cfg.provider}: ${msg}`);
-            if (msg.includes('401') || msg.includes('invalid_api_key')) continue;
-            if (msg.includes('429') || msg.includes('rate_limit')) continue;
         }
     }
 
@@ -61,9 +57,8 @@ export async function chatUnified(
 }
 
 // ============================================================
-//  STREAMING SUPPORT — yields text chunks via async generator
+//  STREAMING ROUTER — real SSE token-by-token
 // ============================================================
-
 export async function* chatStream(
     messages: Message[],
     uid: number
@@ -77,6 +72,7 @@ export async function* chatStream(
         if (!key) continue;
 
         try {
+            Logger.debug('router', `Stream attempt: ${cfg.provider} (${cfg.model})`);
             if (cfg.format === 'openai') {
                 yield* streamOpenAI(cfg, key, messages);
                 return;
@@ -84,9 +80,7 @@ export async function* chatStream(
                 yield* streamAnthropic(cfg, key, messages);
                 return;
             } else if (cfg.format === 'google') {
-                // Gemini doesn't support streaming easily, fallback to full response
-                const result = await callGemini(cfg, key, messages);
-                yield result.content as string;
+                yield* streamGemini(cfg, key, messages);
                 return;
             }
         } catch (err: any) {
@@ -96,6 +90,10 @@ export async function* chatStream(
     }
     yield '⚠️ Все AI провайдеры недоступны.';
 }
+
+// ============================================================
+//  STREAMING IMPLEMENTATIONS
+// ============================================================
 
 async function* streamOpenAI(
     cfg: ModelConfig,
@@ -124,17 +122,13 @@ async function* streamOpenAI(
 
     try {
         const resp = await fetch(`${cfg.baseUrl}/chat/completions`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(body),
+            method: 'POST', headers, body: JSON.stringify(body),
             signal: controller.signal,
         });
-
         if (!resp.ok) {
             const text = await resp.text();
             throw new Error(`HTTP ${resp.status}: ${text.slice(0, 200)}`);
         }
-
         if (!resp.body) throw new Error('No response body');
 
         const reader = resp.body.getReader();
@@ -198,7 +192,6 @@ async function* streamAnthropic(
             body: JSON.stringify(body),
             signal: controller.signal,
         });
-
         if (!resp.ok) throw new Error(`Anthropic HTTP ${resp.status}: ${await resp.text()}`);
         if (!resp.body) throw new Error('No response body');
 
@@ -228,8 +221,67 @@ async function* streamAnthropic(
     }
 }
 
+async function* streamGemini(
+    cfg: ModelConfig,
+    key: string,
+    messages: Message[]
+): AsyncGenerator<string> {
+    const systemMsg = messages.find(m => m.role === 'system');
+    const chatMsgs = messages.filter(m => m.role !== 'system');
+
+    const contents = chatMsgs.map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
+    }));
+
+    const body: any = {
+        contents,
+        generationConfig: { maxOutputTokens: cfg.maxTokens, temperature: 0.6 },
+    };
+    if (systemMsg) body.systemInstruction = { parts: [{ text: systemMsg.content }] };
+
+    const url = `${cfg.baseUrl}/models/${cfg.model}:streamGenerateContent?key=${key}&alt=sse`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+
+    try {
+        const resp = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+        });
+        if (!resp.ok) throw new Error(`Gemini stream HTTP ${resp.status}: ${await resp.text()}`);
+        if (!resp.body) throw new Error('No response body');
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith('data: ')) continue;
+                try {
+                    const parsed = JSON.parse(trimmed.slice(6));
+                    const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) yield text;
+                } catch {}
+            }
+        }
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 // ============================================================
-//  NON-STREAMING PROVIDER IMPLEMENTATIONS
+//  NON-STREAMING IMPLEMENTATIONS
 // ============================================================
 
 async function callOpenAI(cfg: ModelConfig, key: string, messages: Message[], tools?: any[]): Promise<Message> {
@@ -259,16 +311,10 @@ async function callOpenAI(cfg: ModelConfig, key: string, messages: Message[], to
     const resp = await fetchWithTimeout(`${cfg.baseUrl}/chat/completions`, {
         method: 'POST', headers, body: JSON.stringify(body),
     });
-
-    if (!resp.ok) {
-        const text = await resp.text();
-        throw new Error(`HTTP ${resp.status}: ${text.slice(0, 200)}`);
-    }
-
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
     const data = await resp.json() as any;
     const choice = data.choices?.[0]?.message;
     if (!choice) throw new Error('No response in choices');
-
     return { role: 'assistant', content: choice.content || '', tool_calls: choice.tool_calls };
 }
 
@@ -293,9 +339,7 @@ async function callGemini(cfg: ModelConfig, key: string, messages: Message[], to
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     });
-
     if (!resp.ok) throw new Error(`Gemini HTTP ${resp.status}: ${await resp.text()}`);
-
     const data = await resp.json() as any;
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) throw new Error('Gemini returned empty response');
@@ -328,9 +372,7 @@ async function callAnthropic(cfg: ModelConfig, key: string, messages: Message[],
         headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     });
-
     if (!resp.ok) throw new Error(`Anthropic HTTP ${resp.status}: ${await resp.text()}`);
-
     const data = await resp.json() as any;
     const textBlock = data.content?.find((b: any) => b.type === 'text');
     return { role: 'assistant', content: textBlock?.text || '' };
@@ -339,7 +381,6 @@ async function callAnthropic(cfg: ModelConfig, key: string, messages: Message[],
 // ============================================================
 //  HELPERS
 // ============================================================
-
 function normalizeMessage(m: Message): any {
     if (m.role === 'tool') return { role: 'tool', tool_call_id: m.tool_call_id, content: m.content };
     return { role: m.role, content: m.content, tool_calls: m.tool_calls };
