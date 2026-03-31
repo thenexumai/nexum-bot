@@ -7,7 +7,7 @@ const REQUIRED_PATHS = [
     'src/core/db.ts',
     'src/agent/executor.ts',
     'pc_agent/nexum_agent.py',
-    'intelligence/pro_search.ts',
+    'src/intelligence/pro_search.ts',
     'apps/browser/index.html'
 ];
 

@@ -1,5 +1,5 @@
-import { Perplexer } from '../src/agent/perplexer';
-import { Logger } from '../src/infra/logger';
+import { Perplexer } from '../agent/perplexer';
+import { Logger } from '../infra/logger';
 
 export class ResearchAgent {
     static async solve(objective: string) {

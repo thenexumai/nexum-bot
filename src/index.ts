@@ -86,8 +86,8 @@ async function bootstrap() {
                 const msg = JSON.parse(raw.toString());
                 
                 if (msg.type === 'auth') {
-                    const uid = isPortal ? Number(msg.uid) : linkTokens.get(msg.token);
-                    if (!uid && !isPortal) {
+                    const uid = isPortal ? Number(msg.uid) : (linkTokens.get(msg.token) ?? null);
+                    if (uid === null) {
                         ws.send(JSON.stringify({ type: 'auth_error', message: 'Token invalid' }));
                         return ws.terminate();
                     }
@@ -95,11 +95,11 @@ async function bootstrap() {
                     
                     connectedUid = uid;
                     if (isPortal) {
-                        const portals = portalConnections.get(uid!) || [];
-                        portalConnections.set(uid!, [...portals, ws]);
+                        const portals = portalConnections.get(uid) || [];
+                        portalConnections.set(uid, [...portals, ws]);
                         Logger.success('wss', `Portal Link: UID ${uid}`);
                     } else {
-                        agentConnections.set(uid!, ws);
+                        agentConnections.set(uid, ws);
                         Logger.success('wss', `Agent Link: UID ${uid}`);
                     }
                     ws.send(JSON.stringify({ type: 'auth_ok', uid }));
@@ -133,12 +133,21 @@ async function bootstrap() {
             } catch (e) { Logger.error('wss', 'WS Error', e); }
         });
 
-        ws.on('close', () => { if(connectedUid) agentConnections.delete(connectedUid); });
+        ws.on('close', () => { 
+            if(connectedUid) {
+                if(isPortal) {
+                    const portals = portalConnections.get(connectedUid) || [];
+                    portalConnections.set(connectedUid, portals.filter(p => p !== ws));
+                } else {
+                    agentConnections.delete(connectedUid);
+                }
+            }
+        });
     });
 
     // 5. Telegram Bot Engine
     setupBot(bot);
-    bot.start({ drop_pending_updates: true }); // Запуск без блокировки потока
+    bot.start({ drop_pending_updates: true }); 
     Logger.success('system', 'Telegram Engine: ONLINE');
 
     // 6. Background Processes

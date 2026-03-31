@@ -5,8 +5,8 @@ import { agentConnections, pendingRequests } from '../index';
 import { MissionControl } from '../core/tasks/mission_control';
 import { PolicyEnforcer } from './policies/enforcer';
 import { KnowledgeGraph } from '../core/memory/knowledge_graph';
-import { CoderAgent } from '../../intelligence/coder';
-import { VisionReasoning } from '../../intelligence/vision';
+import { CoderAgent } from '../intelligence/coder';
+import { VisionReasoning } from '../intelligence/vision';
 import { AILogger } from '../infra/ai_logger';
 import { AutoPatcher } from './capabilities/auto_patcher';
 
@@ -129,7 +129,7 @@ export const handleToolUse = async (toolName: string, args: any, uid: number): P
         case 'analyze_ui':
             AILogger.logThought(uid, `Analyzing your screen to find: ${args.objective}`);
             const screenshot = await dispatchToAgent(uid, 'screenshot', {});
-            const vision = await VisionReasoning.planNextAction(screenshot, args.objective);
+            const vision = await VisionReasoning.planNextAction(screenshot, args.objective, uid);
             AILogger.logThought(uid, `Vision Plan: ${vision.thought}`);
             return `UI Analysis Result: ${JSON.stringify(vision)}`;
 

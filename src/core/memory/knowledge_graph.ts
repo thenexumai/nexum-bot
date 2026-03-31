@@ -5,7 +5,6 @@ import { Logger } from '../../infra/logger';
 export class KnowledgeGraph {
     /**
      * Extract entities from conversation and store in memory table.
-     * FIX: now passes uid to chatUnified for BYOK support.
      */
     static async addFact(uid: number, text: string): Promise<void> {
         const prompt = `Extract knowledge from this text as JSON.
@@ -15,7 +14,7 @@ Return ONLY valid JSON, no markdown:
 Max 5 facts. Skip generic phrases.`;
 
         try {
-            // FIX: uid is now passed
+            // FIX: Pass uid
             const response = await chatUnified(
                 [{ role: 'user', content: prompt }],
                 uid
@@ -42,7 +41,6 @@ Max 5 facts. Skip generic phrases.`;
 
             Logger.success('memory', `Knowledge graph updated for UID ${uid}: ${data.facts.length} facts`);
         } catch (e) {
-            // Silent fail — knowledge graph is non-critical
             Logger.warn('memory', `Knowledge graph update skipped for UID ${uid}`);
         }
     }
@@ -92,19 +90,9 @@ Max 5 facts. Skip generic phrases.`;
         `).run(uid, key.slice(0, 100), value.slice(0, 500));
     }
 
-    /**
-     * List all facts for a user.
-     */
     static listFacts(uid: number): { key: string; value: string }[] {
         return db.prepare(
             "SELECT key, value FROM memory WHERE uid = ? ORDER BY updated_at DESC LIMIT 20"
         ).all(uid) as any[];
-    }
-
-    /**
-     * Delete a fact by key.
-     */
-    static deleteFact(uid: number, key: string): void {
-        db.prepare("DELETE FROM memory WHERE uid = ? AND key = ?").run(uid, key);
     }
 }

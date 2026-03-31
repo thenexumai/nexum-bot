@@ -1,5 +1,5 @@
-import { chatUnified } from '../src/agent/router';
-import { Logger } from '../src/infra/logger';
+import { chatUnified } from '../agent/router';
+import { Logger } from '../infra/logger';
 import fs from 'fs';
 import path from 'path';
 

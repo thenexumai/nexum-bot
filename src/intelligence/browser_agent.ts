@@ -1,5 +1,5 @@
-import { dispatchToAgent } from '../src/agent/tools';
-import { Logger } from '../src/infra/logger';
+import { dispatchToAgent } from '../agent/tools';
+import { Logger } from '../infra/logger';
 
 export class BrowserAgent {
     static async performTask(url: string, instruction: string, uid: number) {

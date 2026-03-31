@@ -1,5 +1,5 @@
 import { EvolutionEngine } from './engine';
-import { Logger } from '../src/infra/logger';
+import { Logger } from '../infra/logger';
 
 export class GlobalMonitor {
     static init() {

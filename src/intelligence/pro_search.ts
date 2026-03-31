@@ -1,11 +1,11 @@
-import { chatUnified } from '../src/agent/router';
-import { webSearch } from '../src/tools/search';
-import { Logger } from '../src/infra/logger';
+import { chatUnified } from '../agent/router';
+import { webSearch } from '../tools/search';
+import { Logger } from '../infra/logger';
 
 export class ProSearchEngine {
     private static MAX_DEPTH = 5;
 
-    static async execute(query: string, focus: 'web' | 'academic' | 'reddit' | 'youtube' = 'web') {
+    static async execute(query: string, uid: number, focus: 'web' | 'academic' | 'reddit' | 'youtube' = 'web') {
         Logger.info('pro-search', `Deep Analysis started: ${query} (Focus: ${focus})`);
         
         let context = "";
@@ -25,7 +25,7 @@ export class ProSearchEngine {
                 Otherwise return ONLY the query string.
             `;
             
-            const nextQuery = await chatUnified([{ role: 'user', content: decisionPrompt }]);
+            const nextQuery = await chatUnified([{ role: 'user', content: decisionPrompt }], uid);
             if (nextQuery.content.includes("FINISH")) break;
 
             const results = await webSearch(nextQuery.content);
@@ -43,7 +43,7 @@ export class ProSearchEngine {
             Include a "Related Questions" section at the end.
         `;
 
-        const finalAnswer = await chatUnified([{ role: 'user', content: finalPrompt }]);
+        const finalAnswer = await chatUnified([{ role: 'user', content: finalPrompt }], uid);
         
         return {
             answer: finalAnswer.content,
