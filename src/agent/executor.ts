@@ -1,5 +1,5 @@
 import { Logger } from '../infra/logger';
-import { getSoulContext } from '../soul/index';
+import { getSoulContextSync } from '../soul/index';
 import { getContext, updateContext } from '../state/user-context';
 import { TOOLS, handleToolUse } from './tools';
 import { chatUnified, Message } from './router';
@@ -55,8 +55,11 @@ export const executeAI = async (
         ? await KnowledgeGraph.getContext(uid, prompt).catch(() => '')
         : '';
 
+    // Use synchronous version — no async needed here
+    const baseSoul = getSoulContextSync();
+
     const systemPrompt = `
-${getSoulContext()}
+${baseSoul}
 
 USER STATE:
 - Language: ${user?.lang || 'ru'}
@@ -88,7 +91,7 @@ Always respond in the user's language (${user?.lang || 'ru'}).
     while (iterations < maxIterations) {
         iterations++;
         try {
-            // FIX: chatUnified requires number, not number|undefined — use uid ?? 0
+            // chatUnified requires number, not number|undefined — use uid ?? 0
             const assistantMessage = await chatUnified(messages, uid ?? 0, TOOLS);
             messages.push(assistantMessage);
 
@@ -113,10 +116,10 @@ Always respond in the user's language (${user?.lang || 'ru'}).
                 const name = toolCall.function?.name;
                 lastToolUsed = name;
                 let args: any = {};
-                try { args = JSON.parse(toolCall.function?.arguments || '{}'); } catch { }
+                try { args = JSON.parse(toolCall.function?.arguments || '{}'); } catch (_e) { }
 
                 Logger.info('agent', `Tool call: ${name}`);
-                // FIX: handleToolUse requires number — use uid ?? 0
+                // handleToolUse requires number — use uid ?? 0
                 const result = await handleToolUse(name, args, uid ?? 0);
 
                 messages.push({
@@ -130,10 +133,10 @@ Always respond in the user's language (${user?.lang || 'ru'}).
         } catch (err) {
             Logger.error('agent', `Iteration ${iterations} failed`, err);
             if (iterations >= maxIterations) {
-                return { content: '❌ Не удалось получить ответ. Попробуй позже.' };
+                return { content: '\u274c Не удалось получить ответ. Попробуй позже.' };
             }
         }
     }
 
-    return { content: '✅ Задача выполнена.' };
+    return { content: '\u2705 Задача выполнена.' };
 };
