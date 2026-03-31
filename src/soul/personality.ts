@@ -1,10 +1,9 @@
 /**
- * NEXUM Personality Engine v2.0
- * Controls emotional tone, greeting style, and contextual expression.
- * Inspired by Claude's warmth + Perplexity's precision.
+ * NEXUM Personality Engine v3.0
+ * Claude-level warmth, wit, depth. Perplexity-level precision.
  */
 
-export type Mood = 'helpful' | 'focused' | 'celebratory' | 'apologetic' | 'professional' | 'curious' | 'playful';
+export type Mood = 'helpful' | 'focused' | 'celebratory' | 'apologetic' | 'professional' | 'curious' | 'playful' | 'empathetic';
 
 export interface PersonalityConfig {
   mood: Mood;
@@ -13,89 +12,90 @@ export interface PersonalityConfig {
   userFirstName?: string;
 }
 
-// Greeting pools — varied, natural, warm
 const GREETINGS_EN = [
-  'Hey! What can I help you with today? 😊',
-  'Hi there! Ready to dive in — what do you need?',
-  'Hello! I\'m here. What\'s on your mind?',
-  'Hey! Great to hear from you. What are we working on?',
+  'Hey! 👋 What are we working on today?',
+  'Hi there! Ready to help — what\'s on your mind?',
+  'Hello! 😊 I\'m here and thinking. What do you need?',
+  'Hey! Great to hear from you. Let\'s figure this out together.',
+  'Hi! ✨ What can I help you with?',
 ];
 
 const GREETINGS_RU = [
-  'Привет! Чем могу помочь? 😊',
-  'Привет! Готов помочь — что нужно?',
-  'Здорово! Слушаю тебя.',
-  'Привет! Над чем работаем?',
+  'Привет! 👋 Чем могу помочь сегодня?',
+  'Привет! 😊 Готов — что нужно сделать?',
+  'Здорово! Слушаю тебя, рассказывай.',
+  'Привет! ✨ Над чем работаем?',
+  'Привет! Давай разберёмся вместе — что случилось?',
 ];
 
 export function getGreeting(lang: 'en' | 'ru', firstName?: string): string {
   const greets = lang === 'ru' ? GREETINGS_RU : GREETINGS_EN;
   const base = greets[Math.floor(Math.random() * greets.length)];
-  if (firstName) {
-    return lang === 'ru' ? `${base} ${firstName}!` : `${base} ${firstName}!`;
-  }
+  if (firstName) return base.replace('!', `, ${firstName}!`);
   return base;
 }
 
-// Context hints injected into system prompt
 export function formatPersonalityHint(config: PersonalityConfig): string {
   const hints: string[] = [];
 
   if (config.isGroup) {
     hints.push(config.lang === 'ru'
-      ? 'У тебя групповой чат — отвечай кратко, только по делу, не засоряй чат.'
-      : 'Group chat — be brief, respond only when relevant, keep it clean.');
+      ? 'Групповой чат — отвечай кратко, по делу, реагируй только на релевантное.'
+      : 'Group chat — be concise, respond only when relevant.');
   }
 
   switch (config.mood) {
     case 'focused':
       hints.push(config.lang === 'ru'
-        ? 'Режим фокуса — минимум лирики, максимум результата.'
-        : 'Focus mode — minimal small talk, maximum output.');
+        ? 'Режим фокуса — минимум лирики, максимум конкретики.'
+        : 'Focus mode — minimal chatter, maximum output.');
       break;
     case 'celebratory':
       hints.push(config.lang === 'ru'
-        ? 'Отметь успех! Уместно использовать эмодзи, быть энергичным.'
-        : 'Celebrate the win! Use emoji and be energetic.');
+        ? '🎉 Повод для радости! Будь энергичным и тёплым.'
+        : '🎉 Celebrate the win! Be warm and energetic.');
       break;
     case 'apologetic':
       hints.push(config.lang === 'ru'
-        ? 'Признай ошибку честно, предложи решение.'
-        : 'Acknowledge the mistake clearly, then offer a fix.');
+        ? 'Честно признай ошибку, предложи конкретное решение.'
+        : 'Acknowledge the mistake clearly, then offer a concrete fix.');
       break;
     case 'curious':
       hints.push(config.lang === 'ru'
-        ? 'Прояви искренный интерес, задавай уточняющие вопросы если нужно.'
-        : 'Show genuine curiosity, ask follow-up questions if helpful.');
+        ? '🤔 Проявляй искренний интерес, задавай уточняющие вопросы.'
+        : '🤔 Show genuine curiosity, ask follow-up questions.');
       break;
     case 'playful':
       hints.push(config.lang === 'ru'
-        ? 'Можно позволить себе лёгкую шутку, быть немного игривым.'
-        : 'A little playful banter is welcome. Keep it light and fun.');
+        ? '😄 Можно пошутить, быть лёгким и игривым.'
+        : '😄 A little playful banter is welcome.');
+      break;
+    case 'empathetic':
+      hints.push(config.lang === 'ru'
+        ? '💙 Пользователю сейчас непросто — будь особенно мягким и поддерживающим.'
+        : '💙 The user needs support — be especially gentle and caring.');
       break;
   }
 
   return hints.join(' ');
 }
 
-// Emoji map for each mood used in responses
 export function getMoodEmoji(mood: Mood): string {
   const map: Record<Mood, string> = {
-    helpful: '🤝',
-    focused: '🎯',
-    celebratory: '🎉',
-    apologetic: '😔',
+    helpful:      '🤝',
+    focused:      '🎯',
+    celebratory:  '🎉',
+    apologetic:   '😔',
     professional: '💼',
-    curious: '🤔',
-    playful: '😄',
+    curious:      '🤔',
+    playful:      '😄',
+    empathetic:   '💙',
   };
   return map[mood];
 }
 
-// Smart response suffix based on context
 export function getResponseSuffix(lang: 'en' | 'ru', mood: Mood): string {
-  if (mood === 'celebratory') {
-    return lang === 'ru' ? '🎉 Отлично!' : '🎉 Nailed it!';
-  }
+  if (mood === 'celebratory') return lang === 'ru' ? ' 🎉 Отлично!' : ' 🎉 Nailed it!';
+  if (mood === 'empathetic')  return lang === 'ru' ? ' 💙' : ' 💙';
   return '';
 }
