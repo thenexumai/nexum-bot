@@ -13,7 +13,7 @@ import { startMonitor } from './infra/monitor';
 import { startReminderCron } from './tools/reminders';
 
 // ============================================================
-//  BOT INSTANCE (exported for other modules)
+//  BOT INSTANCE
 // ============================================================
 export const bot = new Bot(CONFIG.TELEGRAM_TOKEN);
 
@@ -22,27 +22,25 @@ const httpServer = createServer(app);
 const wss = new WebSocketServer({ server: httpServer });
 
 // ============================================================
-//  PC AGENT GLOBAL STATE
+//  PC AGENT STATE
 // ============================================================
 export const agentConnections = new Map<number, WebSocket>();
 export const pendingRequests = new Map<string, (result: any) => void>();
-
-// One-time link tokens: token → uid
 const linkTokens = new Map<string, number>();
 
 export const createLinkToken = (uid: number): string => {
     const token = Math.random().toString(36).substring(2, 15) +
                   Math.random().toString(36).substring(2, 15);
     linkTokens.set(token, uid);
-    setTimeout(() => linkTokens.delete(token), 10 * 60 * 1000); // 10 min
+    setTimeout(() => linkTokens.delete(token), 10 * 60 * 1000);
     return token;
 };
 
 // ============================================================
-//  REST API — full CRUD for all Mini Apps
+//  REST API
 // ============================================================
 function setupApiRoutes() {
-    app.use(express.json());
+    app.use(express.json({ limit: '20mb' }));
     app.use(express.static(path.join(__dirname, '../src/public')));
 
     // Health
@@ -232,7 +230,7 @@ function setupApiRoutes() {
         res.json(user);
     });
 
-    // ── AI Chat ────────────────────────────────────────────────
+    // ── AI Chat (non-streaming fallback) ────────────────────────
     app.post('/api/chat', async (req, res) => {
         try {
             const { uid, messages, mode } = req.body as {
@@ -261,6 +259,137 @@ function setupApiRoutes() {
             Logger.error('api/chat', e?.message || e);
             res.status(500).json({ error: e?.message || 'Internal error' });
         }
+    });
+
+    // ── AI Chat STREAMING (SSE) ─────────────────────────────────
+    app.post('/api/chat/stream', async (req, res) => {
+        try {
+            const { uid, messages, mode, search, images } = req.body as {
+                uid?: number;
+                messages: { role: string; content: string }[];
+                mode?: string;
+                search?: boolean;
+                images?: string[];
+            };
+
+            if (!messages?.length) {
+                res.status(400).json({ error: 'messages required' });
+                return;
+            }
+
+            // SSE headers
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.setHeader('X-Accel-Buffering', 'no');
+            res.flushHeaders();
+
+            const sendEvent = (data: object) => {
+                res.write(`data: ${JSON.stringify(data)}\n\n`);
+            };
+
+            const lastMsg = messages.filter((m: any) => m.role === 'user').pop();
+            if (!lastMsg) {
+                sendEvent({ error: 'no user message' });
+                res.write('data: [DONE]\n\n');
+                res.end();
+                return;
+            }
+
+            const history = messages
+                .filter((m: any) => !m.content?.startsWith?.('[SYSTEM]:'))
+                .slice(-18)
+                .map((m: any) => ({ role: m.role, content: m.content }));
+
+            // Handle deep search mode (returns full result + sources)
+            const useSearch = search || mode === 'search';
+            if (useSearch) {
+                sendEvent({ delta: '🔍 Выполняю поиск...\n\n' });
+                try {
+                    const { executeAI } = await import('./agent/executor');
+                    const query = `[deep_search] ${lastMsg.content}`;
+                    const result = await executeAI(query, uid ? Number(uid) : undefined, history);
+
+                    // Stream the full result in chunks
+                    const chunks = (result.content as string).match(/.{1,50}/gs) || [];
+                    // Clear the "searching" message
+                    sendEvent({ clear: true });
+                    for (const chunk of chunks) {
+                        sendEvent({ delta: chunk });
+                        await new Promise(r => setTimeout(r, 8));
+                    }
+                    if (result.sources?.length) {
+                        sendEvent({ sources: result.sources });
+                    }
+                } catch (e: any) {
+                    sendEvent({ delta: `\n\n⚠️ Ошибка поиска: ${e.message}` });
+                }
+                res.write('data: [DONE]\n\n');
+                res.end();
+                return;
+            }
+
+            // Standard streaming via router
+            const { chatStream } = await import('./agent/router');
+            const { getSoulContext } = await import('./soul/index');
+            const { getContext } = await import('./state/user-context');
+
+            const userCtx = uid ? getContext(Number(uid)) : null;
+            const soulCtx = uid ? await getSoulContext(Number(uid)) : 'You are NEXUM AI, a helpful assistant.';
+
+            const streamMessages: any[] = [
+                { role: 'system', content: soulCtx },
+                ...history,
+            ];
+
+            // Add image to last user message if present
+            if (images?.length) {
+                const lastUserIdx = streamMessages.map(m => m.role).lastIndexOf('user');
+                if (lastUserIdx !== -1) {
+                    streamMessages[lastUserIdx] = {
+                        role: 'user',
+                        content: [
+                            { type: 'text', text: lastMsg.content },
+                            ...images.slice(0, 4).map(img => ({
+                                type: 'image_url',
+                                image_url: { url: img },
+                            })),
+                        ],
+                    };
+                }
+            }
+
+            const uidNum = uid ? Number(uid) : 0;
+            let tokenCount = 0;
+
+            for await (const chunk of chatStream(streamMessages, uidNum)) {
+                if (res.destroyed) break;
+                sendEvent({ delta: chunk });
+                tokenCount += chunk.length;
+            }
+
+            res.write('data: [DONE]\n\n');
+            res.end();
+
+            Logger.debug('api/stream', `Streamed ~${tokenCount} chars to UID ${uid}`);
+
+        } catch (e: any) {
+            Logger.error('api/chat/stream', e?.message || e);
+            if (!res.headersSent) {
+                res.status(500).json({ error: e?.message || 'Internal error' });
+            } else {
+                try { res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`); res.end(); } catch {}
+            }
+        }
+    });
+
+    // ── BYOK Settings (pass-through) ───────────────────────────
+    app.get('/api/settings', (req, res) => {
+        const uid = Number(req.query.uid);
+        if (!uid) return res.status(400).json({ error: 'uid required' });
+        const byok = db.prepare('SELECT provider, is_active FROM byok_keys WHERE uid=?').all(uid);
+        const prefs = db.prepare("SELECT value FROM memory WHERE uid=? AND key='preferences'").get(uid) as any;
+        res.json({ byok, preferences: prefs?.value ? JSON.parse(prefs.value) : {} });
     });
 }
 
@@ -295,10 +424,10 @@ function setupWebSocket() {
                     connectedUid = uid;
                     agentConnections.set(uid, ws);
                     ws.send(JSON.stringify({ type: 'auth_ok', uid }));
-                    Logger.success('wss', `PC Agent connected: UID ${uid} | ${msg.info?.os || 'unknown'}`);
+                    Logger.success('wss', `PC Agent connected: UID ${uid}`);
                     try {
                         await bot.api.sendMessage(uid,
-                            `🖥 *PC Агент подключён!*\n\nОС: ${msg.info?.os || 'unknown'} ${msg.info?.os_version || ''}\nХост: ${msg.info?.hostname || 'unknown'}\n\nТеперь можешь управлять компьютером через NEXUM.`,
+                            `🖥 *PC Агент подключён!*\n\nОС: ${msg.info?.os || 'unknown'}\nХост: ${msg.info?.hostname || 'unknown'}`,
                             { parse_mode: 'Markdown' }
                         );
                     } catch { }
@@ -341,25 +470,19 @@ async function bootstrap() {
         process.exit(1);
     }
 
-    // 1. Database
     initDB();
     migrateEvolutionTables(db);
     initByokDb(db);
     Logger.success('system', 'Database ready ✅');
 
-    // 2. API + WebSocket routes
     setupApiRoutes();
     setupWebSocket();
-
-    // 3. Telegram Bot setup (don't start long-polling yet)
     setupBot(bot);
 
-    // 4. Background systems
     startMonitor();
     startReminderCron(bot);
     Logger.success('system', 'Background systems started ✅');
 
-    // 5. HTTP Server — START FIRST so /health responds immediately
     await new Promise<void>((resolve) => {
         httpServer.listen(CONFIG.PORT, '0.0.0.0', () => {
             Logger.success('system', `NEXUM HTTP live → port ${CONFIG.PORT} 🌍`);
@@ -367,8 +490,6 @@ async function bootstrap() {
         });
     });
 
-    // 6. Start Telegram bot AFTER HTTP is listening
-    // FIX: bot.start() blocks forever — run in background, don't await
     bot.start({ drop_pending_updates: true }).catch((err) => {
         Logger.error('system', 'Bot polling error', err);
     });
