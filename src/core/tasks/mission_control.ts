@@ -30,16 +30,26 @@ export class MissionControl {
             db.prepare(`
                 INSERT INTO notes (uid, title, content, tags)
                 VALUES (?, ?, ?, ?)
-            `).run(uid, `Report: ${objective.slice(0, 30)}`, report, 'ai-mission, research');
+            `).run(uid, `Отчёт: ${objective.slice(0, 30)}`, report, 'ai-mission, research');
 
-            await bot.api.sendMessage(uid, `✅ **Миссия завершена!**\n\nОбъектив: ${objective}\n\nРезультат сохранен в ваши заметки.`, { parse_mode: 'Markdown' });
+            await bot.api.sendMessage(
+                uid,
+                `✅ *Миссия выполнена!*\n\n` +
+                `🎯 Цель: ${objective}\n\n` +
+                `📝 Отчёт сохранён в твоих заметках.`,
+                { parse_mode: 'Markdown' }
+            );
 
             db.prepare("UPDATE tasks SET status = 'completed' WHERE id = ?").run(id);
             Logger.success('missions', `Mission ${id} COMPLETED`);
-        } catch (e: any) {  // FIX: e was unknown — cast to any to access .message
+        } catch (e: any) {  // e was unknown — cast to any to access .message
             Logger.error('missions', `Mission ${id} FAILED`, e);
             db.prepare("UPDATE tasks SET status = 'failed' WHERE id = ?").run(id);
-            await bot.api.sendMessage(uid, `❌ **Миссия провалена.**\nОшибка: ${e.message}`);
+            await bot.api.sendMessage(
+                uid,
+                `❌ *Миссия провалена.*\n` +
+                `Ошибка: ${e.message || 'неизвестная ошибка'}`
+            );
         }
     }
 }
