@@ -13,8 +13,6 @@ import fetch from 'node-fetch';
 //  STREAMING EDIT INTERVALS
 // ============================================================
 const STREAM_EDIT_INTERVAL_MS = 1200; // Update message every 1.2s during stream
-const TYPING_DOTS = ['...', '   ', '...', '   '];
-let typingIdx = 0;
 
 // ============================================================
 //  MAIN BOT SETUP
@@ -107,7 +105,7 @@ export const setupBot = (bot: Bot) => {
 };
 
 // ============================================================
-//  CORE AI PROCESSING WITH REAL STREAMING
+//  CORE AI PROCESSING WITH REAL STREAMING (NO PLACEHOLDER EMOJI)
 // ============================================================
 
 async function processAIRequest(ctx: Context, text: string, uid: number) {
@@ -133,12 +131,9 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
     await ctx.replyWithChatAction('typing').catch(() => {});
 
     try {
-        // Send placeholder message that we'll update with streaming content
-        const placeholder = await ctx.reply('🤔                       ', { parse_mode: 'Markdown' });
-
         let fullResponse = '';
         let lastEdit = Date.now();
-        let editTimer: ReturnType<typeof setInterval> | null = null;
+        let firstMessageId: number | null = null;
         let streamDone = false;
 
         // Continuous typing action while streaming
@@ -146,18 +141,20 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
             if (!streamDone) ctx.replyWithChatAction('typing').catch(() => {});
         }, 4000);
 
-        // Periodic message update during stream
-        editTimer = setInterval(async () => {
-            if (fullResponse.length > 0 && Date.now() - lastEdit > STREAM_EDIT_INTERVAL_MS) {
-                lastEdit = Date.now();
-                const preview = truncate(fullResponse) + ' █';
-                await ctx.api.editMessageText(
-                    ctx.chat!.id,
-                    placeholder.message_id,
-                    preview,
-                    { parse_mode: 'Markdown' }
-                ).catch(() => {});
-            }
+        // Periodic message update during stream (after first chunk is shown)
+        const editTimer = setInterval(async () => {
+            if (!firstMessageId) return;
+            if (!fullResponse) return;
+            if (Date.now() - lastEdit < STREAM_EDIT_INTERVAL_MS) return;
+            lastEdit = Date.now();
+            const preview = truncate(fullResponse);
+            await ctx.api
+                .editMessageText(ctx.chat!.id, firstMessageId, preview, { parse_mode: 'Markdown' })
+                .catch(async () => {
+                    await ctx.api
+                        .editMessageText(ctx.chat!.id, firstMessageId, stripMarkdown(preview))
+                        .catch(() => {});
+                });
         }, 800);
 
         // Load session history
@@ -165,46 +162,60 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
 
         await executeAI(text, uid, history, async (chunk: string) => {
             fullResponse += chunk;
+
+            // As soon as we have some meaningful text, send first visible message
+            if (!firstMessageId && fullResponse.trim().length > 0) {
+                lastEdit = Date.now();
+                const initial = truncate(fullResponse);
+                const msg = await ctx
+                    .reply(initial, { parse_mode: 'Markdown' })
+                    .catch(async () => await ctx.reply(stripMarkdown(initial)));
+                firstMessageId = msg.message_id;
+            }
         });
 
         streamDone = true;
         clearInterval(typingInterval);
-        if (editTimer) clearInterval(editTimer);
+        clearInterval(editTimer);
 
         // Save to session
         appendToSession(uid, 'user', text);
-        appendToSession(uid, 'assistant', fullResponse);
-
         if (fullResponse) {
-            const chunks = splitMessage(fullResponse);
+            appendToSession(uid, 'assistant', fullResponse);
+        }
 
-            // Final edit of placeholder with first chunk
-            await ctx.api.editMessageText(
-                ctx.chat!.id,
-                placeholder.message_id,
-                chunks[0],
-                { parse_mode: 'Markdown' }
-            ).catch(async () => {
-                // If markdown parse fails, send as plain text
-                await ctx.api.editMessageText(
-                    ctx.chat!.id,
-                    placeholder.message_id,
-                    stripMarkdown(chunks[0])
-                ).catch(() => {});
-            });
+        if (!fullResponse) {
+            // No answer at all
+            await ctx.reply('❌ Нет ответа. Попробуй ещё раз.');
+            return;
+        }
 
-            // Send overflow chunks
+        // Finalize message text (and handle long responses)
+        const chunks = splitMessage(fullResponse);
+
+        if (firstMessageId) {
+            // Final edit for the first chunk
+            await ctx.api
+                .editMessageText(ctx.chat!.id, firstMessageId, chunks[0], { parse_mode: 'Markdown' })
+                .catch(async () => {
+                    await ctx.api
+                        .editMessageText(ctx.chat!.id, firstMessageId, stripMarkdown(chunks[0]))
+                        .catch(() => {});
+                });
+
+            // Send overflow chunks as separate messages
             for (let i = 1; i < chunks.length; i++) {
-                await ctx.reply(chunks[i], { parse_mode: 'Markdown' }).catch(() =>
-                    ctx.reply(stripMarkdown(chunks[i]))
-                );
+                await ctx
+                    .reply(chunks[i], { parse_mode: 'Markdown' })
+                    .catch(() => ctx.reply(stripMarkdown(chunks[i])));
             }
         } else {
-            await ctx.api.editMessageText(
-                ctx.chat!.id,
-                placeholder.message_id,
-                '❌ Нет ответа. Попробуй ещё раз.'
-            ).catch(() => {});
+            // Streaming never created the first message (e.g., super-short answer)
+            for (let i = 0; i < chunks.length; i++) {
+                await ctx
+                    .reply(chunks[i], { parse_mode: 'Markdown' })
+                    .catch(() => ctx.reply(stripMarkdown(chunks[i])));
+            }
         }
     } catch (err) {
         Logger.error('telegram', `AI request failed for UID ${uid}`, err);
