@@ -2,7 +2,7 @@ import { Logger } from '../infra/logger';
 import { getSoulContextSync } from '../soul/index';
 import { getContext, updateContext } from '../state/user-context';
 import { TOOLS, handleToolUse } from './tools';
-import { chatUnified, Message } from './router';
+import { chatUnified, chatStream, Message } from './router';
 import { KnowledgeGraph } from '../core/memory/knowledge_graph';
 import { Perplexer } from './perplexer';
 import db from '../core/db';
@@ -15,12 +15,14 @@ export interface AIResult {
 }
 
 /**
- * Core AI executor.
+ * Core AI executor with REAL token-by-token streaming.
  *
- * @param prompt       - User message
- * @param uid          - Telegram user ID (optional for REST calls from agent.html)
- * @param history      - Prior conversation messages for context (optional)
- * @param streamCallback - Called with each streamed chunk (optional, for Telegram handler)
+ * When streamCallback is provided:
+ *   - Uses chatStream (SSE) → calls streamCallback for every token chunk
+ *   - Falls back to chatUnified for tool-use iterations after first stream
+ *
+ * When streamCallback is NOT provided (REST / agent.html):
+ *   - Uses chatUnified (non-streaming)
  */
 export const executeAI = async (
     prompt: string,
@@ -30,7 +32,7 @@ export const executeAI = async (
 ): Promise<AIResult> => {
     Logger.info('agent', `NEXUM Engine: Processing for UID ${uid ?? 'anonymous'}`);
 
-    // ── deep_search shortcut (triggered by mode=search in agent.html) ──
+    // ── deep_search shortcut ──────────────────────────────────────────────────
     if (prompt.startsWith('[deep_search] ')) {
         const query = prompt.slice('[deep_search] '.length).trim();
         Logger.info('agent', `Deep search mode: ${query}`);
@@ -50,12 +52,11 @@ export const executeAI = async (
 
     const userCtx = uid ? getContext(uid) : null;
 
-    // Long-term memory (only when uid is known)
+    // Long-term memory
     const longTermMemory = uid
         ? await KnowledgeGraph.getContext(uid, prompt).catch(() => '')
         : '';
 
-    // Use synchronous version — no async needed here
     const baseSoul = getSoulContextSync();
 
     const systemPrompt = `
@@ -73,17 +74,45 @@ MISSION: Be the ultimate personal AI. Use tools when needed.
 Always respond in the user's language (${user?.lang || 'ru'}).
     `.trim();
 
-    // Build message array: system + history + current prompt
+    // Build message array
     const historyMessages: Message[] = history
         .filter(m => m.role === 'user' || m.role === 'assistant')
         .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
-    let messages: Message[] = [
+    const messages: Message[] = [
         { role: 'system', content: systemPrompt },
         ...historyMessages,
         { role: 'user', content: prompt },
     ];
 
+    // ── STREAMING PATH (Telegram handler) ────────────────────────────────────
+    if (streamCallback) {
+        let fullResponse = '';
+        try {
+            // Real token-by-token streaming
+            for await (const chunk of chatStream(messages, uid ?? 0)) {
+                fullResponse += chunk;
+                streamCallback(chunk);
+            }
+        } catch (err) {
+            Logger.error('agent', 'Streaming failed, falling back to chatUnified', err);
+            // Fallback: single-shot call
+            const fallback = await chatUnified(messages, uid ?? 0, TOOLS);
+            fullResponse = fallback.content || '';
+            if (fullResponse) streamCallback(fullResponse);
+        }
+
+        // Persist to memory
+        if (uid && fullResponse) {
+            updateContext(uid, { lastActivity: Date.now() });
+            KnowledgeGraph.addFact(uid, prompt + '\n' + fullResponse).catch(() => {});
+        }
+
+        return { content: fullResponse, tool_used: null };
+    }
+
+    // ── NON-STREAMING PATH (REST / agent.html) with tool-use loop ────────────
+    let iterMessages = [...messages];
     let iterations = 0;
     const maxIterations = 5;
     let lastToolUsed: string | null = null;
@@ -91,19 +120,14 @@ Always respond in the user's language (${user?.lang || 'ru'}).
     while (iterations < maxIterations) {
         iterations++;
         try {
-            // chatUnified requires number, not number|undefined — use uid ?? 0
-            const assistantMessage = await chatUnified(messages, uid ?? 0, TOOLS);
-            messages.push(assistantMessage);
-
-            if (assistantMessage.content) {
-                streamCallback?.(assistantMessage.content);
-            }
+            const assistantMessage = await chatUnified(iterMessages, uid ?? 0, TOOLS);
+            iterMessages.push(assistantMessage);
 
             // No tool calls → done
             if (!assistantMessage.tool_calls?.length) {
                 if (uid) {
                     updateContext(uid, { lastActivity: Date.now() });
-                    KnowledgeGraph.addFact(uid, prompt + '\n' + assistantMessage.content).catch(() => {});
+                    KnowledgeGraph.addFact(uid, prompt + '\n' + (assistantMessage.content || '')).catch(() => {});
                 }
                 return {
                     content: assistantMessage.content || '',
@@ -119,10 +143,9 @@ Always respond in the user's language (${user?.lang || 'ru'}).
                 try { args = JSON.parse(toolCall.function?.arguments || '{}'); } catch (_e) { }
 
                 Logger.info('agent', `Tool call: ${name}`);
-                // handleToolUse requires number — use uid ?? 0
                 const result = await handleToolUse(name, args, uid ?? 0);
 
-                messages.push({
+                iterMessages.push({
                     role: 'tool',
                     tool_call_id: toolCall.id,
                     name,
@@ -133,10 +156,10 @@ Always respond in the user's language (${user?.lang || 'ru'}).
         } catch (err) {
             Logger.error('agent', `Iteration ${iterations} failed`, err);
             if (iterations >= maxIterations) {
-                return { content: '\u274c Не удалось получить ответ. Попробуй позже.' };
+                return { content: '❌ Не удалось получить ответ. Попробуй позже.' };
             }
         }
     }
 
-    return { content: '\u2705 Задача выполнена.' };
+    return { content: '✅ Задача выполнена.' };
 };
