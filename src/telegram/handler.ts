@@ -4,13 +4,14 @@ import { Logger } from '../infra/logger';
 import { transcribeVoice } from '../tools/stt';
 import { handleApprovalResult } from '../agent/policies/exec-approvals';
 import { setupCommands } from './commands';
-import { CONFIG } from '../core/config';
+import { CONFIG, isAdmin } from '../core/config';
 import db from '../core/db';
 import { getSessionHistory, appendToSession } from '../state/session';
+import { approvePatch, rejectPatch, listPendingPatches } from '../evolution/self_improve';
+import { analyzeAndPropose, listPending } from '../evolution/improve_tool';
 import fetch from 'node-fetch';
 
 // How often to push edits to Telegram during streaming (ms)
-// Too fast = flood; too slow = feels laggy. 900ms is sweet-spot.
 const STREAM_EDIT_MS = 900;
 // Minimum chars before we send the first visible message
 const STREAM_FIRST_SEND_CHARS = 40;
@@ -18,10 +19,69 @@ const STREAM_FIRST_SEND_CHARS = 40;
 export const setupBot = (bot: Bot) => {
     setupCommands(bot);
 
-    // --- CALLBACK QUERIES ---
+    // ============================================================
+    //  /improve <filepath> <description>
+    //  Admin-only: ask AI to improve a specific file
+    // ============================================================
+    bot.command('improve', async (ctx) => {
+        const uid = ctx.from?.id;
+        if (!uid || !isAdmin(uid)) {
+            await ctx.reply('❌ Только для администраторов.');
+            return;
+        }
+        const args = ctx.message?.text?.replace('/improve', '').trim() || '';
+        if (!args) {
+            await ctx.reply(
+                '📝 *Использование:*\n`/improve <путь_к_файлу> <описание изменения>`\n\n' +
+                '*Примеры:*\n' +
+                '`/improve src/agent/tools.ts добавь инструмент для работы с изображениями`\n' +
+                '`/improve src/soul/index.ts сделай ответы более дружелюбными`',
+                { parse_mode: 'Markdown' }
+            );
+            return;
+        }
+
+        // Split: first word = filepath, rest = description
+        const spaceIdx = args.indexOf(' ');
+        if (spaceIdx === -1) {
+            await ctx.reply('❌ Укажи описание изменения после пути к файлу.');
+            return;
+        }
+        const filePath = args.slice(0, spaceIdx).trim();
+        const description = args.slice(spaceIdx + 1).trim();
+
+        const thinking = await ctx.reply(`🤔 Анализирую \`${filePath}\`...`, { parse_mode: 'Markdown' });
+
+        const result = await analyzeAndPropose(filePath, description, uid, bot);
+
+        await ctx.api.editMessageText(ctx.chat.id, thinking.message_id, result, { parse_mode: 'Markdown' }).catch(async () => {
+            await ctx.reply(result);
+        });
+    });
+
+    // ============================================================
+    //  /patches — list pending self-improve patches
+    // ============================================================
+    bot.command('patches', async (ctx) => {
+        const uid = ctx.from?.id;
+        if (!uid || !isAdmin(uid)) {
+            await ctx.reply('❌ Только для администраторов.');
+            return;
+        }
+        const list = await listPending();
+        await ctx.reply(`📋 *Ожидающие патчи:*\n\n${list}`, { parse_mode: 'Markdown' }).catch(() =>
+            ctx.reply(list)
+        );
+    });
+
+    // ============================================================
+    //  CALLBACK QUERIES
+    // ============================================================
     bot.on('callback_query:data', async (ctx) => {
         const data = ctx.callbackQuery.data;
+        const uid = ctx.from?.id;
 
+        // --- exec-approvals (PC agent) ---
         if (data.startsWith('appr_')) {
             const [actionId, status] = data.replace('appr_', '').split(':');
             const approved = status === 'allow';
@@ -31,6 +91,35 @@ export const setupBot = (bot: Bot) => {
                 approved ? '✅ Действие выполнено.' : '❌ Действие отклонено.',
                 { reply_markup: undefined }
             ).catch(() => {});
+            return;
+        }
+
+        // --- self-improve approvals ---
+        if (data.startsWith('selfimprove_approve_')) {
+            if (!uid || !isAdmin(uid)) {
+                await ctx.answerCallbackQuery('❌ Нет прав');
+                return;
+            }
+            const patchId = data.replace('selfimprove_approve_', '');
+            await ctx.answerCallbackQuery('⏳ Пушу...');
+            const result = await approvePatch(patchId, bot);
+            await ctx.editMessageText(result, { reply_markup: undefined }).catch(async () => {
+                await ctx.reply(result);
+            });
+            return;
+        }
+
+        if (data.startsWith('selfimprove_reject_')) {
+            if (!uid || !isAdmin(uid)) {
+                await ctx.answerCallbackQuery('❌ Нет прав');
+                return;
+            }
+            const patchId = data.replace('selfimprove_reject_', '');
+            const result = rejectPatch(patchId);
+            await ctx.answerCallbackQuery('🗑 Отклонено');
+            await ctx.editMessageText(result, { reply_markup: undefined }).catch(async () => {
+                await ctx.reply(result);
+            });
             return;
         }
 
@@ -66,7 +155,6 @@ export const setupBot = (bot: Bot) => {
         if (!uid) return;
         try {
             const caption = ctx.message.caption || 'Что на этом изображении? Опиши подробно.';
-            const photo = ctx.message.photo[ctx.message.photo.length - 1];
             const file = await ctx.getFile();
             const imageUrl = `https://api.telegram.org/file/bot${bot.token}/${file.file_path}`;
             await processAIRequest(ctx, `[vision:${imageUrl}] ${caption}`, uid);
@@ -103,7 +191,6 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
 
     ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
 
-    // Daily limit check
     const user = db.prepare('SELECT subscription_plan, msg_count_today, lang FROM users WHERE uid = ?').get(uid) as any;
     const plan = user?.subscription_plan || 'free';
     const limit = plan === 'pro' ? 9999 : plan === 'middle' ? 200 : 50;
@@ -120,18 +207,15 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
     db.prepare('UPDATE users SET msg_count_today = msg_count_today + 1 WHERE uid = ?').run(uid);
     await ctx.replyWithChatAction('typing').catch(() => {});
 
-    // State for streaming
     let fullText = '';
-    let sentMsgId = 0;        // Telegram message_id once first msg is sent
-    let lastEditTime = 0;     // Timestamp of last editMessageText call
+    let sentMsgId = 0;
+    let lastEditTime = 0;
     let streamDone = false;
 
-    // Keep typing action alive
     const typingTimer = setInterval(() => {
         if (!streamDone) ctx.replyWithChatAction('typing').catch(() => {});
     }, 4500);
 
-    // Periodic edit timer — pushes accumulated text to Telegram
     const editTimer = setInterval(async () => {
         if (!sentMsgId) return;
         if (!fullText) return;
@@ -143,11 +227,9 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
     try {
         const history = getSessionHistory(uid);
 
-        // executeAI calls our callback for EVERY token chunk
         await executeAI(text, uid, history, async (chunk: string) => {
             fullText += chunk;
 
-            // Send first message once we have enough text to show
             if (!sentMsgId && fullText.trim().length >= STREAM_FIRST_SEND_CHARS) {
                 lastEditTime = Date.now();
                 const preview = truncate(fullText);
@@ -165,7 +247,6 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
         clearInterval(typingTimer);
         clearInterval(editTimer);
 
-        // Save to session memory
         appendToSession(uid, 'user', text);
         if (fullText) appendToSession(uid, 'assistant', fullText);
 
@@ -177,14 +258,11 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
         const chunks = splitMessage(fullText);
 
         if (sentMsgId) {
-            // Final edit of first chunk
             await pushEdit(ctx, sentMsgId, chunks[0]);
-            // Send overflow as new messages
             for (let i = 1; i < chunks.length; i++) {
                 await ctx.reply(chunks[i], { parse_mode: 'Markdown' }).catch(() => ctx.reply(stripMarkdown(chunks[i])));
             }
         } else {
-            // Response was short, no streaming message was sent yet
             for (const chunk of chunks) {
                 await ctx.reply(chunk, { parse_mode: 'Markdown' }).catch(() => ctx.reply(stripMarkdown(chunk)));
             }
