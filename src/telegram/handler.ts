@@ -11,20 +11,118 @@ import { approvePatch, rejectPatch } from '../evolution/self_improve';
 import { analyzeAndPropose, listPending } from '../evolution/improve_tool';
 import fetch from 'node-fetch';
 
-// ── Streaming constants ──────────────────────────────────────────────────────
-const STREAM_FIRST_SEND_CHARS = 25;   // send first message after this many chars
-const STREAM_EDIT_INTERVAL_MS = 700;  // edit every 700ms — feels live
-const TYPING_INTERVAL_MS = 4500;      // resend typing action every 4.5s
+// Минимум символов до первого сообщения при стриминге
+const STREAM_FIRST_SEND_CHARS = 30;
+// Интервал редактирования в стриминге (мс)
+const STREAM_EDIT_INTERVAL_MS = 900;
 
-// ── Typing cursor variants (cycles for liveliness) ──────────────────────────
-const CURSORS = ['▍', '▌', '█', '▌'];
-let cursorIdx = 0;
-const nextCursor = () => CURSORS[cursorIdx++ % CURSORS.length];
+// Запросы "в полёте": защита от параллельной обработки одного и того же сообщения
+const activeRequests = new Set<string>();
+// Уже обработанные сообщения (idempotency)
+const processedMessages = new Map<string, number>(); // key -> timestamp
+const PROCESSED_TTL_MS = 5 * 60 * 1000;
+
+// Периодическая очистка processedMessages
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, ts] of processedMessages.entries()) {
+        if (now - ts > PROCESSED_TTL_MS) processedMessages.delete(key);
+    }
+}, 60 * 1000);
+
+function makeMsgKey(ctx: Context): string | null {
+    const chatId = ctx.chat?.id;
+    // @ts-ignore
+    const msgId = ctx.message?.message_id;
+    if (!chatId || !msgId) return null;
+    return `${chatId}:${msgId}`;
+}
 
 export const setupBot = (bot: Bot) => {
     setupCommands(bot);
 
-    // ── /improve (admin only) ──────────────────────────────────────────────
+    // /start — приветствие + inline‑кнопки
+    bot.command('start', async (ctx) => {
+        const keyboard = new InlineKeyboard()
+            .text('💬 Задать вопрос', 'start_newchat')
+            .row()
+            .url('🌐 Открыть NEXUM Web', CONFIG.WEB_APP_URL || 'https://thenexum.ai')
+            .row()
+            .text('⚙️ Тарифы', 'start_tariffs');
+
+        await ctx.reply(
+            '👋 Привет! Я NEXUM — твой личный интеллектуальный помощник.\n\n' +
+            'Задавай любые вопросы, присылай голосовые, фото, документы — разберёмся.',
+            { reply_markup: keyboard }
+        );
+    });
+
+    // Обработка callback‑кнопок только для /start
+    bot.on('callback_query:data', async (ctx) => {
+        const data = ctx.callbackQuery.data;
+        const uid = ctx.from?.id;
+
+        if (data === 'start_newchat') {
+            await ctx.answerCallbackQuery('✍️ Напиши свой первый запрос');
+            await ctx.reply('Можешь просто написать, с чего начнём 😊');
+            return;
+        }
+        if (data === 'start_tariffs') {
+            await ctx.answerCallbackQuery('📊 Тарифы');
+            await ctx.reply('Тарифы и возможности: /tariffs');
+            return;
+        }
+
+        // Остальное — как было (approvals / self-improve)
+        if (data.startsWith('appr_')) {
+            const [actionId, status] = data.replace('appr_', '').split(':');
+            const approved = status === 'allow';
+            handleApprovalResult(actionId, approved);
+            await ctx.answerCallbackQuery(approved ? '✅ Разрешено' : '❌ Отклонено');
+            await ctx
+                .editMessageText(approved ? '✅ Действие выполнено.' : '❌ Действие отклонено.', {
+                    reply_markup: undefined,
+                })
+                .catch(() => { });
+            return;
+        }
+
+        if (data.startsWith('selfimprove_approve_')) {
+            if (!uid || !isAdmin(uid)) {
+                await ctx.answerCallbackQuery('❌ Нет прав');
+                return;
+            }
+            const patchId = data.replace('selfimprove_approve_', '');
+            await ctx.answerCallbackQuery('⏳ Пушу...');
+            const result = await approvePatch(patchId, bot);
+            await ctx
+                .editMessageText(result, { reply_markup: undefined })
+                .catch(async () => {
+                    await ctx.reply(result);
+                });
+            return;
+        }
+
+        if (data.startsWith('selfimprove_reject_')) {
+            if (!uid || !isAdmin(uid)) {
+                await ctx.answerCallbackQuery('❌ Нет прав');
+                return;
+            }
+            const patchId = data.replace('selfimprove_reject_', '');
+            const result = rejectPatch(patchId);
+            await ctx.answerCallbackQuery('🗑 Отклонено');
+            await ctx
+                .editMessageText(result, { reply_markup: undefined })
+                .catch(async () => {
+                    await ctx.reply(result);
+                });
+            return;
+        }
+
+        await ctx.answerCallbackQuery();
+    });
+
+    // --- admin-команды улучшений (как было) ---
     bot.command('improve', async (ctx) => {
         const uid = ctx.from?.id;
         if (!uid || !isAdmin(uid)) {
@@ -34,7 +132,10 @@ export const setupBot = (bot: Bot) => {
         const args = ctx.message?.text?.replace('/improve', '').trim() || '';
         if (!args) {
             await ctx.reply(
-                '📝 *Использование:*\n`/improve <путь_к_файлу> <описание изменения>`',
+                '📝 *Использование:*\n`/improve <путь_к_файлу> <описание изменения>`\n\n' +
+                '*Примеры:*\n' +
+                '`/improve src/agent/tools.ts добавь инструмент`\n' +
+                '`/improve src/soul/index.ts сделай ответы дружелюбнее`',
                 { parse_mode: 'Markdown' }
             );
             return;
@@ -48,11 +149,13 @@ export const setupBot = (bot: Bot) => {
         const description = args.slice(spaceIdx + 1).trim();
         const thinking = await ctx.reply(`🤔 Анализирую \`${filePath}\`...`, { parse_mode: 'Markdown' });
         const result = await analyzeAndPropose(filePath, description, uid, bot);
-        await ctx.api.editMessageText(ctx.chat.id, thinking.message_id, result, { parse_mode: 'Markdown' })
-            .catch(async () => { await ctx.reply(result); });
+        await ctx.api
+            .editMessageText(ctx.chat!.id, thinking.message_id, result, { parse_mode: 'Markdown' })
+            .catch(async () => {
+                await ctx.reply(result);
+            });
     });
 
-    // ── /patches (admin only) ─────────────────────────────────────────────
     bot.command('patches', async (ctx) => {
         const uid = ctx.from?.id;
         if (!uid || !isAdmin(uid)) {
@@ -60,55 +163,18 @@ export const setupBot = (bot: Bot) => {
             return;
         }
         const list = await listPending();
-        await ctx.reply(`📋 *Ожидающие патчи:*\n\n${list}`, { parse_mode: 'Markdown' })
+        await ctx
+            .reply(`📋 *Ожидающие патчи:*\n\n${list}`, { parse_mode: 'Markdown' })
             .catch(() => ctx.reply(list));
     });
 
-    // ── Callback query router ─────────────────────────────────────────────
-    bot.on('callback_query:data', async (ctx) => {
-        const data = ctx.callbackQuery.data;
-        const uid = ctx.from?.id;
-
-        // Approval buttons
-        if (data.startsWith('appr_')) {
-            const [actionId, status] = data.replace('appr_', '').split(':');
-            const approved = status === 'allow';
-            handleApprovalResult(actionId, approved);
-            await ctx.answerCallbackQuery(approved ? '✅ Разрешено' : '❌ Отклонено');
-            await ctx.editMessageText(
-                approved ? '✅ Действие выполнено.' : '❌ Действие отклонено.',
-                { reply_markup: undefined }
-            ).catch(() => {});
-            return;
-        }
-
-        // Self-improve approve
-        if (data.startsWith('selfimprove_approve_')) {
-            if (!uid || !isAdmin(uid)) { await ctx.answerCallbackQuery('❌ Нет прав'); return; }
-            const patchId = data.replace('selfimprove_approve_', '');
-            await ctx.answerCallbackQuery('⏳ Пушу...');
-            const result = await approvePatch(patchId, bot);
-            await ctx.editMessageText(result, { reply_markup: undefined }).catch(async () => { await ctx.reply(result); });
-            return;
-        }
-
-        // Self-improve reject
-        if (data.startsWith('selfimprove_reject_')) {
-            if (!uid || !isAdmin(uid)) { await ctx.answerCallbackQuery('❌ Нет прав'); return; }
-            const patchId = data.replace('selfimprove_reject_', '');
-            const result = rejectPatch(patchId);
-            await ctx.answerCallbackQuery('🗑 Отклонено');
-            await ctx.editMessageText(result, { reply_markup: undefined }).catch(async () => { await ctx.reply(result); });
-            return;
-        }
-
-        await ctx.answerCallbackQuery();
-    });
-
-    // ── Voice messages ────────────────────────────────────────────────────
+    // --- Voice ---
     bot.on('message:voice', async (ctx) => {
         const uid = ctx.from?.id;
         if (!uid) return;
+        const key = makeMsgKey(ctx);
+        if (!acquireKey(key)) return;
+
         try {
             await ctx.replyWithChatAction('typing');
             const file = await ctx.getFile();
@@ -117,81 +183,98 @@ export const setupBot = (bot: Bot) => {
             const buffer = Buffer.from(await res.arrayBuffer());
             const text = await transcribeVoice(buffer);
             if (!text) {
-                await ctx.reply('🎤 Не удалось распознать. Попробуй ещё раз или напиши текстом.');
+                await ctx.reply('🎤 Не удалось распознать голос. Попробуй ещё раз или напиши текстом.');
                 return;
             }
-            // Show transcription first
-            await ctx.reply(`🎤 _${safeMarkdown(text)}_`, { parse_mode: 'Markdown' });
+            await ctx.reply(`🎤 *Распознано:*\n_${safeMarkdown(text)}_`, { parse_mode: 'Markdown' });
             await processAIRequest(ctx, text, uid);
         } catch (err) {
             Logger.error('telegram', 'Voice error', err);
             await ctx.reply('❌ Ошибка при обработке голоса.');
+        } finally {
+            releaseKey(key);
         }
     });
 
-    // ── Photo messages ────────────────────────────────────────────────────
+    // --- Photo ---
     bot.on('message:photo', async (ctx) => {
         const uid = ctx.from?.id;
         if (!uid) return;
+        const key = makeMsgKey(ctx);
+        if (!acquireKey(key)) return;
+
         try {
             const caption = ctx.message.caption || 'Что на этом изображении? Опиши подробно.';
-            const photos = ctx.message.photo;
-            const bestPhoto = photos[photos.length - 1]; // highest resolution
-            const file = await ctx.api.getFile(bestPhoto.file_id);
+            const file = await ctx.getFile();
             const imageUrl = `https://api.telegram.org/file/bot${bot.token}/${file.file_path}`;
             await processAIRequest(ctx, `[vision:${imageUrl}] ${caption}`, uid);
         } catch (err) {
             Logger.error('telegram', 'Photo error', err);
             await ctx.reply('❌ Ошибка при анализе фото.');
+        } finally {
+            releaseKey(key);
         }
     });
 
-    // ── Document messages ─────────────────────────────────────────────────
+    // --- Document ---
     bot.on('message:document', async (ctx) => {
         const uid = ctx.from?.id;
         if (!uid) return;
-        const doc = ctx.message.document;
-        const caption = ctx.message.caption || 'Проанализируй этот файл.';
-        await processAIRequest(ctx, `[Файл: ${doc.file_name}] ${caption}`, uid);
+        const key = makeMsgKey(ctx);
+        if (!acquireKey(key)) return;
+
+        try {
+            const doc = ctx.message.document;
+            const caption = ctx.message.caption || '';
+            await processAIRequest(ctx, `[Файл: ${doc.file_name}] ${caption}`, uid);
+        } finally {
+            releaseKey(key);
+        }
     });
 
-    // ── Text messages ─────────────────────────────────────────────────────
+    // --- Text ---
     bot.on('message:text', async (ctx: Context) => {
         const uid = ctx.from?.id;
         if (!uid) return;
         const text = ctx.message?.text || '';
-        if (text.startsWith('/')) return;
-        await processAIRequest(ctx, text, uid);
+        if (text.startsWith('/')) return; // команды уже обрабатываются отдельно
+
+        const key = makeMsgKey(ctx);
+        if (!acquireKey(key)) return;
+
+        try {
+            await processAIRequest(ctx, text, uid);
+        } finally {
+            releaseKey(key);
+        }
     });
 };
 
 // ============================================================
-//  CORE: streaming AI response — Claude-style live editing
+//  CORE: streaming AI response — один ответ без дублей
 // ============================================================
 async function processAIRequest(ctx: Context, text: string, uid: number) {
     Logger.info('telegram', `Request from UID ${uid}: ${text.slice(0, 80)}`);
 
     ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
 
-    // ── Rate limiting ──────────────────────────────────────────────────────
-    const user = db.prepare('SELECT subscription_plan, msg_count_today FROM users WHERE uid = ?').get(uid) as any;
+    const user = db
+        .prepare('SELECT subscription_plan, msg_count_today FROM users WHERE uid = ?')
+        .get(uid) as any;
     const plan = user?.subscription_plan || 'free';
     const limit = plan === 'pro' ? 9999 : plan === 'middle' ? 200 : 50;
     const count = user?.msg_count_today || 0;
 
     if (count >= limit) {
-        const kb = new InlineKeyboard().text('💎 Посмотреть тарифы', 'cmd:tariffs');
         await ctx.reply(
-            `⚠️ *Лимит исчерпан* — ${limit} сообщений/день\n\nОбнови план для продолжения.`,
-            { parse_mode: 'Markdown', reply_markup: kb }
+            `⚠️ *Лимит сообщений исчерпан* (${limit}/день)\nОбнови план: /tariffs`,
+            { parse_mode: 'Markdown' }
         );
         return;
     }
 
     db.prepare('UPDATE users SET msg_count_today = msg_count_today + 1 WHERE uid = ?').run(uid);
-
-    // ── Show typing indicator ──────────────────────────────────────────────
-    await ctx.replyWithChatAction('typing').catch(() => {});
+    await ctx.replyWithChatAction('typing').catch(() => { });
 
     let fullText = '';
     let sentMsgId: number | null = null;
@@ -199,12 +282,10 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
     let streamDone = false;
     let editInProgress = false;
 
-    // Keep sending typing every TYPING_INTERVAL_MS
     const typingTimer = setInterval(() => {
-        if (!streamDone) ctx.replyWithChatAction('typing').catch(() => {});
-    }, TYPING_INTERVAL_MS);
+        if (!streamDone) ctx.replyWithChatAction('typing').catch(() => { });
+    }, 4500);
 
-    // Live-edit the streaming message
     const editTimer = setInterval(async () => {
         if (sentMsgId === null) return;
         if (streamDone) return;
@@ -213,8 +294,7 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
 
         editInProgress = true;
         lastEditedText = fullText;
-        const cursor = nextCursor();
-        await safeEdit(ctx, sentMsgId, fullText + ' ' + cursor);
+        await safeEdit(ctx, sentMsgId, fullText + ' ▍');
         editInProgress = false;
     }, STREAM_EDIT_INTERVAL_MS);
 
@@ -224,10 +304,11 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
         await executeAI(text, uid, history, async (chunk: string) => {
             fullText += chunk;
 
-            // Send first message once we have enough text
             if (sentMsgId === null && fullText.trim().length >= STREAM_FIRST_SEND_CHARS) {
                 try {
-                    const msg = await ctx.reply(truncate(fullText) + ' ▍', { parse_mode: 'Markdown' });
+                    const msg = await ctx.reply(truncate(fullText) + ' ▍', {
+                        parse_mode: 'Markdown',
+                    });
                     sentMsgId = msg.message_id;
                     lastEditedText = fullText;
                 } catch {
@@ -253,34 +334,33 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
         const chunks = splitMessage(fullText);
 
         if (sentMsgId !== null) {
-            // Final edit — no cursor
+            // один финальный edit первого сообщения
             await safeEdit(ctx, sentMsgId, chunks[0]);
-            // Overflow chunks
+            // если вдруг ответ длиннее лимита — остаток отдельными сообщениями
             for (let i = 1; i < chunks.length; i++) {
-                await ctx.reply(chunks[i], { parse_mode: 'Markdown' }).catch(() =>
-                    ctx.reply(stripMarkdown(chunks[i]))
-                );
+                await ctx
+                    .reply(chunks[i], { parse_mode: 'Markdown' })
+                    .catch(() => ctx.reply(stripMarkdown(chunks[i])));
             }
         } else {
-            // Short response — never triggered streaming
+            // короткий ответ — без стриминга, просто одно/несколько сообщений, но НЕ дублируем
             for (const chunk of chunks) {
-                await ctx.reply(chunk, { parse_mode: 'Markdown' }).catch(() =>
-                    ctx.reply(stripMarkdown(chunk))
-                );
+                await ctx
+                    .reply(chunk, { parse_mode: 'Markdown' })
+                    .catch(() => ctx.reply(stripMarkdown(chunk)));
             }
         }
-
     } catch (err) {
         streamDone = true;
         clearInterval(typingTimer);
         clearInterval(editTimer);
         Logger.error('telegram', `AI request failed for UID ${uid}`, err);
-        await ctx.reply('❌ Что-то пошло не так. Попробуй ещё раз или начни новый чат: /new');
+        await ctx.reply('❌ Что-то пошло не так. Попробуй ещё раз.');
     }
 }
 
 // ============================================================
-//  APPROVAL BUTTONS
+//  APPROVAL BUTTONS (как было)
 // ============================================================
 export const sendApprovalButtons = async (
     bot: Bot,
@@ -295,7 +375,10 @@ export const sendApprovalButtons = async (
 
     await bot.api.sendMessage(
         uid,
-        `🔐 *Запрос на действие*\n\nДействие: \`${action}\`\nАргументы: \`${JSON.stringify(args).slice(0, 200)}\`\n\nРазрешить?`,
+        `🔐 *Запрос на действие*\n\nДействие: \`${action}\`\nАргументы: \`${JSON.stringify(args).slice(
+            0,
+            200
+        )}\`\n\nРазрешить?`,
         { parse_mode: 'Markdown', reply_markup: keyboard }
     );
 };
@@ -306,8 +389,9 @@ export const sendApprovalButtons = async (
 function ensureUser(uid: number, username?: string, firstName?: string) {
     const exists = db.prepare('SELECT uid FROM users WHERE uid = ?').get(uid);
     if (!exists) {
-        db.prepare('INSERT OR IGNORE INTO users (uid, username, first_name, msg_count_today) VALUES (?, ?, ?, 0)')
-            .run(uid, username || '', firstName || '');
+        db.prepare(
+            'INSERT OR IGNORE INTO users (uid, username, first_name, msg_count_today) VALUES (?, ?, ?, 0)'
+        ).run(uid, username || '', firstName || '');
     }
 }
 
@@ -318,24 +402,21 @@ async function safeEdit(ctx: Context, msgId: number, text: string): Promise<void
         .catch(async () => {
             await ctx.api
                 .editMessageText(ctx.chat!.id, msgId, stripMarkdown(preview))
-                .catch(() => {});
+                .catch(() => { });
         });
 }
 
 function safeMarkdown(text: string): string {
-    return text.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&');
+    return text.replace(/[_*\[\]()~`>#+=|{}.!-]/g, '\\$&');
 }
 
 function stripMarkdown(text: string): string {
     return text
         .replace(/\*\*(.*?)\*\*/g, '$1')
         .replace(/\*(.*?)\*/g, '$1')
-        .replace(/__(.*?)__/g, '$1')
         .replace(/_(.*?)_/g, '$1')
         .replace(/`(.*?)`/g, '$1')
-        .replace(/```[\s\S]*?```/g, '[code]')
-        .replace(/#{1,6}\s/g, '')
-        .replace(/^[-*]\s/gm, '• ');
+        .replace(/```[\s\S]*?```/g, '[code]');
 }
 
 function truncate(text: string, max = 3800): string {
@@ -355,4 +436,19 @@ function splitMessage(text: string, max = 4000): string[] {
         remaining = remaining.slice(cutAt);
     }
     return chunks;
+}
+
+// защита от дублей
+function acquireKey(key: string | null): boolean {
+    if (!key) return true;
+    if (processedMessages.has(key)) return false;
+    if (activeRequests.has(key)) return false;
+    activeRequests.add(key);
+    return true;
+}
+
+function releaseKey(key: string | null) {
+    if (!key) return;
+    activeRequests.delete(key);
+    processedMessages.set(key, Date.now());
 }
