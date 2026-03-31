@@ -5,20 +5,18 @@ import path from 'path'
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
+    alias: { '@': path.resolve(__dirname, './src') },
   },
   server: {
-    port: 3000,
+    port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:4000',
+        target: 'http://localhost:8000',
         changeOrigin: true,
       },
-      '/ws': {
-        target: 'ws://localhost:4000',
-        ws: true,
+      '/health': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
       },
     },
   },
@@ -28,8 +26,8 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom'],
-          ui: ['framer-motion', 'lucide-react'],
+          react: ['react', 'react-dom'],
+          router: ['react-router-dom'],
           markdown: ['react-markdown', 'remark-gfm'],
         },
       },
