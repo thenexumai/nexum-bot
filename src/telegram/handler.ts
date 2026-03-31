@@ -133,7 +133,8 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
     try {
         let fullResponse = '';
         let lastEdit = Date.now();
-        let firstMessageId: number | null = null;
+        // 0 = ещё нет сообщения; Telegram message_id всегда > 0
+        let firstMessageId = 0;
         let streamDone = false;
 
         // Continuous typing action while streaming
