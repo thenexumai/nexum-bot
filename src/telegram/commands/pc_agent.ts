@@ -62,7 +62,8 @@ export const setupPcAgentCommands = (bot: Bot) => {
         if (response.error) return ctx.reply(`❌ ${response.error}`);
         if (response.data) {
             const buf = Buffer.from(response.data, 'base64');
-            await ctx.replyWithPhoto(new InputFile(buf, "screenshot.png"));
+            // FIX: Buffer extends Uint8Array — InputFile(Buffer, filename) is correct in Grammy 1.22+
+            await ctx.replyWithPhoto(new InputFile(buf, 'screenshot.png'));
         }
     });
 };

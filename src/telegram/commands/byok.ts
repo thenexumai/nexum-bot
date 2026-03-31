@@ -1,7 +1,7 @@
 import { Bot } from 'grammy';
 import { canUseFeature } from '../../core/billing';
 import { getPreferences } from '../../core/preferences';
-import { t } from '../../i18n';
+import { t } from '../../i18n/index';  // FIX: was '../../i18n' (no default export path)
 import db from '../../core/db';
 
 const VALID_PROVIDERS = ['claude', 'groq', 'gemini', 'deepseek', 'grok', 'openrouter', 'together', 'sambanova', 'cerebras'];
@@ -17,10 +17,9 @@ export function setupByokCommands(bot: Bot) {
   bot.command('setkey', async (ctx) => {
     const uid   = ctx.from!.id;
     const prefs = getPreferences(uid);
-    const lang  = prefs.lang;
 
     if (!canUseFeature(uid, 'byok')) {
-      await ctx.reply(t(lang, 'no_access', { plan: 'PRO' })); return;
+      await ctx.reply(t(uid, 'cmd_pro_only')); return;  // FIX: t(uid, key) not t(lang, key, obj)
     }
 
     const parts = ctx.match?.trim().split(/\s+/) ?? [];
@@ -45,17 +44,15 @@ export function setupByokCommands(bot: Bot) {
     // Delete the user's message for security
     try { await ctx.deleteMessage(); } catch { /* ok */ }
 
-    await ctx.reply(t(lang, 'byok_saved', { provider }));
+    await ctx.reply(`✅ Ключ для *${provider}* сохранён!`, { parse_mode: 'Markdown' });
   });
 
   // /mykeys
   bot.command('mykeys', async (ctx) => {
     const uid   = ctx.from!.id;
-    const prefs = getPreferences(uid);
-    const lang  = prefs.lang;
 
     if (!canUseFeature(uid, 'byok')) {
-      await ctx.reply(t(lang, 'no_access', { plan: 'PRO' })); return;
+      await ctx.reply(t(uid, 'cmd_pro_only')); return;
     }
 
     const user = db.prepare('SELECT byok_keys FROM users WHERE uid = ?').get(uid) as
@@ -64,7 +61,7 @@ export function setupByokCommands(bot: Bot) {
     const entries = Object.entries(keys);
 
     if (!entries.length) {
-      await ctx.reply(t(lang, 'byok_list_empty')); return;
+      await ctx.reply('🔑 У вас нет сохранённых ключей. Используйте /setkey'); return;
     }
 
     const list = entries.map(([p, k]) => `• *${p}*: \`${maskKey(String(k))}\``).join('\n');
@@ -74,12 +71,10 @@ export function setupByokCommands(bot: Bot) {
   // /rmkey PROVIDER
   bot.command('rmkey', async (ctx) => {
     const uid      = ctx.from!.id;
-    const prefs    = getPreferences(uid);
-    const lang     = prefs.lang;
     const provider = ctx.match?.trim().toLowerCase();
 
     if (!canUseFeature(uid, 'byok')) {
-      await ctx.reply(t(lang, 'no_access', { plan: 'PRO' })); return;
+      await ctx.reply(t(uid, 'cmd_pro_only')); return;
     }
     if (!provider) { await ctx.reply('Usage: /rmkey <provider>'); return; }
 
@@ -90,6 +85,6 @@ export function setupByokCommands(bot: Bot) {
 
     delete keys[provider];
     db.prepare('UPDATE users SET byok_keys = ? WHERE uid = ?').run(JSON.stringify(keys), uid);
-    await ctx.reply(t(lang, 'byok_removed', { provider }));
+    await ctx.reply(`🗑 Ключ для *${provider}* удалён.`, { parse_mode: 'Markdown' });
   });
 }

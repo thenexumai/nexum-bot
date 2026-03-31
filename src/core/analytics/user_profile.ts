@@ -14,10 +14,10 @@ export class UserProfileAnalyzer {
         `;
 
         try {
-            const response = await chatUnified([{ role: 'user', content: prompt }]);
+            // FIX TS2554: chatUnified requires (messages, uid) — was called with 1 arg
+            const response = await chatUnified([{ role: 'user', content: prompt }], uid);
             const data = JSON.parse(response.content.replace(/```json|```/g, '').trim());
 
-            // Сохраняем черты в память (key: trait_X)
             for (const trait of data.traits) {
                 db.prepare(`
                     INSERT INTO memory (uid, key, value, updated_at)

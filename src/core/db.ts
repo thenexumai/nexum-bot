@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import Database, { Database as DatabaseType } from 'better-sqlite3';
 import { Logger } from '../infra/logger';
 import path from 'path';
 import fs from 'fs';
@@ -8,7 +8,9 @@ const dataDir = path.join(process.cwd(), 'data');
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const dbPath = process.env.DB_PATH || path.join(dataDir, 'nexum.db');
-const db = new Database(dbPath);
+
+// FIX TS4023: explicit type annotation so TS doesn't need to name BetterSqlite3.Database
+const db: DatabaseType = new Database(dbPath);
 
 // WAL mode for better concurrent reads
 db.pragma('journal_mode = WAL');
@@ -27,6 +29,7 @@ export const initDB = () => {
             lang                  TEXT    DEFAULT 'ru',
             msg_count_today       INTEGER DEFAULT 0,
             msg_date              TEXT    DEFAULT '',
+            byok_keys             TEXT    DEFAULT '{}',
             created_at            DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -49,6 +52,7 @@ export const initDB = () => {
             description TEXT,
             status      TEXT DEFAULT 'todo',
             priority    TEXT DEFAULT 'medium',
+            progress    INTEGER DEFAULT 0,
             due_date    DATETIME,
             updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
             created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -176,6 +180,26 @@ export const initDB = () => {
             created_at    TEXT DEFAULT (datetime('now')),
             updated_at    TEXT DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS pc_links (
+            uid        INTEGER PRIMARY KEY,
+            code       TEXT NOT NULL,
+            connected  INTEGER DEFAULT 0,
+            agent_info TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS calendar_events (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid        INTEGER NOT NULL,
+            title      TEXT NOT NULL,
+            start_time DATETIME NOT NULL,
+            end_time   DATETIME,
+            all_day    INTEGER DEFAULT 0,
+            notes      TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (uid) REFERENCES users(uid)
+        );
     `);
 
     Logger.success('db', 'Database initialized ✅');
@@ -202,12 +226,11 @@ export const getOrCreateUser = (
 };
 
 export const incrementMsgCount = (uid: number): number => {
-    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const today = new Date().toISOString().slice(0, 10);
     const user = db.prepare('SELECT msg_count_today, msg_date FROM users WHERE uid = ?').get(uid) as any;
 
     if (!user) return 0;
 
-    // Reset counter if it's a new day
     if (user.msg_date !== today) {
         db.prepare('UPDATE users SET msg_count_today = 1, msg_date = ? WHERE uid = ?').run(today, uid);
         return 1;

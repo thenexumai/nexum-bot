@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { Bot } from 'grammy';
 import db from '../core/db';
-import logger from '../infra/logger';
+import { Logger } from '../infra/logger';  // FIX: was 'import logger from' — no default export
 
 export function startReminderCron(bot: Bot) {
   cron.schedule('* * * * *', async () => {
@@ -14,11 +14,11 @@ export function startReminderCron(bot: Bot) {
       try {
         await bot.api.sendMessage(r.chat_id, `⏰ *Напоминание:* ${r.text}`, { parse_mode: 'Markdown' });
         db.prepare('UPDATE reminders SET done = 1 WHERE id = ?').run(r.id);
-        logger.info('reminders', `Fired reminder ${r.id}`);
+        Logger.info('reminders', `Fired reminder ${r.id}`);
       } catch (e) {
-        logger.error('reminders', `Failed reminder ${r.id}`, e);
+        Logger.error('reminders', `Failed reminder ${r.id}`, e);
       }
     }
   });
-  logger.info('reminders', 'Reminder cron started');
+  Logger.info('reminders', 'Reminder cron started');
 }

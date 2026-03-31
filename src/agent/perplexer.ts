@@ -6,7 +6,6 @@ import { WebSearchResult } from '../tools/web/provider';
 export class Perplexer {
     private static MAX_STEPS = 3;
 
-    // ✅ FIXED: added uid param — passed through to chatUnified for BYOK support
     static async deepSearch(query: string, uid?: number): Promise<{ answer: string, sources: WebSearchResult[], related: string[] }> {
         Logger.info('perplexer', `Starting deep search for: ${query}`);
         
@@ -20,15 +19,11 @@ export class Perplexer {
             step++;
             Logger.debug('perplexer', `Step ${step}: Searching...`);
             
-            // 1. Поиск — webSearch возвращает WebSearchResult[], форматируем в контекст
-            // ✅ FIXED: webSearch returns WebSearchResult[] — used directly (not as string)
             const results = await webSearch(query);
             allSources = [...allSources, ...results];
             
-            // 2. Добавление в контекст
             currentContext += results.map((r, i) => `[Source ${i+1}]: ${r.title}\nContent: ${r.snippet}\nUrl: ${r.link}`).join('\n\n');
 
-            // 3. Анализ контекста
             const decision = await this.analyzeContext(query, currentContext, uid);
             
             if (decision.isEnough || step >= this.MAX_STEPS) {
@@ -48,7 +43,6 @@ export class Perplexer {
         };
     }
 
-    // ✅ FIXED: uid passed into chatUnified so BYOK keys are used when available
     private static async analyzeContext(originalQuery: string, context: string, uid?: number): Promise<{ isEnough: boolean, answer: string, nextQuery?: string, related?: string[] }> {
         const prompt = `
             You are a Pro Research Assistant (Perplexity-style).
@@ -67,7 +61,8 @@ export class Perplexer {
         `;
 
         try {
-            const assistantMessage = await chatUnified([{ role: 'user', content: prompt }], uid); // ✅ FIXED: pass uid
+            // FIX: chatUnified requires number, not number|undefined — use uid ?? 0
+            const assistantMessage = await chatUnified([{ role: 'user', content: prompt }], uid ?? 0);
             const content = assistantMessage.content || '';
             const jsonStr = content.replace(/```json|```/g, '').trim();
             return JSON.parse(jsonStr);

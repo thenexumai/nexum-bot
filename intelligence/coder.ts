@@ -8,41 +8,44 @@ export class CoderAgent {
         Logger.info('coder', `Instruction: ${instruction}`);
         
         const fileContents = contextFiles.map(f => {
-            const content = fs.readFileSync(path.join(process.cwd(), f), 'utf-8');
+            const absolutePath = path.join(process.cwd(), f);
+            if (!fs.existsSync(absolutePath)) return `FILE: ${f}\n(File does not exist yet)\n---`;
+            const content = fs.readFileSync(absolutePath, 'utf-8');
             return `FILE: ${f}\nCONTENT:\n${content}\n---`;
         }).join('\n');
 
         const prompt = `
-            You are the NEXUM Senior Software Engineer.
+            You are the NEXUM Senior Software Engineer (Claude-Sonnet level).
             TASK: ${instruction}
             
             CONTEXT FILES:
             ${fileContents}
 
             MISSION:
-            Provide a complete solution. If you need to modify files, output them in blocks:
+            1. Analyze the requested change.
+            2. Provide the complete code for the modified or new files.
+            3. Use EXACTLY this format for EVERY file you change:
+            
             [REPLACE FILE: path/to/file.ts]
+            \`\`\`typescript
+            ...full code here...
+            \`\`\`
+
+            If creating a new file:
+            [CREATE FILE: path/to/new_file.ts]
             \`\`\`typescript
             ...code...
             \`\`\`
-            
-            If you need to create a new file:
-            [CREATE FILE: path/to/new_file.ts]
-            ...
+
+            Return ONLY the file blocks. No conversational filler.
         `;
 
         try {
-            const response = await chatUnified([{ role: 'user', content: prompt }]);
-            return this.parseAndApply(response.content);
-        } catch (e) {
+            const response = await chatUnified([{ role: 'user', content: prompt }], 0);
+            return { status: 'success', raw: response.content };
+        } catch (e: any) {
             Logger.error('coder', 'Coding task failed', e);
             return { status: 'error', message: e.message };
         }
-    }
-
-    private static parseAndApply(response: string) {
-        // Логика автоматического применения изменений к файлам
-        Logger.success('coder', 'Solution generated and ready for deployment');
-        return { status: 'success', raw: response };
     }
 }

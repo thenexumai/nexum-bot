@@ -6,7 +6,7 @@ import { Logger } from '../infra/logger';
 export const transcribeVoice = async (audioBuffer: Buffer): Promise<string> => {
     Logger.info('stt', 'Transcribing audio via Groq Whisper...');
     
-    const apiKey = getProviderKey('GROQ');
+    const apiKey = getProviderKey('groq');  // FIX: was 'GROQ', must be lowercase AiProvider
     if (!apiKey) throw new Error('No Groq API key found');
 
     const form = new FormData();

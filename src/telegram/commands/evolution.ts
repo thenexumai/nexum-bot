@@ -107,3 +107,6 @@ export function registerEvolutionCommands(bot: Bot<Context>): void {
     );
   });
 }
+
+// Alias — used in commands/index.ts
+export const setupEvolutionCommands = registerEvolutionCommands;

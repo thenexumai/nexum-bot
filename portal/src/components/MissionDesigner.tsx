@@ -1,14 +1,30 @@
 import React, { useState } from 'react';
 import { Play, Shield, Globe, Cpu } from 'lucide-react';
 
-export default function MissionDesigner() {
+export default function MissionDesigner({ uid }: { uid: number }) {
   const [objective, setObjective] = useState("");
   const [depth, setDepth] = useState(3);
   const [isDangerous, setIsDangerous] = useState(false);
 
   const startMission = async () => {
-    console.log("Starting mission:", { objective, depth, isDangerous });
-    // API call to /api/missions/create
+    if (!objective) return alert("Please enter an objective.");
+    
+    try {
+      const res = await fetch('/api/missions/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid, objective })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        alert(`Mission #${data.missionId} initiated!`);
+        setObjective("");
+      } else {
+        alert("Error: " + data.error);
+      }
+    } catch (e) {
+      alert("Failed to connect to NEXUM server.");
+    }
   };
 
   return (

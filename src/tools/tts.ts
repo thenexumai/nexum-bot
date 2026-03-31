@@ -3,7 +3,7 @@
  */
 
 import { getProviderKey } from '../core/config';
-import { createLogger } from '../infra/logger';
+import { createLogger } from '../infra/logger';  // OK after logger.ts fix
 
 const log = createLogger('tts');
 
@@ -16,7 +16,6 @@ export async function textToSpeech(
   const key = getProviderKey('groq');
   if (!key) throw new Error('No Groq key for TTS');
 
-  // Trim text if too long
   const trimmed = text.slice(0, 4096);
 
   const resp = await fetch('https://api.groq.com/openai/v1/audio/speech', {

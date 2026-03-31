@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { CONFIG, getSerperKey } from '../../core/config';
+import { getSerperKey } from '../../core/config';
 import { Logger } from '../../infra/logger';
 import { WebSearchProvider, WebSearchResult } from './provider';
 
@@ -12,7 +12,7 @@ export class SerperProvider implements WebSearchProvider {
             const response = await fetch('https://google.serper.dev/search', {
                 method: 'POST',
                 headers: {
-                    'X-API-KEY': getSerperKey(),
+                    'X-API-KEY': getSerperKey(),  // FIX: was CONFIG.SERPER_KEY (doesn't exist), use getter
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ q: query })

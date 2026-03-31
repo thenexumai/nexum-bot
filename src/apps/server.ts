@@ -2,9 +2,9 @@ import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
-import { config } from '../core/config';
+import { CONFIG } from '../core/config';  // FIX: was 'config' (lowercase, doesn't exist)
 import db from '../core/db';
-import logger from '../infra/logger';
+import { Logger } from '../infra/logger';  // FIX: was 'import logger from' — no default export; use named Logger
 
 const app = express();
 app.use(express.json());
@@ -162,9 +162,7 @@ app.post('/api/habits/:id/check', (req, res) => {
 const httpServer = createServer(app);
 const wss = new WebSocketServer({ server: httpServer });
 
-// uid → WebSocket connection
 const agentConnections = new Map<number, WebSocket>();
-// requestId → resolve callback
 const pendingRequests = new Map<string, (result: Record<string, unknown>) => void>();
 
 wss.on('connection', (ws) => {
@@ -174,7 +172,6 @@ wss.on('connection', (ws) => {
     try {
       const msg = JSON.parse(raw.toString()) as Record<string, unknown>;
 
-      // Auth/pairing
       if (msg.type === 'auth') {
         const code = String(msg.code);
         const row = db.prepare('SELECT uid FROM pc_links WHERE code = ?').get(code) as
@@ -186,11 +183,10 @@ wss.on('connection', (ws) => {
         db.prepare('UPDATE pc_links SET connected = 1, agent_info = ? WHERE uid = ?')
           .run(JSON.stringify(msg.info ?? {}), connectedUid);
         ws.send(JSON.stringify({ type: 'auth_ok', uid: connectedUid }));
-        logger.success('server', `PC Agent connected: uid=${connectedUid}`);
+        Logger.success('server', `PC Agent connected: uid=${connectedUid}`);
         return;
       }
 
-      // Result from agent
       if (msg.type === 'result' && msg.requestId) {
         const cb = pendingRequests.get(String(msg.requestId));
         if (cb) {
@@ -199,7 +195,7 @@ wss.on('connection', (ws) => {
         }
       }
     } catch (e) {
-      logger.error('server', 'WS message parse error', e);
+      Logger.error('server', 'WS message parse error', String(e));
     }
   });
 
@@ -207,12 +203,11 @@ wss.on('connection', (ws) => {
     if (connectedUid !== null) {
       agentConnections.delete(connectedUid);
       db.prepare('UPDATE pc_links SET connected = 0 WHERE uid = ?').run(connectedUid);
-      logger.info('server', `PC Agent disconnected: uid=${connectedUid}`);
+      Logger.info('server', `PC Agent disconnected: uid=${connectedUid}`);
     }
   });
 });
 
-// Export for Telegram commands
 export async function emitToAgent(
   uid: number,
   command: Record<string, unknown>,
@@ -240,8 +235,8 @@ export async function emitToAgent(
 }
 
 export function startServer() {
-  httpServer.listen(config.port, () => {
-    logger.success('server', `HTTP + WebSocket server listening on port ${config.port}`);
+  httpServer.listen(CONFIG.PORT, () => {  // FIX: was config.port → CONFIG.PORT
+    Logger.success('server', `HTTP + WebSocket server listening on port ${CONFIG.PORT}`);
   });
 }
 

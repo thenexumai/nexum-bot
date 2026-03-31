@@ -60,3 +60,17 @@ export class Logger {
         }
     }
 }
+
+// FIX: createLogger factory — used by audit.ts, tts.ts, monitor.ts, evolution files
+export function createLogger(scope: string) {
+    return {
+        debug:   (msg: string)              => Logger.debug(scope, msg),
+        info:    (msg: string)              => Logger.info(scope, msg),
+        success: (msg: string)              => Logger.success(scope, msg),
+        warn:    (msg: string)              => Logger.warn(scope, msg),
+        error:   (msg: string, err?: any)   => Logger.error(scope, msg, err),
+    };
+}
+
+// FIX: default export — used by server.ts and reminders.ts
+export default Logger;

@@ -88,7 +88,8 @@ Always respond in the user's language (${user?.lang || 'ru'}).
     while (iterations < maxIterations) {
         iterations++;
         try {
-            const assistantMessage = await chatUnified(messages, uid, TOOLS);
+            // FIX: chatUnified requires number, not number|undefined — use uid ?? 0
+            const assistantMessage = await chatUnified(messages, uid ?? 0, TOOLS);
             messages.push(assistantMessage);
 
             if (assistantMessage.content) {
@@ -115,7 +116,8 @@ Always respond in the user's language (${user?.lang || 'ru'}).
                 try { args = JSON.parse(toolCall.function?.arguments || '{}'); } catch { }
 
                 Logger.info('agent', `Tool call: ${name}`);
-                const result = await handleToolUse(name, args, uid);
+                // FIX: handleToolUse requires number — use uid ?? 0
+                const result = await handleToolUse(name, args, uid ?? 0);
 
                 messages.push({
                     role: 'tool',

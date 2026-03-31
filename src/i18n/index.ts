@@ -20,9 +20,10 @@ export const i18n: any = {
 };
 
 export const t = (uid: number, key: string, ...args: any[]) => {
-    // В реальном NEXUM тут будет получение языка юзера из БД
-    const lang = 'ru'; 
+    const lang = 'ru';
     const entry = i18n[lang][key];
     if (typeof entry === 'function') return entry(...args);
     return entry || key;
 };
+
+export default { i18n, t };

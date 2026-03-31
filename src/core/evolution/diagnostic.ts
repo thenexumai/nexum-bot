@@ -16,7 +16,8 @@ export class DiagnosticLoop {
         
         try {
             const start = Date.now();
-            await chatUnified([{ role: 'user', content: 'health_check' }]);
+            // FIX: chatUnified requires uid: number — pass 0 for system health check
+            await chatUnified([{ role: 'user', content: 'health_check' }], 0);
             const duration = Date.now() - start;
             
             TelemetryEngine.record({
@@ -25,7 +26,7 @@ export class DiagnosticLoop {
                 status: 'success',
                 duration
             });
-        } catch (e) {
+        } catch (e: any) {  // FIX: e was unknown, cast to any
             Logger.error('evolution', 'AI Provider probe FAILED', e);
             TelemetryEngine.record({
                 component: 'router',

@@ -5,7 +5,7 @@
     "lib": ["ES2022"],
     "outDir": "dist",
     "rootDir": "src",
-    "strict": false,
+    "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
@@ -15,5 +15,5 @@
     "sourceMap": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/apps/server.ts", "src/agent/capabilities/sandbox.ts"]
+  "exclude": ["node_modules", "dist"]
 }
