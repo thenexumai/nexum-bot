@@ -1,90 +1,51 @@
-import React, { useState } from 'react';
-import { Layout, Search, Monitor, Wallet, Book, Flame, Users, Settings, Cpu } from 'lucide-react';
-
-const NEXUM_LOGO = "/NEXUM LOGO.PNG";
+import React, { useState, useEffect } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
+import { Sidebar } from './components/Sidebar'
+import { ChatPage } from './components/ChatPage'
+import { LibraryPage } from './components/LibraryPage'
+import { DiscoverPage } from './components/DiscoverPage'
+import { SettingsPage } from './components/SettingsPage'
+import { useStore } from './store'
+import { healthCheck } from './api'
+import clsx from 'clsx'
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('browser');
+  const { isSidebarOpen } = useStore()
+  const [backendOk, setBackendOk] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    healthCheck().then((r) => setBackendOk(!!r?.ok))
+  }, [])
 
   return (
-    <div className="flex h-screen bg-[#050507] text-white font-sans">
-      {/* GLOBAL SIDEBAR */}
-      <div className="w-20 flex flex-col items-center py-6 border-r border-[#1a1d27] bg-[#0a0a0f]">
-        <img src={NEXUM_LOGO} className="w-10 h-10 mb-8" alt="NEXUM" />
-        
-        <div className="flex-1 flex flex-col gap-6">
-          <NavItem icon={<Monitor />} active={activeTab === 'browser'} onClick={() => setActiveTab('browser')} />
-          <NavItem icon={<Search />} active={activeTab === 'search'} onClick={() => setActiveTab('search')} />
-          <NavItem icon={<Wallet />} active={activeTab === 'finance'} onClick={() => setActiveTab('finance')} />
-          <NavItem icon={<Book />} active={activeTab === 'notes'} onClick={() => setActiveTab('notes')} />
-          <NavItem icon={<Flame />} active={activeTab === 'habits'} onClick={() => setActiveTab('habits')} />
-          <NavItem icon={<Users />} active={activeTab === 'contacts'} onClick={() => setActiveTab('contacts')} />
-        </div>
+    <div className={clsx(
+      'flex h-screen w-screen overflow-hidden',
+      'bg-[#0a0a0a] text-[#eeeeee]'
+    )}>
+      {/* Sidebar */}
+      <Sidebar />
 
-        <div className="mt-auto">
-          <NavItem icon={<Settings />} active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
-        </div>
-      </div>
+      {/* Main content */}
+      <main className={clsx(
+        'flex-1 flex flex-col overflow-hidden transition-all duration-300',
+        isSidebarOpen ? 'ml-0' : 'ml-0'
+      )}>
+        {/* Backend offline banner */}
+        {backendOk === false && (
+          <div className="px-4 py-2 bg-[#2a1515] border-b border-[#ef4444]/30 text-[#ef4444] text-xs text-center">
+            ⚠️ Backend offline — running in demo mode
+          </div>
+        )}
 
-      {/* MAIN CONTENT AREA */}
-      <div className="flex-1 overflow-hidden">
-        {activeTab === 'browser' && <BrowserPortal />}
-        {/* Остальные компоненты рендерятся по аналогии */}
-      </div>
+        <Routes>
+          <Route path="/" element={<Navigate to="/chat" replace />} />
+          <Route path="/chat" element={<ChatPage />} />
+          <Route path="/chat/:id" element={<ChatPage />} />
+          <Route path="/discover" element={<DiscoverPage />} />
+          <Route path="/library" element={<LibraryPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Routes>
+      </main>
     </div>
-  );
-}
-
-function NavItem({ icon, active, onClick }: any) {
-  return (
-    <button 
-      onClick={onClick}
-      className={`p-3 rounded-xl transition-all ${active ? 'bg-[#6c63ff] shadow-[0_0_20px_rgba(108,99,255,0.4)]' : 'text-[#5c5f72] hover:text-white hover:bg-[#13131a]'}`}
-    >
-      {icon}
-    </button>
-  );
-}
-
-function BrowserPortal() {
-  return (
-    <div className="flex h-full">
-      <div className="flex-1 flex flex-col">
-        <div className="h-14 bg-[#13131a] flex items-center px-6 gap-4 border-bottom border-[#1a1d27]">
-          <div className="flex-1 bg-[#1c1c26] rounded-lg px-4 py-1.5 border border-[#2a2a38] text-sm text-[#9395a5]">
-            https://google.com
-          </div>
-          <div className="flex gap-2 text-xs font-bold text-[#22d3a5]">
-            <div className="w-2 h-2 rounded-full bg-[#22d3a5] animate-pulse"></div>
-            PC AGENT LINKED
-          </div>
-        </div>
-        <div className="flex-1 bg-black flex items-center justify-center">
-          <p className="text-[#5c5f72]">Waiting for stream from Nexum Agent...</p>
-        </div>
-      </div>
-      
-      {/* SIDE AI PANEL (COMET STYLE) */}
-      <div className="w-[400px] border-l border-[#1a1d27] bg-[#0a0a0f] p-6 flex flex-col">
-        <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-          <Cpu className="text-[#6c63ff]" /> INTELLIGENCE
-        </h2>
-        <div className="flex-1 overflow-y-auto text-sm space-y-4">
-          <div className="p-4 bg-[#13131a] rounded-lg border border-[#1a1d27]">
-            Hello Timur. I am currently analyzing the current page. I can help you automate tasks or extract data.
-          </div>
-        </div>
-        <div className="mt-4 pt-4 border-t border-[#1a1d27]">
-          <textarea 
-            className="w-full bg-[#1c1c26] border border-[#2a2a38] rounded-xl p-4 text-sm outline-none focus:border-[#6c63ff]"
-            placeholder="Ask anything..."
-            rows={3}
-          ></textarea>
-          <button className="w-full mt-3 bg-[#6c63ff] py-3 rounded-xl font-bold hover:opacity-90 transition-all">
-            EXECUTE AI REASONING
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+  )
 }
