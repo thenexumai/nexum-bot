@@ -6,7 +6,7 @@
 @tailwind utilities;
 
 /* ============================
-   CSS VARIABLES - THEME SYSTEM
+   THEME VARIABLES
    ============================ */
 :root, [data-theme="dark"] {
   --bg:           #0a0a0a;
@@ -21,7 +21,6 @@
   --accent:       #5b8def;
   --accent-hover: #4a7de0;
 }
-
 [data-theme="light"] {
   --bg:           #f5f5f4;
   --surface:      #ffffff;
@@ -36,89 +35,68 @@
   --accent-hover: #1d4ed8;
 }
 
-/* ============================
-   BASE
-   ============================ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
 body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); transition: background 0.2s, color 0.2s; }
 
-/* ============================
-   SEMANTIC CLASSES (var-*)
-   These replace hardcoded colors
-   ============================ */
-.var-bg           { background: var(--bg); }
-.var-surface      { background: var(--surface); }
-.var-surface-2    { background: var(--surface-2); }
-.var-surface-3    { background: var(--surface-3); }
-.var-border       { border-color: var(--border); }
-.var-border-hover { border-color: var(--border-hover); }
-.var-text         { color: var(--text); }
-.var-text-muted   { color: var(--text-muted); }
-.var-text-faint   { color: var(--text-faint); }
-.var-accent       { color: var(--accent); }
+/* Semantic classes */
+.var-bg            { background: var(--bg); }
+.var-surface       { background: var(--surface); }
+.var-surface-2     { background: var(--surface-2); }
+.var-surface-3     { background: var(--surface-3); }
+.var-border        { border-color: var(--border); }
+.var-border-hover  { border-color: var(--border-hover); }
+.var-text          { color: var(--text); }
+.var-text-muted    { color: var(--text-muted); }
+.var-text-faint    { color: var(--text-faint); }
+.var-accent        { color: var(--accent); }
 
-/* ============================
-   SCROLLBAR
-   ============================ */
+/* Input */
+.nexum-input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.5rem 0.75rem;
+  color: var(--text);
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.nexum-input:focus { border-color: var(--border-hover); }
+.nexum-input::placeholder { color: var(--text-faint); }
+
+/* Scrollbar */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
 
-/* ============================
-   ANIMATIONS
-   ============================ */
+/* Animations */
 @keyframes fade-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes slide-in-right { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes bounce-dot { 0%, 80%, 100% { transform: scale(0.6); } 40% { transform: scale(1); } }
-
 .animate-fade-in { animation: fade-in 0.2s ease-out forwards; }
 .animate-slide-in-right { animation: slide-in-right 0.25s ease-out forwards; }
 .dot-bounce { animation: bounce-dot 1.4s ease-in-out infinite; }
 
-/* ============================
-   MARKDOWN PROSE
-   ============================ */
+/* Markdown */
 .prose-nexum { color: var(--text); font-size: 0.875rem; line-height: 1.75; }
-.prose-nexum h1, .prose-nexum h2, .prose-nexum h3 { color: var(--text); font-weight: 600; margin: 1.25em 0 0.5em; line-height: 1.3; }
-.prose-nexum h1 { font-size: 1.3rem; }
-.prose-nexum h2 { font-size: 1.15rem; }
-.prose-nexum h3 { font-size: 1rem; }
+.prose-nexum h1,.prose-nexum h2,.prose-nexum h3 { color: var(--text); font-weight: 600; margin: 1.25em 0 0.5em; line-height: 1.3; }
+.prose-nexum h1 { font-size: 1.3rem; } .prose-nexum h2 { font-size: 1.15rem; } .prose-nexum h3 { font-size: 1rem; }
 .prose-nexum p { margin-bottom: 0.875em; max-width: 72ch; color: var(--text); }
-.prose-nexum ul, .prose-nexum ol { padding-left: 1.5em; margin-bottom: 0.875em; }
+.prose-nexum ul,.prose-nexum ol { padding-left: 1.5em; margin-bottom: 0.875em; }
 .prose-nexum li { margin-bottom: 0.25em; color: var(--text); }
 .prose-nexum strong { color: var(--text); font-weight: 600; }
-.prose-nexum em { color: var(--text-muted); }
 .prose-nexum a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 .prose-nexum hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
-.prose-nexum blockquote { border-left: 3px solid var(--border); padding-left: 1em; color: var(--text-muted); margin: 0.875em 0; font-style: italic; }
-.prose-nexum table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 0.8rem; }
-.prose-nexum th { padding: 0.5em 0.75em; border-bottom: 2px solid var(--border); text-align: left; color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; }
-.prose-nexum td { padding: 0.5em 0.75em; border-bottom: 1px solid var(--border); color: var(--text); }
+.prose-nexum blockquote { border-left: 3px solid var(--border); padding-left: 1em; color: var(--text-muted); margin: 0.875em 0; }
+.prose-nexum table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+.prose-nexum th { padding: 0.5em 0.75em; border-bottom: 2px solid var(--border); text-align: left; color: var(--text-muted); font-weight: 600; font-size: 0.7rem; text-transform: uppercase; }
+.prose-nexum td { padding: 0.5em 0.75em; border-bottom: 1px solid var(--border); }
 .prose-nexum code { background: var(--surface-3); border: 1px solid var(--border); border-radius: 4px; padding: 0.1em 0.4em; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #7dd3fc; }
 .prose-nexum pre { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.25rem; overflow-x: auto; margin: 1em 0; }
 .prose-nexum pre code { background: none; border: none; padding: 0; color: var(--text); font-size: 0.8rem; line-height: 1.7; }
 
-/* ============================
-   SOURCE CARDS
-   ============================ */
 .source-card { transition: all 0.15s ease; }
 .source-card:hover { transform: translateY(-1px); }
-
-/* ============================
-   FOCUS
-   ============================ */
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
-
-/* ============================
-   SELECT OPTION (light mode fix)
-   ============================ */
-option { background: var(--surface); color: var(--text); }
-
-/* ============================
-   MOBILE
-   ============================ */
-@media (max-width: 640px) {
-  .prose-nexum { font-size: 0.875rem; }
-}

@@ -1,98 +1,63 @@
 import React, { useState } from 'react'
-import { StickyNote, Plus, Trash2, Pin, PinOff } from 'lucide-react'
-import { useMiniApps, patchNote } from '../../appStore'
-import { useAppStore } from '../../appStore'
-import { t } from '../../i18n'
+import { useMiniApps } from '../../appStore'
+import { Plus, Trash2, StickyNote } from 'lucide-react'
 import clsx from 'clsx'
 
 export function NotesApp() {
   const { notes, addNote, deleteNote } = useMiniApps()
-  const { lang } = useAppStore()
   const [title, setTitle] = useState('')
-  const [content, setContent] = useState('')
-  const [adding, setAdding] = useState(false)
-  const [selected, setSelected] = useState<string | null>(null)
+  const [body, setBody]   = useState('')
+  const [writing, setWriting] = useState(false)
 
   const submit = () => {
-    if (!title.trim() && !content.trim()) return
-    addNote({ title: title || 'Untitled', content, pinned: false, date: new Date().toISOString() })
-    setTitle(''); setContent(''); setAdding(false)
+    if (!title.trim() && !body.trim()) return
+    addNote(title.trim() || body.slice(0, 30), body.trim() || title.trim())
+    setTitle(''); setBody(''); setWriting(false)
   }
 
-  const pinned = notes.filter((n) => n.pinned)
-  const unpinned = notes.filter((n) => !n.pinned)
-  const sorted = [...pinned, ...unpinned]
-  const selectedNote = notes.find((n) => n.id === selected)
-
   return (
-    <div className="flex gap-4 h-full">
-      {/* List */}
-      <div className="w-48 shrink-0 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/20 flex items-center justify-center">
-              <StickyNote size={14} className="text-amber-400" />
-            </div>
-            <span className="text-sm font-semibold var-text">{t(lang, 'notes')}</span>
+    <div className="space-y-4">
+      {!writing ? (
+        <button onClick={() => setWriting(true)}
+          className="w-full flex items-center gap-2 px-4 py-3 var-surface-2 border var-border border-dashed rounded-xl text-sm var-text-muted hover:var-text hover:border-[var(--border-hover)] transition-all">
+          <Plus size={15} /><span>Новая заметка</span>
+        </button>
+      ) : (
+        <div className="var-surface-2 border var-border rounded-xl p-4 space-y-3 animate-fade-in">
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Заголовок"
+            className="nexum-input w-full text-sm font-medium" />
+          <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Текст заметки…"
+            rows={4} className="nexum-input w-full text-sm resize-none" />
+          <div className="flex gap-2">
+            <button onClick={submit} className="flex-1 py-2 bg-[var(--accent)] text-white rounded-lg text-sm hover:opacity-90">Сохранить</button>
+            <button onClick={() => setWriting(false)} className="px-4 py-2 var-surface-3 var-text-muted rounded-lg text-sm hover:var-text">Отмена</button>
           </div>
-          <button onClick={() => setAdding(!adding)}
-            className="p-1.5 bg-amber-500/15 text-amber-400 rounded-lg hover:bg-amber-500/25 transition-colors">
-            <Plus size={14} />
-          </button>
         </div>
+      )}
 
-        {adding && (
-          <div className="var-surface-2 border var-border rounded-xl p-3 space-y-2 animate-fade-in">
-            <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)}
-              placeholder="Title..." className="w-full bg-transparent var-text text-xs focus:outline-none border-b var-border pb-1" />
-            <textarea value={content} onChange={(e) => setContent(e.target.value)}
-              placeholder="Content..." rows={3}
-              className="w-full bg-transparent var-text text-xs focus:outline-none resize-none" />
-            <button onClick={submit}
-              className="w-full py-1.5 bg-amber-500 text-white rounded-lg text-xs font-medium hover:bg-amber-600 transition-colors">
-              {t(lang, 'save')}
-            </button>
-          </div>
-        )}
-
-        <div className="space-y-1 max-h-72 overflow-y-auto">
-          {sorted.length === 0 && (
-            <p className="text-xs var-text-muted text-center py-4">{t(lang, 'no_notes')}</p>
-          )}
-          {sorted.map((n) => (
-            <div key={n.id} onClick={() => setSelected(n.id === selected ? null : n.id)}
-              className={clsx('group p-2.5 rounded-xl border cursor-pointer transition-all',
-                selected === n.id ? 'var-surface-3 border-[#5b8def]/40' : 'var-surface-2 border-var-border hover:border-var-border-hover')}>
-              <div className="flex items-start justify-between gap-1">
-                <div className="flex-1 min-w-0">
-                  {n.pinned && <Pin size={9} className="text-amber-400 mb-0.5" />}
-                  <div className="text-xs font-medium var-text truncate">{n.title}</div>
-                  <div className="text-[10px] var-text-muted truncate mt-0.5">{n.content.slice(0, 40)}</div>
+      {notes.length === 0 && !writing ? (
+        <div className="text-center py-8 var-text-faint text-sm">Нет заметок</div>
+      ) : (
+        <div className="space-y-3">
+          {notes.slice().reverse().map((note) => (
+            <div key={note.id} className="group p-4 var-surface-2 border var-border rounded-xl hover:border-[var(--border-hover)] transition-all">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <StickyNote size={13} className="var-text-faint shrink-0 mt-0.5" />
+                  <span className="text-sm font-medium var-text truncate">{note.title}</span>
                 </div>
-                <button onClick={(e) => { e.stopPropagation(); deleteNote(n.id) }}
-                  className="opacity-0 group-hover:opacity-100 p-0.5 var-text-muted hover:text-red-400 transition-all shrink-0">
-                  <Trash2 size={11} />
+                <button onClick={() => deleteNote(note.id)}
+                  className="opacity-0 group-hover:opacity-100 p-1 var-text-faint hover:text-red-400 transition-all shrink-0">
+                  <Trash2 size={12} />
                 </button>
               </div>
+              {note.body !== note.title && (
+                <p className="text-xs var-text-muted mt-2 leading-relaxed line-clamp-3">{note.body}</p>
+              )}
             </div>
           ))}
         </div>
-      </div>
-
-      {/* Detail */}
-      <div className="flex-1 var-surface-2 border var-border rounded-xl p-4">
-        {selectedNote ? (
-          <div>
-            <h3 className="text-sm font-semibold var-text mb-3">{selectedNote.title}</h3>
-            <p className="text-sm var-text-muted whitespace-pre-wrap leading-relaxed">{selectedNote.content || 'No content.'}</p>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <StickyNote size={28} className="var-text-muted opacity-20 mb-2" />
-            <p className="text-xs var-text-muted">Select a note to view</p>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   )
 }
