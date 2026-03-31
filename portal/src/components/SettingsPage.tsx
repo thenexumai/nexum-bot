@@ -1,207 +1,188 @@
 import React, { useState } from 'react'
-import { User, Bell, Palette, Globe, Shield, ChevronRight, Moon, Sun, Monitor, Check } from 'lucide-react'
+import { User, Palette, Globe, Cpu, Key, Bell, Shield, ChevronRight } from 'lucide-react'
+import { useAppStore } from '../appStore'
+import { LANGUAGES, t } from '../i18n'
 import clsx from 'clsx'
 
 const SECTIONS = [
-  { id: 'profile',       icon: <User size={16} />,    label: 'Profile' },
-  { id: 'appearance',    icon: <Palette size={16} />,  label: 'Appearance' },
-  { id: 'notifications', icon: <Bell size={16} />,     label: 'Notifications' },
-  { id: 'language',      icon: <Globe size={16} />,    label: 'Language & Region' },
-  { id: 'privacy',       icon: <Shield size={16} />,   label: 'Privacy' },
+  { id: 'profile',  icon: User,     labelKey: 'profile' },
+  { id: 'theme',    icon: Palette,  labelKey: 'appearance' },
+  { id: 'language', icon: Globe,    labelKey: 'language' },
+  { id: 'models',   icon: Cpu,      labelKey: 'models' },
+  { id: 'api',      icon: Key,      labelKey: 'api_keys' },
+  { id: 'privacy',  icon: Shield,   labelKey: 'privacy' },
 ]
 
-const LANGUAGES = ['English', 'Русский', 'O'zbekcha', 'العربية', '中文', 'Español']
-const THEMES = ['dark', 'light', 'system'] as const
+const MODELS = [
+  { id: 'nexum-turbo',  label: 'NEXUM Turbo',  badge: 'Fast',  desc: 'Быстрый и умный' },
+  { id: 'nexum-pro',    label: 'NEXUM Pro',    badge: 'Best',  desc: 'Лучшая точность' },
+  { id: 'nexum-vision', label: 'NEXUM Vision', badge: 'New',   desc: 'Работает с изображениями' },
+  { id: 'nexum-code',   label: 'NEXUM Code',   badge: 'Code',  desc: 'Специализация на коде' },
+]
 
 export function SettingsPage() {
+  const { lang, setLang, theme, setTheme, model, setModel } = useAppStore()
   const [active, setActive] = useState('profile')
-  const [theme, setTheme] = useState<typeof THEMES[number]>('dark')
-  const [lang, setLang] = useState('Русский')
-  const [name, setName] = useState('Timur')
-  const [email, setEmail] = useState('')
-  const [notifs, setNotifs] = useState({ updates: true, tips: false, weekly: true })
+  const [name, setName]     = useState('Timur')
+  const [email, setEmail]   = useState('timur@nexumai.uz')
+  const [saved, setSaved]   = useState(false)
+
+  const saveProfile = () => { setSaved(true); setTimeout(() => setSaved(false), 2000) }
 
   return (
-    <div className="flex h-full bg-[#0a0a0a] overflow-hidden">
-      {/* Settings sidebar */}
-      <div className="w-56 shrink-0 border-r border-[#1e1e1e] py-8 px-3">
-        <h2 className="text-xs font-semibold text-[#444] uppercase tracking-widest px-3 mb-4">Settings</h2>
-        <nav className="space-y-0.5">
-          {SECTIONS.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setActive(s.id)}
-              className={clsx(
-                'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left',
-                active === s.id ? 'bg-[#161616] text-[#eee]' : 'text-[#666] hover:text-[#aaa] hover:bg-[#111]'
-              )}
-            >
-              {s.icon}<span>{s.label}</span>
+    <div className="flex h-full var-bg">
+      {/* Left nav */}
+      <aside className="w-[220px] shrink-0 border-r var-border var-surface px-2 py-6 space-y-0.5">
+        <p className="px-3 mb-3 text-[10px] uppercase tracking-widest var-text-faint font-medium">{t(lang, 'settings')}</p>
+        {SECTIONS.map(({ id, icon: Icon, labelKey }) => (
+          <button key={id} onClick={() => setActive(id)}
+            className={clsx('w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
+              active === id ? 'var-surface-3 var-text font-medium' : 'var-text-muted hover:var-text hover:var-surface-2')}>
+            <Icon size={15} />
+            <span>{t(lang, labelKey)}</span>
+            {active === id && <ChevronRight size={13} className="ml-auto" />}
+          </button>
+        ))}
+      </aside>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-8">
+        {/* Profile */}
+        {active === 'profile' && (
+          <Section title={t(lang, 'profile')}>
+            <Field label={t(lang, 'name')}>
+              <input value={name} onChange={(e) => setName(e.target.value)} className="nexum-input" />
+            </Field>
+            <Field label={t(lang, 'email')}>
+              <input value={email} onChange={(e) => setEmail(e.target.value)} className="nexum-input" />
+            </Field>
+            <button onClick={saveProfile}
+              className={clsx('px-5 py-2 rounded-lg text-sm font-medium transition-colors',
+                saved ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-[var(--accent)] text-white hover:opacity-90')}>
+              {saved ? '✓ ' + t(lang, 'saved') : t(lang, 'save')}
             </button>
-          ))}
-        </nav>
-      </div>
+          </Section>
+        )}
 
-      {/* Settings content */}
-      <div className="flex-1 overflow-y-auto px-8 py-8">
-        <div className="max-w-xl">
-          {/* Profile */}
-          {active === 'profile' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-base font-semibold text-[#eee] mb-1">Profile</h2>
-                <p className="text-xs text-[#555]">Your personal information</p>
+        {/* Appearance */}
+        {active === 'theme' && (
+          <Section title={t(lang, 'appearance')}>
+            <Field label={t(lang, 'theme')}>
+              <div className="flex gap-3">
+                {(['dark', 'light', 'system'] as const).map((th) => (
+                  <button key={th} onClick={() => setTheme(th)}
+                    className={clsx('flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm border transition-all',
+                      theme === th ? 'border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/10' : 'var-border var-text-muted hover:var-text')}>
+                    <span>{th === 'dark' ? '🌙' : th === 'light' ? '☀️' : '🖥️'}</span>
+                    <span className="capitalize">{t(lang, th)}</span>
+                  </button>
+                ))}
               </div>
-              <SettingCard>
-                <div className="space-y-4">
-                  <Field label="Display name">
-                    <input value={name} onChange={(e) => setName(e.target.value)}
-                      className="w-full bg-[#161616] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-[#eee] focus:outline-none focus:border-[#5b8def]/50 transition-colors" />
-                  </Field>
-                  <Field label="Email">
-                    <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="your@email.com"
-                      className="w-full bg-[#161616] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-[#eee] placeholder-[#444] focus:outline-none focus:border-[#5b8def]/50 transition-colors" />
-                  </Field>
-                </div>
-              </SettingCard>
-              <SettingCard>
-                <div className="space-y-3">
-                  <div className="text-xs font-medium text-[#888] uppercase tracking-wider">Plan</div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm font-medium text-[#eee]">NEXUM Free</div>
-                      <div className="text-xs text-[#555] mt-0.5">30 messages per day</div>
-                    </div>
-                    <button className="px-3 py-1.5 bg-[#5b8def] text-white text-xs font-medium rounded-lg hover:bg-[#4a7de0] transition-colors">Upgrade</button>
+            </Field>
+          </Section>
+        )}
+
+        {/* Language */}
+        {active === 'language' && (
+          <Section title={t(lang, 'language')}>
+            <div className="grid grid-cols-2 gap-3">
+              {LANGUAGES.map((l) => (
+                <button key={l.id} onClick={() => setLang(l.id)}
+                  className={clsx('flex items-center gap-3 p-4 rounded-xl border text-sm transition-all',
+                    lang === l.id ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]' : 'var-border var-surface var-text-muted hover:var-text hover:var-surface-2')}>
+                  <span className="text-2xl">{l.flag}</span>
+                  <div className="text-left">
+                    <div className="font-medium">{l.label}</div>
+                    <div className="text-xs var-text-faint">{l.native}</div>
                   </div>
-                </div>
-              </SettingCard>
+                  {lang === l.id && <span className="ml-auto text-[var(--accent)]">✓</span>}
+                </button>
+              ))}
             </div>
-          )}
+          </Section>
+        )}
 
-          {/* Appearance */}
-          {active === 'appearance' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-base font-semibold text-[#eee] mb-1">Appearance</h2>
-                <p className="text-xs text-[#555]">Customize how NEXUM looks</p>
-              </div>
-              <SettingCard>
-                <div>
-                  <div className="text-xs font-medium text-[#888] uppercase tracking-wider mb-3">Theme</div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {THEMES.map((t) => {
-                      const icons = { dark: <Moon size={16} />, light: <Sun size={16} />, system: <Monitor size={16} /> }
-                      return (
-                        <button
-                          key={t}
-                          onClick={() => setTheme(t)}
-                          className={clsx(
-                            'flex flex-col items-center gap-2 p-3 rounded-xl border transition-all text-xs capitalize',
-                            theme === t ? 'border-[#5b8def] bg-[#5b8def]/10 text-[#5b8def]' : 'border-[#2a2a2a] text-[#666] hover:border-[#3a3a3a] hover:text-[#aaa]'
-                          )}
-                        >
-                          {icons[t]}{t}
-                          {theme === t && <Check size={10} className="text-[#5b8def]" />}
-                        </button>
-                      )
-                    })}
+        {/* Models */}
+        {active === 'models' && (
+          <Section title={t(lang, 'models')}>
+            <div className="space-y-3">
+              {MODELS.map((m) => (
+                <button key={m.id} onClick={() => setModel(m.id)}
+                  className={clsx('w-full flex items-center gap-4 p-4 rounded-xl border text-left transition-all',
+                    model === m.id ? 'border-[var(--accent)] bg-[var(--accent)]/8' : 'var-border var-surface-2 hover:var-surface-3')}>
+                  <div className="w-10 h-10 rounded-xl bg-[var(--accent)]/15 border border-[var(--accent)]/20 flex items-center justify-center">
+                    <Cpu size={16} className="text-[var(--accent)]" />
                   </div>
-                </div>
-              </SettingCard>
-            </div>
-          )}
-
-          {/* Notifications */}
-          {active === 'notifications' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-base font-semibold text-[#eee] mb-1">Notifications</h2>
-                <p className="text-xs text-[#555]">Control what you receive</p>
-              </div>
-              <SettingCard>
-                <div className="space-y-4">
-                  {(Object.entries(notifs) as [keyof typeof notifs, boolean][]).map(([k, v]) => (
-                    <div key={k} className="flex items-center justify-between">
-                      <div>
-                        <div className="text-sm text-[#ccc] capitalize">{k === 'updates' ? 'Product updates' : k === 'tips' ? 'Tips & tricks' : 'Weekly digest'}</div>
-                        <div className="text-xs text-[#555] mt-0.5">{k === 'updates' ? 'New features and improvements' : k === 'tips' ? 'How to get more from NEXUM' : 'Summary of your usage'}</div>
-                      </div>
-                      <button onClick={() => setNotifs({ ...notifs, [k]: !v })}
-                        className={clsx('w-10 h-6 rounded-full transition-colors relative', v ? 'bg-[#5b8def]' : 'bg-[#2a2a2a]')}>
-                        <span className={clsx('absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-sm', v ? 'left-5' : 'left-1')} />
-                      </button>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium var-text">{m.label}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[var(--accent)]/15 text-[var(--accent)] font-medium">{m.badge}</span>
                     </div>
-                  ))}
-                </div>
-              </SettingCard>
+                    <div className="text-xs var-text-muted mt-0.5">{m.desc}</div>
+                  </div>
+                  {model === m.id && (
+                    <div className="w-2 h-2 rounded-full bg-[var(--accent)]" />
+                  )}
+                </button>
+              ))}
             </div>
-          )}
+          </Section>
+        )}
 
-          {/* Language */}
-          {active === 'language' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-base font-semibold text-[#eee] mb-1">Language & Region</h2>
-                <p className="text-xs text-[#555]">Choose your preferred language</p>
-              </div>
-              <SettingCard>
-                <div className="space-y-1">
-                  {LANGUAGES.map((l) => (
-                    <button key={l} onClick={() => setLang(l)}
-                      className={clsx('w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-colors', lang === l ? 'bg-[#1e2a3a] text-[#5b8def]' : 'text-[#888] hover:text-[#ccc] hover:bg-[#161616]')}>
-                      <span>{l}</span>
-                      {lang === l && <Check size={14} />}
-                    </button>
-                  ))}
-                </div>
-              </SettingCard>
-            </div>
-          )}
+        {/* API Keys */}
+        {active === 'api' && (
+          <Section title={t(lang, 'api_keys')}>
+            {['OpenAI', 'Anthropic', 'Gemini', 'Perplexity'].map((provider) => (
+              <Field key={provider} label={`${provider} API Key`}>
+                <input type="password" placeholder="sk-..." className="nexum-input" />
+              </Field>
+            ))}
+            <button className="px-5 py-2 bg-[var(--accent)] text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">
+              {t(lang, 'save')}
+            </button>
+          </Section>
+        )}
 
-          {/* Privacy */}
-          {active === 'privacy' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-base font-semibold text-[#eee] mb-1">Privacy</h2>
-                <p className="text-xs text-[#555]">Control your data</p>
-              </div>
-              <SettingCard>
-                <div className="space-y-3">
-                  <InfoRow label="Data storage" value="Local only — nothing sent to servers" />
-                  <InfoRow label="Chat history" value="Stored in browser memory" />
-                  <InfoRow label="Analytics" value="Disabled" />
-                </div>
-              </SettingCard>
-              <SettingCard>
-                <button className="text-sm text-[#ef4444] hover:text-[#dc2626] transition-colors">Delete all conversations</button>
-              </SettingCard>
-            </div>
-          )}
-        </div>
+        {/* Privacy */}
+        {active === 'privacy' && (
+          <Section title={t(lang, 'privacy')}>
+            <Toggle label={t(lang, 'save_history')} defaultChecked />
+            <Toggle label={t(lang, 'share_data')} />
+            <Toggle label={t(lang, 'analytics')} defaultChecked />
+          </Section>
+        )}
       </div>
     </div>
   )
 }
 
-function SettingCard({ children }: { children: React.ReactNode }) {
-  return <div className="bg-[#111] border border-[#1e1e1e] rounded-xl p-4">{children}</div>
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="max-w-xl animate-fade-in">
+      <h2 className="text-lg font-semibold var-text mb-6">{title}</h2>
+      <div className="space-y-5">{children}</div>
+    </div>
+  )
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-1.5">
-      <label className="text-xs text-[#666] font-medium">{label}</label>
+    <div>
+      <label className="block text-xs font-medium var-text-muted mb-1.5 uppercase tracking-wide">{label}</label>
       {children}
     </div>
   )
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function Toggle({ label, defaultChecked = false }: { label: string; defaultChecked?: boolean }) {
+  const [on, setOn] = useState(defaultChecked)
   return (
-    <div className="flex items-center justify-between text-sm">
-      <span className="text-[#666]">{label}</span>
-      <span className="text-[#888]">{value}</span>
+    <div className="flex items-center justify-between py-3 border-b var-border">
+      <span className="text-sm var-text">{label}</span>
+      <button onClick={() => setOn(!on)}
+        className={clsx('w-11 h-6 rounded-full transition-colors', on ? 'bg-[var(--accent)]' : 'var-surface-3')}>
+        <div className={clsx('w-4 h-4 bg-white rounded-full mx-1 transition-transform', on && 'translate-x-5')} />
+      </button>
     </div>
   )
 }

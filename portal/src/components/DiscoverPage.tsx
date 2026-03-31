@@ -1,88 +1,80 @@
 import React, { useState } from 'react'
-import { Compass, TrendingUp, Cpu, Globe, BookOpen, Beaker } from 'lucide-react'
+import { Search, Sparkles, TrendingUp, Globe, Code2, Microscope, BookOpen, Briefcase } from 'lucide-react'
+import { useAppStore } from '../appStore'
+import { t } from '../i18n'
 import clsx from 'clsx'
-import { useStore } from '../store'
-import { useNavigate } from 'react-router-dom'
-
-const CATEGORIES = [
-  { id: 'all',       label: 'All',       icon: <Compass size={14} /> },
-  { id: 'trending',  label: 'Trending',  icon: <TrendingUp size={14} /> },
-  { id: 'tech',      label: 'Tech',      icon: <Cpu size={14} /> },
-  { id: 'world',     label: 'World',     icon: <Globe size={14} /> },
-  { id: 'science',   label: 'Science',   icon: <Beaker size={14} /> },
-  { id: 'knowledge', label: 'Knowledge', icon: <BookOpen size={14} /> },
-]
 
 const TOPICS = [
-  { id: 1, cat: 'tech',      emoji: '🤖', title: 'AI models in 2026', sub: 'GPT-5, Claude 4, Gemini Ultra — who wins?', gradient: 'from-blue-900/40 to-indigo-900/40' },
-  { id: 2, cat: 'world',     emoji: '🌍', title: 'Global economy outlook', sub: 'IMF predictions for Q2 2026', gradient: 'from-green-900/40 to-emerald-900/40' },
-  { id: 3, cat: 'science',   emoji: '🧬', title: 'Gene editing breakthroughs', sub: 'CRISPR applications in medicine', gradient: 'from-purple-900/40 to-pink-900/40' },
-  { id: 4, cat: 'tech',      emoji: '⚡', title: 'Quantum computing updates', sub: 'IBM and Google race to 1000 qubits', gradient: 'from-yellow-900/40 to-orange-900/40' },
-  { id: 5, cat: 'knowledge', emoji: '📚', title: 'History of cryptography', sub: 'From Caesar cipher to post-quantum', gradient: 'from-red-900/40 to-rose-900/40' },
-  { id: 6, cat: 'science',   emoji: '🚀', title: 'SpaceX Starship mission', sub: 'Latest Mars colonization timeline', gradient: 'from-cyan-900/40 to-blue-900/40' },
-  { id: 7, cat: 'trending',  emoji: '📈', title: 'Crypto market analysis', sub: 'Bitcoin halving effects on altcoins', gradient: 'from-amber-900/40 to-yellow-900/40' },
-  { id: 8, cat: 'trending',  emoji: '🎮', title: 'Next-gen gaming tech', sub: 'PS6, Xbox Series X2, cloud gaming', gradient: 'from-violet-900/40 to-purple-900/40' },
+  { id: 'all',       icon: <Sparkles size={14} />,  labelKey: 'all' },
+  { id: 'trending',  icon: <TrendingUp size={14} />, labelKey: 'trending' },
+  { id: 'world',     icon: <Globe size={14} />,      labelKey: 'world' },
+  { id: 'code',      icon: <Code2 size={14} />,      labelKey: 'code' },
+  { id: 'science',   icon: <Microscope size={14} />, labelKey: 'science' },
+  { id: 'education', icon: <BookOpen size={14} />,   labelKey: 'education' },
+  { id: 'business',  icon: <Briefcase size={14} />,  labelKey: 'business' },
+]
+
+const CARDS = [
+  { title: 'Квантовые компьютеры в 2026',       topic: 'science',   emoji: '🔬', desc: 'Новые достижения в квантовых вычислениях и что это значит для криптографии.' },
+  { title: 'GPT-5 vs Claude 4 — сравнение',    topic: 'code',      emoji: '🤖', desc: 'Детальный технический анализ двух флагманских языковых моделей.' },
+  { title: 'Рынок ИИ в Центральной Азии',      topic: 'business',  emoji: '💼', desc: 'Как стартапы Узбекистана, Казахстана и Кыргызстана конкурируют с мировыми игроками.' },
+  { title: 'Обучение через ИИ-туторов',         topic: 'education', emoji: '🎓', desc: 'Персонализированное образование с помощью AI: мифы и реальность.' },
+  { title: 'Топ языки программирования 2026',   topic: 'code',      emoji: '💻', desc: 'Rust, Python, Go — кто лидирует в 2026 году по опросам разработчиков.' },
+  { title: 'Энергопотребление ЦОД растёт',      topic: 'world',     emoji: '⚡', desc: 'Центры обработки данных потребляют всё больше электричества. Что делать?' },
 ]
 
 export function DiscoverPage() {
-  const [active, setActive] = useState('all')
-  const { newConversation, addMessage, updateConvTitle } = useStore()
-  const navigate = useNavigate()
+  const { lang } = useAppStore()
+  const [activeTopic, setActiveTopic] = useState('all')
+  const [query, setQuery] = useState('')
 
-  const filtered = active === 'all' ? TOPICS : TOPICS.filter((t) => t.cat === active)
-
-  const handleTopic = (title: string) => {
-    const id = newConversation()
-    addMessage(id, { role: 'user', content: `Tell me about: ${title}` })
-    updateConvTitle(id, title)
-    navigate(`/chat/${id}`)
-  }
+  const filtered = CARDS.filter((c) =>
+    (activeTopic === 'all' || c.topic === activeTopic) &&
+    (query === '' || c.title.toLowerCase().includes(query.toLowerCase()))
+  )
 
   return (
-    <div className="flex flex-col h-full bg-[#0a0a0a] overflow-y-auto">
-      <div className="max-w-4xl mx-auto w-full px-6 py-8">
+    <div className="h-full overflow-y-auto var-bg">
+      <div className="max-w-4xl mx-auto px-6 py-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-xl font-semibold text-[#eee] mb-1">Discover</h1>
-          <p className="text-sm text-[#555]">Explore trending topics and ideas</p>
+          <h1 className="text-2xl font-semibold var-text mb-1">{t(lang, 'discover')}</h1>
+          <p className="var-text-muted text-sm">{t(lang, 'discover_sub')}</p>
         </div>
 
-        {/* Category pills */}
+        {/* Search */}
+        <div className="relative mb-6">
+          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 var-text-faint" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)}
+            placeholder={t(lang, 'search_placeholder')}
+            className="nexum-input w-full pl-10" />
+        </div>
+
+        {/* Topics */}
         <div className="flex gap-2 flex-wrap mb-8">
-          {CATEGORIES.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => setActive(c.id)}
-              className={clsx(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
-                active === c.id
-                  ? 'bg-[#5b8def] text-white'
-                  : 'bg-[#111] border border-[#2a2a2a] text-[#666] hover:text-[#ccc] hover:border-[#3a3a3a]'
-              )}
-            >
-              {c.icon}<span>{c.label}</span>
+          {TOPICS.map(({ id, icon, labelKey }) => (
+            <button key={id} onClick={() => setActiveTopic(id)}
+              className={clsx('flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all',
+                activeTopic === id ? 'bg-[var(--accent)] text-white border-transparent' : 'var-border var-text-muted hover:var-text hover:var-border-hover')}>
+              {icon}<span>{t(lang, labelKey)}</span>
             </button>
           ))}
         </div>
 
-        {/* Topics grid */}
+        {/* Cards grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {filtered.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => handleTopic(t.title)}
-              className={clsx(
-                'flex items-start gap-4 p-5 rounded-xl border border-[#1e1e1e] text-left',
-                'bg-gradient-to-br', t.gradient,
-                'hover:border-[#3a3a3a] transition-all group'
-              )}
-            >
-              <span className="text-3xl">{t.emoji}</span>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-[#ddd] text-sm group-hover:text-white transition-colors">{t.title}</div>
-                <div className="text-xs text-[#555] mt-1 group-hover:text-[#777] transition-colors">{t.sub}</div>
+          {filtered.map((card, i) => (
+            <div key={i} className="group var-surface border var-border rounded-xl p-5 hover:var-surface-2 hover:border-[var(--border-hover)] transition-all cursor-pointer animate-fade-in">
+              <div className="text-2xl mb-3">{card.emoji}</div>
+              <h3 className="text-sm font-semibold var-text mb-2 group-hover:text-[var(--accent)] transition-colors">{card.title}</h3>
+              <p className="text-xs var-text-muted leading-relaxed">{card.desc}</p>
+              <div className="mt-3">
+                <span className={clsx('text-[10px] px-2 py-0.5 rounded-full border font-medium',
+                  'bg-[var(--accent)]/10 border-[var(--accent)]/20 text-[var(--accent)]')}>
+                  {card.topic}
+                </span>
               </div>
-            </button>
+            </div>
           ))}
         </div>
       </div>
