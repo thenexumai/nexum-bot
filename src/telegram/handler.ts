@@ -11,14 +11,20 @@ import { approvePatch, rejectPatch } from '../evolution/self_improve';
 import { analyzeAndPropose, listPending } from '../evolution/improve_tool';
 import fetch from 'node-fetch';
 
-// Minimum chars before first message is sent during streaming
-const STREAM_FIRST_SEND_CHARS = 30;
-// How often to edit message during streaming (ms)
-const STREAM_EDIT_INTERVAL_MS = 1200;
+// ── Streaming constants ──────────────────────────────────────────────────────
+const STREAM_FIRST_SEND_CHARS = 25;   // send first message after this many chars
+const STREAM_EDIT_INTERVAL_MS = 700;  // edit every 700ms — feels live
+const TYPING_INTERVAL_MS = 4500;      // resend typing action every 4.5s
+
+// ── Typing cursor variants (cycles for liveliness) ──────────────────────────
+const CURSORS = ['▍', '▌', '█', '▌'];
+let cursorIdx = 0;
+const nextCursor = () => CURSORS[cursorIdx++ % CURSORS.length];
 
 export const setupBot = (bot: Bot) => {
     setupCommands(bot);
 
+    // ── /improve (admin only) ──────────────────────────────────────────────
     bot.command('improve', async (ctx) => {
         const uid = ctx.from?.id;
         if (!uid || !isAdmin(uid)) {
@@ -28,10 +34,7 @@ export const setupBot = (bot: Bot) => {
         const args = ctx.message?.text?.replace('/improve', '').trim() || '';
         if (!args) {
             await ctx.reply(
-                '📝 *Использование:*\n`/improve <путь_к_файлу> <описание изменения>`\n\n' +
-                '*Примеры:*\n' +
-                '`/improve src/agent/tools.ts добавь инструмент`\n' +
-                '`/improve src/soul/index.ts сделай ответы дружелюбнее`',
+                '📝 *Использование:*\n`/improve <путь_к_файлу> <описание изменения>`',
                 { parse_mode: 'Markdown' }
             );
             return;
@@ -45,11 +48,11 @@ export const setupBot = (bot: Bot) => {
         const description = args.slice(spaceIdx + 1).trim();
         const thinking = await ctx.reply(`🤔 Анализирую \`${filePath}\`...`, { parse_mode: 'Markdown' });
         const result = await analyzeAndPropose(filePath, description, uid, bot);
-        await ctx.api.editMessageText(ctx.chat.id, thinking.message_id, result, { parse_mode: 'Markdown' }).catch(async () => {
-            await ctx.reply(result);
-        });
+        await ctx.api.editMessageText(ctx.chat.id, thinking.message_id, result, { parse_mode: 'Markdown' })
+            .catch(async () => { await ctx.reply(result); });
     });
 
+    // ── /patches (admin only) ─────────────────────────────────────────────
     bot.command('patches', async (ctx) => {
         const uid = ctx.from?.id;
         if (!uid || !isAdmin(uid)) {
@@ -57,15 +60,16 @@ export const setupBot = (bot: Bot) => {
             return;
         }
         const list = await listPending();
-        await ctx.reply(`📋 *Ожидающие патчи:*\n\n${list}`, { parse_mode: 'Markdown' }).catch(() =>
-            ctx.reply(list)
-        );
+        await ctx.reply(`📋 *Ожидающие патчи:*\n\n${list}`, { parse_mode: 'Markdown' })
+            .catch(() => ctx.reply(list));
     });
 
+    // ── Callback query router ─────────────────────────────────────────────
     bot.on('callback_query:data', async (ctx) => {
         const data = ctx.callbackQuery.data;
         const uid = ctx.from?.id;
 
+        // Approval buttons
         if (data.startsWith('appr_')) {
             const [actionId, status] = data.replace('appr_', '').split(':');
             const approved = status === 'allow';
@@ -78,6 +82,7 @@ export const setupBot = (bot: Bot) => {
             return;
         }
 
+        // Self-improve approve
         if (data.startsWith('selfimprove_approve_')) {
             if (!uid || !isAdmin(uid)) { await ctx.answerCallbackQuery('❌ Нет прав'); return; }
             const patchId = data.replace('selfimprove_approve_', '');
@@ -87,6 +92,7 @@ export const setupBot = (bot: Bot) => {
             return;
         }
 
+        // Self-improve reject
         if (data.startsWith('selfimprove_reject_')) {
             if (!uid || !isAdmin(uid)) { await ctx.answerCallbackQuery('❌ Нет прав'); return; }
             const patchId = data.replace('selfimprove_reject_', '');
@@ -99,6 +105,7 @@ export const setupBot = (bot: Bot) => {
         await ctx.answerCallbackQuery();
     });
 
+    // ── Voice messages ────────────────────────────────────────────────────
     bot.on('message:voice', async (ctx) => {
         const uid = ctx.from?.id;
         if (!uid) return;
@@ -110,10 +117,11 @@ export const setupBot = (bot: Bot) => {
             const buffer = Buffer.from(await res.arrayBuffer());
             const text = await transcribeVoice(buffer);
             if (!text) {
-                await ctx.reply('🎤 Не удалось распознать голос. Попробуй ещё раз или напиши текстом.');
+                await ctx.reply('🎤 Не удалось распознать. Попробуй ещё раз или напиши текстом.');
                 return;
             }
-            await ctx.reply(`🎤 *Распознано:*\n_${safeMarkdown(text)}_`, { parse_mode: 'Markdown' });
+            // Show transcription first
+            await ctx.reply(`🎤 _${safeMarkdown(text)}_`, { parse_mode: 'Markdown' });
             await processAIRequest(ctx, text, uid);
         } catch (err) {
             Logger.error('telegram', 'Voice error', err);
@@ -121,12 +129,15 @@ export const setupBot = (bot: Bot) => {
         }
     });
 
+    // ── Photo messages ────────────────────────────────────────────────────
     bot.on('message:photo', async (ctx) => {
         const uid = ctx.from?.id;
         if (!uid) return;
         try {
             const caption = ctx.message.caption || 'Что на этом изображении? Опиши подробно.';
-            const file = await ctx.getFile();
+            const photos = ctx.message.photo;
+            const bestPhoto = photos[photos.length - 1]; // highest resolution
+            const file = await ctx.api.getFile(bestPhoto.file_id);
             const imageUrl = `https://api.telegram.org/file/bot${bot.token}/${file.file_path}`;
             await processAIRequest(ctx, `[vision:${imageUrl}] ${caption}`, uid);
         } catch (err) {
@@ -135,14 +146,16 @@ export const setupBot = (bot: Bot) => {
         }
     });
 
+    // ── Document messages ─────────────────────────────────────────────────
     bot.on('message:document', async (ctx) => {
         const uid = ctx.from?.id;
         if (!uid) return;
         const doc = ctx.message.document;
-        const caption = ctx.message.caption || '';
+        const caption = ctx.message.caption || 'Проанализируй этот файл.';
         await processAIRequest(ctx, `[Файл: ${doc.file_name}] ${caption}`, uid);
     });
 
+    // ── Text messages ─────────────────────────────────────────────────────
     bot.on('message:text', async (ctx: Context) => {
         const uid = ctx.from?.id;
         if (!uid) return;
@@ -153,51 +166,55 @@ export const setupBot = (bot: Bot) => {
 };
 
 // ============================================================
-//  CORE: streaming AI response — ONE message, edited in place
+//  CORE: streaming AI response — Claude-style live editing
 // ============================================================
 async function processAIRequest(ctx: Context, text: string, uid: number) {
     Logger.info('telegram', `Request from UID ${uid}: ${text.slice(0, 80)}`);
 
     ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
 
+    // ── Rate limiting ──────────────────────────────────────────────────────
     const user = db.prepare('SELECT subscription_plan, msg_count_today FROM users WHERE uid = ?').get(uid) as any;
     const plan = user?.subscription_plan || 'free';
     const limit = plan === 'pro' ? 9999 : plan === 'middle' ? 200 : 50;
     const count = user?.msg_count_today || 0;
 
     if (count >= limit) {
+        const kb = new InlineKeyboard().text('💎 Посмотреть тарифы', 'cmd:tariffs');
         await ctx.reply(
-            `⚠️ *Лимит сообщений исчерпан* (${limit}/день)\nОбнови план: /tariffs`,
-            { parse_mode: 'Markdown' }
+            `⚠️ *Лимит исчерпан* — ${limit} сообщений/день\n\nОбнови план для продолжения.`,
+            { parse_mode: 'Markdown', reply_markup: kb }
         );
         return;
     }
 
     db.prepare('UPDATE users SET msg_count_today = msg_count_today + 1 WHERE uid = ?').run(uid);
+
+    // ── Show typing indicator ──────────────────────────────────────────────
     await ctx.replyWithChatAction('typing').catch(() => {});
 
     let fullText = '';
-    // Use null instead of 0 — 0 is falsy and caused the bug!
     let sentMsgId: number | null = null;
     let lastEditedText = '';
     let streamDone = false;
     let editInProgress = false;
 
-    // Keep sending "typing" indicator every 4.5s
+    // Keep sending typing every TYPING_INTERVAL_MS
     const typingTimer = setInterval(() => {
         if (!streamDone) ctx.replyWithChatAction('typing').catch(() => {});
-    }, 4500);
+    }, TYPING_INTERVAL_MS);
 
-    // Edit the single streaming message every STREAM_EDIT_INTERVAL_MS
+    // Live-edit the streaming message
     const editTimer = setInterval(async () => {
-        if (sentMsgId === null) return;  // no message sent yet
-        if (streamDone) return;          // stream finished, final edit handled below
-        if (editInProgress) return;      // previous edit still running
-        if (fullText === lastEditedText) return; // nothing new
+        if (sentMsgId === null) return;
+        if (streamDone) return;
+        if (editInProgress) return;
+        if (fullText === lastEditedText) return;
 
         editInProgress = true;
         lastEditedText = fullText;
-        await safeEdit(ctx, sentMsgId, fullText + ' ▍');
+        const cursor = nextCursor();
+        await safeEdit(ctx, sentMsgId, fullText + ' ' + cursor);
         editInProgress = false;
     }, STREAM_EDIT_INTERVAL_MS);
 
@@ -207,7 +224,7 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
         await executeAI(text, uid, history, async (chunk: string) => {
             fullText += chunk;
 
-            // Send the FIRST message only once when we have enough text
+            // Send first message once we have enough text
             if (sentMsgId === null && fullText.trim().length >= STREAM_FIRST_SEND_CHARS) {
                 try {
                     const msg = await ctx.reply(truncate(fullText) + ' ▍', { parse_mode: 'Markdown' });
@@ -236,28 +253,29 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
         const chunks = splitMessage(fullText);
 
         if (sentMsgId !== null) {
-            // Final edit of first chunk (no cursor)
+            // Final edit — no cursor
             await safeEdit(ctx, sentMsgId, chunks[0]);
-            // Any overflow goes as new messages
+            // Overflow chunks
             for (let i = 1; i < chunks.length; i++) {
                 await ctx.reply(chunks[i], { parse_mode: 'Markdown' }).catch(() =>
                     ctx.reply(stripMarkdown(chunks[i]))
                 );
             }
         } else {
-            // Response was short, never triggered streaming message
+            // Short response — never triggered streaming
             for (const chunk of chunks) {
                 await ctx.reply(chunk, { parse_mode: 'Markdown' }).catch(() =>
                     ctx.reply(stripMarkdown(chunk))
                 );
             }
         }
+
     } catch (err) {
         streamDone = true;
         clearInterval(typingTimer);
         clearInterval(editTimer);
         Logger.error('telegram', `AI request failed for UID ${uid}`, err);
-        await ctx.reply('❌ Что-то пошло не так. Попробуй ещё раз.');
+        await ctx.reply('❌ Что-то пошло не так. Попробуй ещё раз или начни новый чат: /new');
     }
 }
 
@@ -312,9 +330,12 @@ function stripMarkdown(text: string): string {
     return text
         .replace(/\*\*(.*?)\*\*/g, '$1')
         .replace(/\*(.*?)\*/g, '$1')
+        .replace(/__(.*?)__/g, '$1')
         .replace(/_(.*?)_/g, '$1')
         .replace(/`(.*?)`/g, '$1')
-        .replace(/```[\s\S]*?```/g, '[code]');
+        .replace(/```[\s\S]*?```/g, '[code]')
+        .replace(/#{1,6}\s/g, '')
+        .replace(/^[-*]\s/gm, '• ');
 }
 
 function truncate(text: string, max = 3800): string {
