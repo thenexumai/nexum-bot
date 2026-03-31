@@ -1,11 +1,7 @@
 import React, { useState } from 'react';
-import { Layout, Search, Monitor, Wallet, Book, Flame, Users, Settings, Cpu, Activity } from 'lucide-react';
-import MissionDesigner from './components/MissionDesigner';
-import MissionDashboard from './components/MissionDashboard';
-import ScreenStream from './components/ScreenStream';
+import { Layout, Search, Monitor, Wallet, Book, Flame, Users, Settings, Cpu } from 'lucide-react';
 
 const NEXUM_LOGO = "/NEXUM LOGO.PNG";
-const USER_ID = 387182659; // Твой ID для разработки
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('browser');
@@ -18,7 +14,6 @@ export default function App() {
         
         <div className="flex-1 flex flex-col gap-6">
           <NavItem icon={<Monitor />} active={activeTab === 'browser'} onClick={() => setActiveTab('browser')} />
-          <NavItem icon={<Activity />} active={activeTab === 'missions'} onClick={() => setActiveTab('missions')} />
           <NavItem icon={<Search />} active={activeTab === 'search'} onClick={() => setActiveTab('search')} />
           <NavItem icon={<Wallet />} active={activeTab === 'finance'} onClick={() => setActiveTab('finance')} />
           <NavItem icon={<Book />} active={activeTab === 'notes'} onClick={() => setActiveTab('notes')} />
@@ -34,17 +29,7 @@ export default function App() {
       {/* MAIN CONTENT AREA */}
       <div className="flex-1 overflow-hidden">
         {activeTab === 'browser' && <BrowserPortal />}
-        {activeTab === 'missions' && (
-          <div className="flex h-full">
-            <div className="flex-1 border-r border-[#1a1d27]">
-              <MissionDesigner uid={USER_ID} />
-            </div>
-            <div className="w-[450px] bg-[#0a0a0f]">
-              <MissionDashboard uid={USER_ID} />
-            </div>
-          </div>
-        )}
-        {/* Другие табы можно добавить здесь */}
+        {/* Остальные компоненты рендерятся по аналогии */}
       </div>
     </div>
   );
@@ -65,28 +50,28 @@ function BrowserPortal() {
   return (
     <div className="flex h-full">
       <div className="flex-1 flex flex-col">
-        <div className="h-14 bg-[#13131a] flex items-center px-6 gap-4 border-b border-[#1a1d27]">
+        <div className="h-14 bg-[#13131a] flex items-center px-6 gap-4 border-bottom border-[#1a1d27]">
           <div className="flex-1 bg-[#1c1c26] rounded-lg px-4 py-1.5 border border-[#2a2a38] text-sm text-[#9395a5]">
-            NEXUM LIVE DESKTOP
+            https://google.com
           </div>
           <div className="flex gap-2 text-xs font-bold text-[#22d3a5]">
             <div className="w-2 h-2 rounded-full bg-[#22d3a5] animate-pulse"></div>
             PC AGENT LINKED
           </div>
         </div>
-        <div className="flex-1 bg-black overflow-hidden">
-          <ScreenStream uid={USER_ID} />
+        <div className="flex-1 bg-black flex items-center justify-center">
+          <p className="text-[#5c5f72]">Waiting for stream from Nexum Agent...</p>
         </div>
       </div>
       
-      {/* SIDE AI PANEL */}
+      {/* SIDE AI PANEL (COMET STYLE) */}
       <div className="w-[400px] border-l border-[#1a1d27] bg-[#0a0a0f] p-6 flex flex-col">
         <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
           <Cpu className="text-[#6c63ff]" /> INTELLIGENCE
         </h2>
         <div className="flex-1 overflow-y-auto text-sm space-y-4">
           <div className="p-4 bg-[#13131a] rounded-lg border border-[#1a1d27]">
-            Hello Timur. I am currently analyzing the page. I can help you automate tasks or extract data.
+            Hello Timur. I am currently analyzing the current page. I can help you automate tasks or extract data.
           </div>
         </div>
         <div className="mt-4 pt-4 border-t border-[#1a1d27]">
@@ -95,7 +80,7 @@ function BrowserPortal() {
             placeholder="Ask anything..."
             rows={3}
           ></textarea>
-          <button className="w-full mt-3 bg-[#6c63ff] py-3 rounded-xl font-bold hover:opacity-90 transition-all shadow-[0_0_20px_rgba(108,99,255,0.2)]">
+          <button className="w-full mt-3 bg-[#6c63ff] py-3 rounded-xl font-bold hover:opacity-90 transition-all">
             EXECUTE AI REASONING
           </button>
         </div>

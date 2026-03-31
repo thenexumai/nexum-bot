@@ -52,7 +52,6 @@ export const initDB = () => {
             description TEXT,
             status      TEXT DEFAULT 'todo',
             priority    TEXT DEFAULT 'medium',
-            progress    INTEGER DEFAULT 0,
             due_date    DATETIME,
             updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
             created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,

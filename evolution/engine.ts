@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { chatUnified } from '../agent/router';
-import { Logger } from '../infra/logger';
+import { chatUnified } from '../src/agent/router';
+import { Logger } from '../src/infra/logger';
 
 export class EvolutionEngine {
     private static PROJECT_ROOT = path.join(__dirname, '../../');
@@ -31,8 +31,7 @@ export class EvolutionEngine {
         `;
 
         try {
-            // FIX: chatUnified needs uid (pass 0 for system tasks)
-            const response = await chatUnified([{ role: 'user', content: prompt }], 0);
+            const response = await chatUnified([{ role: 'user', content: prompt }]);
             const newCode = response.content.replace(/```typescript|```ts|```/g, '').trim();
             
             // Сохраняем бекап
@@ -41,7 +40,7 @@ export class EvolutionEngine {
             fs.writeFileSync(absolutePath, newCode);
             
             Logger.success('evolution', `Successfully evolved ${filePath}. Backup created.`);
-        } catch (e: any) {
+        } catch (e) {
             Logger.error('evolution', `Evolution failed for ${filePath}`, e);
         }
     }

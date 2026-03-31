@@ -1,8 +1,8 @@
-import { chatUnified } from '../agent/router';
-import { Logger } from '../infra/logger';
+import { chatUnified } from '../src/agent/router';
+import { Logger } from '../src/infra/logger';
 
 export class VisionReasoning {
-    static async planNextAction(screenshotBase64: string, objective: string, uid: number) {
+    static async planNextAction(screenshotBase64: string, objective: string) {
         Logger.info('vision', `Analyzing screen state for: ${objective}`);
         
         const prompt = `
@@ -29,10 +29,10 @@ export class VisionReasoning {
                     { type: 'text', text: prompt },
                     { type: 'image_url', image_url: { url: `data:image/png;base64,${screenshotBase64}` } }
                 ] 
-            }], uid);
+            }]);
             
             return JSON.parse(response.content.replace(/```json|```/g, '').trim());
-        } catch (e: any) {
+        } catch (e) {
             Logger.error('vision', 'Visual reasoning failed', e);
             return { action: 'error', error: e.message };
         }

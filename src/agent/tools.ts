@@ -5,10 +5,6 @@ import { agentConnections, pendingRequests } from '../index';
 import { MissionControl } from '../core/tasks/mission_control';
 import { PolicyEnforcer } from './policies/enforcer';
 import { KnowledgeGraph } from '../core/memory/knowledge_graph';
-import { CoderAgent } from '../intelligence/coder';
-import { VisionReasoning } from '../intelligence/vision';
-import { AILogger } from '../infra/ai_logger';
-import { AutoPatcher } from './capabilities/auto_patcher';
 
 // ============================================================
 //  TOOL DEFINITIONS (OpenAI function-calling format)
@@ -19,10 +15,12 @@ export const TOOLS = [
         type: 'function',
         function: {
             name: 'deep_search',
-            description: 'Search the web for current information (Perplexity-style).',
+            description: 'Search the web for current information. Use when user asks about news, facts, prices, or anything needing fresh data.',
             parameters: {
                 type: 'object',
-                properties: { query: { type: 'string' } },
+                properties: {
+                    query: { type: 'string', description: 'What to search for.' },
+                },
                 required: ['query'],
             },
         },
@@ -30,51 +28,29 @@ export const TOOLS = [
     {
         type: 'function',
         function: {
-            name: 'coding_task',
-            description: 'Write, refactor, or explain code across project files.',
+            name: 'add_memory',
+            description: 'Save an important fact about the user to long-term memory. Use when user shares personal info, preferences, or goals.',
             parameters: {
                 type: 'object',
                 properties: {
-                    instruction: { type: 'string' },
-                    files: { type: 'array', items: { type: 'string' } }
+                    key: { type: 'string', description: 'Short identifier for the fact (e.g. "user_name", "favorite_color").' },
+                    value: { type: 'string', description: 'The fact to remember.' },
                 },
-                required: ['instruction', 'files'],
+                required: ['key', 'value'],
             },
         },
     },
     {
         type: 'function',
         function: {
-            name: 'analyze_ui',
-            description: 'Use vision to analyze browser screen and find elements.',
+            name: 'recall_memory',
+            description: 'Look up what is known about the user from long-term memory.',
             parameters: {
                 type: 'object',
-                properties: { objective: { type: 'string' } },
-                required: ['objective'],
-            },
-        },
-    },
-    {
-        type: 'function',
-        function: {
-            name: 'browser_click',
-            description: 'Click on a web element by its nexum_id.',
-            parameters: {
-                type: 'object',
-                properties: { nexum_id: { type: 'number' } },
-                required: ['nexum_id'],
-            },
-        },
-    },
-    {
-        type: 'function',
-        function: {
-            name: 'browser_type',
-            description: 'Type text into a web element by its nexum_id.',
-            parameters: {
-                type: 'object',
-                properties: { nexum_id: { type: 'number' }, text: { type: 'string' } },
-                required: ['nexum_id', 'text'],
+                properties: {
+                    query: { type: 'string', description: 'What to look up.' },
+                },
+                required: ['query'],
             },
         },
     },
@@ -82,10 +58,12 @@ export const TOOLS = [
         type: 'function',
         function: {
             name: 'start_mission',
-            description: 'Start a long-running background autonomous task.',
+            description: 'Start a background autonomous mission (research, monitoring, scheduled tasks).',
             parameters: {
                 type: 'object',
-                properties: { objective: { type: 'string' } },
+                properties: {
+                    objective: { type: 'string', description: 'The goal of the mission.' },
+                },
                 required: ['objective'],
             },
         },
@@ -94,12 +72,19 @@ export const TOOLS = [
         type: 'function',
         function: {
             name: 'pc_command',
-            description: "Execute a command on the user's PC via NEXUM agent.",
+            description: "Execute a command on the user's connected PC via the NEXUM agent.",
             parameters: {
                 type: 'object',
                 properties: {
-                    action: { type: 'string', enum: ['shell', 'screenshot', 'mouse_move', 'click', 'key_press', 'type_text', 'list_files', 'read_file', 'write_file', 'sysinfo'] },
-                    args: { type: 'object' },
+                    action: {
+                        type: 'string',
+                        enum: ['shell', 'screenshot', 'mouse_move', 'click', 'key_press', 'type_text', 'list_files', 'read_file', 'write_file', 'delete_file', 'sysinfo'],
+                        description: 'The type of PC action to perform.',
+                    },
+                    args: {
+                        type: 'object',
+                        description: 'Arguments for the action (e.g. {"command": "ls -la"} for shell).',
+                    },
                 },
                 required: ['action', 'args'],
             },
@@ -107,46 +92,59 @@ export const TOOLS = [
     },
 ];
 
+// ============================================================
+//  TOOL HANDLER
+// ============================================================
+
 export const handleToolUse = async (toolName: string, args: any, uid: number): Promise<string> => {
-    Logger.info('agent', `Tool Call: ${toolName} | UID: ${uid}`);
-    AILogger.logThought(uid, `Executing tool: ${toolName}...`);
+    Logger.info('agent', `Tool: ${toolName} | UID: ${uid} | Args: ${JSON.stringify(args).slice(0, 100)}`);
 
     switch (toolName) {
-        case 'deep_search':
-            AILogger.logThought(uid, `Searching the web for: ${args.query}`);
-            const search = await Perplexer.deepSearch(args.query);
-            return `${search.answer}\n\nSources: ${search.sources.slice(0,3).map(s => s.link).join(', ')}`;
 
-        case 'coding_task':
-            AILogger.logThought(uid, `Writing code based on instruction: ${args.instruction}`);
-            const coderResult = await CoderAgent.solve(args.instruction, args.files);
-            if (coderResult.status === 'success') {
-                AutoPatcher.applyChanges(coderResult.raw!);
-                return `Code applied successfully to files: ${args.files.join(', ')}`;
+        case 'deep_search': {
+            try {
+                const result = await Perplexer.deepSearch(args.query);
+                const sources = result.sources
+                    ?.slice(0, 3)
+                    .map((s: any, i: number) => `[${i + 1}] ${s.title}: ${s.link}`)
+                    .join('\n') || '';
+                return `${result.answer}\n\n${sources ? `Sources:\n${sources}` : ''}`.trim();
+            } catch (e: any) {
+                return `Search failed: ${e.message}`;
             }
-            return `Coder Error: ${coderResult.message}`;
+        }
 
-        case 'analyze_ui':
-            AILogger.logThought(uid, `Analyzing your screen to find: ${args.objective}`);
-            const screenshot = await dispatchToAgent(uid, 'screenshot', {});
-            const vision = await VisionReasoning.planNextAction(screenshot, args.objective, uid);
-            AILogger.logThought(uid, `Vision Plan: ${vision.thought}`);
-            return `UI Analysis Result: ${JSON.stringify(vision)}`;
+        case 'add_memory': {
+            if (!args.key || !args.value) return 'Error: key and value required.';
+            KnowledgeGraph.saveManual(uid, args.key, args.value);
+            return `✅ Запомнил: ${args.key} = ${args.value}`;
+        }
 
-        case 'browser_click':
-            return await dispatchToAgent(uid, 'browser_click', { nexum_id: args.nexum_id });
+        case 'recall_memory': {
+            const context = await KnowledgeGraph.getContext(uid, args.query || '');
+            if (!context) return 'No relevant memories found.';
+            return `Known facts:\n${context}`;
+        }
 
-        case 'browser_type':
-            return await dispatchToAgent(uid, 'browser_type', { nexum_id: args.nexum_id, text: args.text });
+        case 'start_mission': {
+            try {
+                const missionId = await MissionControl.createMission(uid, args.objective);
+                return `Mission #${missionId} started. You'll get a Telegram notification when done.`;
+            } catch (e: any) {
+                return `Mission failed to start: ${e.message}`;
+            }
+        }
 
-        case 'start_mission':
-            const missionId = await MissionControl.createMission(uid, args.objective);
-            return `Mission #${missionId} initiated. Check Mission Dashboard.`;
-
-        case 'pc_command':
-            AILogger.logThought(uid, `Executing PC command: ${args.action}`);
-            if (args.action === 'shell' && PolicyEnforcer.isCommandBlocked(args.args?.command)) return '❌ BLOCKED BY POLICY';
+        case 'pc_command': {
+            // Safety checks
+            if (args.action === 'shell' && PolicyEnforcer.isCommandBlocked(args.args?.command)) {
+                return '❌ ERROR: Command blocked by safety policy.';
+            }
+            if (args.args?.path && PolicyEnforcer.isPathBlocked(args.args.path)) {
+                return '❌ ERROR: Path access restricted by safety policy.';
+            }
             return await dispatchToAgent(uid, args.action, args.args);
+        }
 
         default:
             return `Unknown tool: ${toolName}`;
@@ -175,7 +173,7 @@ async function dispatchToAgent(uid: number, action: string, args: any): Promise<
             clearTimeout(timeout);
             if (response.status === 'success') {
                 if (action === 'screenshot') {
-                    resolve(response.result); // Возвращаем base64
+                    resolve('📸 Screenshot captured. Sending to Telegram...');
                 } else {
                     resolve(`✅ ${JSON.stringify(response.result)}`);
                 }

@@ -95,24 +95,8 @@ export function setupAdminCommands(bot: Bot) {
     if (!ctx.from || !isAdmin(ctx.from.id)) { await ctx.reply('🛡 Admin only.'); return; }
     const id = parseInt(ctx.match?.trim() ?? '');
     if (isNaN(id)) { await ctx.reply('Usage: /approve_fix ID'); return; }
-
-    const fix = db.prepare('SELECT * FROM evolution_fixes WHERE id = ?').get(id) as any;
-    if (!fix) { await ctx.reply('❌ Fix not found.'); return; }
-
-    const { AutoPatcher } = await import('../../agent/capabilities/auto_patcher');
-    
-    try {
-        // Формируем формат, который понимает патчер
-        const patchContent = `[REPLACE FILE: ${fix.file_path}]\n${fix.suggested_fix}`;
-        AutoPatcher.applyChanges(patchContent);
-        
-        db.prepare("UPDATE evolution_fixes SET status = 'approved', updated_at = datetime('now') WHERE id = ?").run(id);
-        await ctx.reply(`✅ Фикс #${id} успешно применён к файловой системе.`);
-        Logger.success('admin', `Fix applied via AutoPatcher: ${fix.file_path}`);
-    } catch (e: any) {
-        await ctx.reply(`❌ Ошибка при применении фикса: ${e.message}`);
-        Logger.error('admin', 'AutoPatcher failed', e);
-    }
+    db.prepare("UPDATE evolution_fixes SET status = 'approved', resolved_at = datetime('now') WHERE id = ?").run(id);
+    await ctx.reply(`✅ Fix #${id} approved.`);
   });
 
   bot.command('reject_fix', async (ctx) => {
