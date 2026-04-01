@@ -69,7 +69,6 @@ function buildModeKeyboard(currentMode: ChatMode): InlineKeyboard {
 export const setupBot = (bot: Bot) => {
   setupCommands(bot);
 
-
   bot.command('mode', async (ctx) => {
     const uid = ctx.from?.id;
     if (!uid) return;
@@ -81,9 +80,6 @@ export const setupBot = (bot: Bot) => {
       { parse_mode: 'Markdown', reply_markup: keyboard }
     );
   });
-
-
-
 
   // ── ADMIN: /fix — исправить баг в боте через обычный текст ──
   bot.command('fix', async (ctx) => {
@@ -102,7 +98,6 @@ export const setupBot = (bot: Bot) => {
     }
     const msg = await ctx.reply('Анализирую проблему...');
 
-    // Извлекаем имя файла из описания если есть
     const fileMatch = description.match(/(\S+\.ts)/);
     const filePath = fileMatch ? `src/${fileMatch[1].replace(/^src\//, '')}` : 'src/index.ts';
     const fixDescription = description.replace(/\S+\.ts\s*[—-]?\s*/, '').trim() || description;
@@ -137,26 +132,25 @@ export const setupBot = (bot: Bot) => {
     const list = await listPending();
     await ctx.reply(`**Ожидающие патчи:**\n\n${list}`, { parse_mode: 'Markdown' }).catch(() => ctx.reply(list));
   });
-                  // /diag — диагностика (admin only)
-                  bot.command('diag', async (ctx) => {
-                    const uid = ctx.from?.id;
-                    if (!uid || !isAdmin(uid)) { await ctx.reply('Нет прав.'); return; }
-                    const { CONFIG, getModelChain } = await import('../core/config');
-                    const user = db.prepare('SELECT subscription_plan, lang FROM users WHERE uid = ?').get(uid) as any;
-                    const plan = user?.subscription_plan || 'free';
-                    const chain = getModelChain(uid, plan === 'pro');
-                    const prov = CONFIG.PROVIDERS;
-                    const provInfo = Object.keys(prov).map(p => `${p}: ${prov[p as any].length} ключей`).join("
-");
-                    const chainInfo = chain.map(c => `${c.provider}/${c.model}`).join("
-") || 'нет моделей';
-                    const text = `🛠 *NEXUM DIAG*\n\n` +
-                                 `👤 UID: ${uid}\n` +
-                                 `📦 План: ${plan}\n` +
-                                 `🔑 Провайдеры:\n${provInfo}\n\n` +
-                                 `🤖 Модели (getModelChain):\n${chainInfo}`;
-                    await ctx.reply(text, { parse_mode: 'Markdown' });
-                  });
+
+  // /diag — диагностика (admin only)
+  bot.command('diag', async (ctx) => {
+    const uid = ctx.from?.id;
+    if (!uid || !isAdmin(uid)) { await ctx.reply('Нет прав.'); return; }
+    const { CONFIG, getModelChain } = await import('../core/config');
+    const user = db.prepare('SELECT subscription_plan, lang FROM users WHERE uid = ?').get(uid) as any;
+    const plan = user?.subscription_plan || 'free';
+    const chain = getModelChain(uid, plan === 'pro');
+    const prov = CONFIG.PROVIDERS;
+    const provInfo = Object.keys(prov).map(p => `${p}: ${prov[p as any].length} ключей`).join('\n');
+    const chainInfo = chain.map(c => `${c.provider}/${c.model}`).join('\n') || 'нет моделей';
+    const text = `🛠 *NEXUM DIAG*\n\n` +
+                 `👤 UID: ${uid}\n` +
+                 `📦 План: ${plan}\n` +
+                 `🔑 Провайдеры:\n${provInfo}\n\n` +
+                 `🤖 Модели (getModelChain):\n${chainInfo}`;
+    await ctx.reply(text, { parse_mode: 'Markdown' });
+  });
 
   // ── Callback кнопки ──
 
@@ -199,26 +193,6 @@ export const setupBot = (bot: Bot) => {
       { parse_mode: 'Markdown' }
     );
   });
-
-  // /remind — установить напоминание
-
-  // /reminders — список напоминаний
-
-  // /search — поиск в интернете
-
-  // /tariffs
-
-  // /lang
-
-  // /memory — долгосрочная память
-
-  // /forget — очистить память
-
-  // /new — сброс сессии
-
-  // /apps — Mini Apps
-
-
 
   // ── Единый обработчик всех callback кнопок ──────────────────
   bot.on('callback_query:data', async (ctx) => {
@@ -380,7 +354,6 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
   let lastEditText = '';
   let lastEditTime = 0;
 
-  // Показываем typing пока идёт первый запрос к AI
   await ctx.replyWithChatAction('typing').catch(() => {});
   const typingInterval = setInterval(async () => {
     if (!sentMsgId) await ctx.replyWithChatAction('typing').catch(() => {});
@@ -392,9 +365,8 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
     for await (const chunk of executeAI(text, uid, history)) {
       fullText += chunk;
 
-      // ПЕРВЫЙ ЧАНк — отправляем сразу, без ожидания и без эмодзи-заглушки
       if (!sentMsgId) {
-        clearInterval(typingInterval as any); // прекращаем typing — текст уже виден
+        clearInterval(typingInterval as any);
         try {
           const sent = await ctx.reply(fullText, { parse_mode: 'Markdown' });
           sentMsgId = sent.message_id;
@@ -409,7 +381,6 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
         continue;
       }
 
-      // Редактируем по интервалу
       if (fullText !== lastEditText && Date.now() - lastEditTime >= STREAM_EDIT_INTERVAL_MS) {
         try {
           await ctx.api.editMessageText(ctx.chat!.id, sentMsgId, fullText, { parse_mode: 'Markdown' });
@@ -425,7 +396,6 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
       }
     }
 
-    // Финальный edit если текст изменился
     if (!sentMsgId && fullText) {
       try { await ctx.reply(fullText, { parse_mode: 'Markdown' }); }
       catch { await ctx.reply(fullText); }
