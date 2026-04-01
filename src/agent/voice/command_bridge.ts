@@ -15,17 +15,13 @@ export class VoiceCommandBridge {
         this.uid = uid;
     }
 
-    /**
-     * Called by WebSocket handler when PC Agent sends a raw audio chunk.
-     * Accumulates chunks until silence is detected, then transcribes + executes.
-     */
-    onAudioChunk(chunk: Buffer): void {  // FIX: was implicit any — explicitly typed as Buffer
+    onAudioChunk(chunk: Buffer): void {
         this.audioBuffer.push(chunk);
     }
 
     /**
      * Called when PC Agent signals end of voice segment.
-     * Transcribes accumulated audio and runs it through AI.
+     * executeAI is now an AsyncGenerator — collect all chunks into full response.
      */
     async onVoiceEnd(streamCallback?: (text: string) => void): Promise<string> {
         if (!this.audioBuffer.length) return '';
@@ -34,13 +30,19 @@ export class VoiceCommandBridge {
         this.audioBuffer = [];
 
         try {
-            Logger.info('voice-bridge', `Transcribing ${combined.length} bytes of audio for UID ${this.uid}`);
+            Logger.info('voice-bridge', `Transcribing ${combined.length} bytes for UID ${this.uid}`);
             const transcript = await transcribeVoice(combined);
             if (!transcript.trim()) return '';
 
             Logger.info('voice-bridge', `Transcript: "${transcript.slice(0, 80)}"`);
-            const result = await executeAI(transcript, this.uid, [], streamCallback);
-            return result.content;
+
+            // FIX: executeAI is AsyncGenerator(3 args) — collect chunks, call streamCallback per chunk
+            let fullResponse = '';
+            for await (const chunk of executeAI(transcript, this.uid, [])) {
+                fullResponse += chunk;
+                streamCallback?.(chunk);
+            }
+            return fullResponse;
         } catch (e: any) {
             Logger.error('voice-bridge', 'Voice command failed', e);
             return `❌ Ошибка: ${e.message}`;
