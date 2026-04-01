@@ -14,25 +14,47 @@ export interface AIResult {
     tool_used?: string | null;
 }
 
-/**
- * executeAI — AsyncGenerator для стриминга токенов.
- *
- * handler.ts делает: for await (const chunk of executeAI(...))
- * Каждый chunk — строка-токен из AI провайдера.
- * После итерации handler читает .result для финального контента.
- */
+function buildSystemPrompt(user: any, userCtx: any, longTermMemory: string): string {
+    const lang = user?.lang || 'ru';
+    const plan = user?.subscription_plan || 'free';
+
+    return `You are NEXUM — a highly capable personal AI assistant, similar in style to Claude by Anthropic.
+
+## Your communication style
+- Write naturally, like a thoughtful person — not a robot or a corporate assistant
+- Use clear, well-structured prose. When listing things, use proper numbered lists (1. 2. 3.) or hyphens (–), never asterisks (*) as bullets
+- Use emoji sparingly and meaningfully — maybe 1–2 per response max, never at the start of every line
+- Match the user's tone: casual if they're casual, precise if they're asking for something technical
+- Be direct and concise. Don't pad responses with filler phrases like "Great question!" or "Certainly!"
+- For code: always use code blocks. For math: use plain text formulas
+- Never start your response with an emoji or a greeting if the conversation is already in progress
+
+## Formatting rules (CRITICAL)
+- Lists: use "1." "2." for ordered, "–" for unordered. Never use "*" as a bullet point
+- Headers: use bold (**Header**) sparingly, only for long structured responses
+- Keep responses appropriately sized — don't over-explain simple things
+- When unsure about something, say so honestly instead of making things up
+
+## User context
+- Language: ${lang} — always respond in this language
+- Plan: ${plan}
+- PC Agent: ${userCtx?.pcAgentConnected ? 'connected' : 'not connected'}
+
+${longTermMemory ? `## What you know about this user\n${longTermMemory}` : ''}
+
+${getSoulContextSync()}`.trim();
+}
+
 export async function* executeAI(
     prompt: string,
     uid?: number,
     history: { role: string; content: string }[] = [],
 ): AsyncGenerator<string, void, unknown> {
 
-    Logger.info('agent', `NEXUM Engine: Processing for UID ${uid ?? 'anonymous'}`);
+    Logger.info('agent', `NEXUM Engine: UID ${uid ?? 'anon'}`);
 
-    // ── deep_search shortcut ──────────────────────────────────────────────────
     if (prompt.startsWith('[deep_search] ')) {
         const query = prompt.slice('[deep_search] '.length).trim();
-        Logger.info('agent', `Deep search mode: ${query}`);
         try {
             const result = await Perplexer.deepSearch(query, uid);
             yield result.answer;
@@ -43,7 +65,6 @@ export async function* executeAI(
             return;
         } catch (e) {
             Logger.error('agent', 'Perplexer failed', e);
-            // fall through to normal chat
         }
     }
 
@@ -52,27 +73,11 @@ export async function* executeAI(
         : null;
 
     const userCtx = uid ? getContext(uid) : null;
-
     const longTermMemory = uid
         ? await KnowledgeGraph.getContext(uid, prompt).catch(() => '')
         : '';
 
-    const baseSoul = getSoulContextSync();
-
-    const systemPrompt = `
-${baseSoul}
-
-USER STATE:
-- Language: ${user?.lang || 'ru'}
-- Plan: ${user?.subscription_plan || 'free'}
-- PC Agent: ${userCtx?.pcAgentConnected ? 'ONLINE' : 'OFFLINE'}
-
-LONG-TERM MEMORY ABOUT USER:
-${longTermMemory || 'No facts recalled yet.'}
-
-MISSION: Be the ultimate personal AI. Use tools when needed.
-Always respond in the user's language (${user?.lang || 'ru'}).
-    `.trim();
+    const systemPrompt = buildSystemPrompt(user, userCtx, longTermMemory);
 
     const historyMessages: Message[] = history
         .filter(m => m.role === 'user' || m.role === 'assistant')
@@ -84,7 +89,6 @@ Always respond in the user's language (${user?.lang || 'ru'}).
         { role: 'user', content: prompt },
     ];
 
-    // ── STREAMING PATH ────────────────────────────────────────────────────────
     let fullResponse = '';
     try {
         for await (const chunk of chatStream(messages, uid ?? 0)) {
@@ -93,7 +97,6 @@ Always respond in the user's language (${user?.lang || 'ru'}).
         }
     } catch (err) {
         Logger.error('agent', 'Streaming failed, falling back to chatUnified', err);
-        // Fallback — single-shot, yield whole response at once
         try {
             const fallback = await chatUnified(messages, uid ?? 0, TOOLS);
             fullResponse = fallback.content || '';
@@ -105,23 +108,18 @@ Always respond in the user's language (${user?.lang || 'ru'}).
         }
     }
 
-    // Persist to memory after streaming completes
     if (uid && fullResponse) {
         updateContext(uid, { lastActivity: Date.now() });
         KnowledgeGraph.addFact(uid, prompt + '\n' + fullResponse).catch(() => {});
     }
 }
 
-/**
- * executeAIOnce — non-streaming version for REST API / agent.html
- * Uses tool-use loop via chatUnified.
- */
 export const executeAIOnce = async (
     prompt: string,
     uid?: number,
     history: { role: string; content: string }[] = [],
 ): Promise<AIResult> => {
-    Logger.info('agent', `NEXUM REST: Processing for UID ${uid ?? 'anonymous'}`);
+    Logger.info('agent', `NEXUM REST: UID ${uid ?? 'anon'}`);
 
     if (prompt.startsWith('[deep_search] ')) {
         const query = prompt.slice('[deep_search] '.length).trim();
@@ -142,16 +140,7 @@ export const executeAIOnce = async (
         ? await KnowledgeGraph.getContext(uid, prompt).catch(() => '')
         : '';
 
-    const systemPrompt = `
-${getSoulContextSync()}
-
-USER STATE:
-- Language: ${user?.lang || 'ru'}
-- Plan: ${user?.subscription_plan || 'free'}
-- PC Agent: ${userCtx?.pcAgentConnected ? 'ONLINE' : 'OFFLINE'}
-
-LONG-TERM MEMORY: ${longTermMemory || 'No facts recalled yet.'}
-    `.trim();
+    const systemPrompt = buildSystemPrompt(user, userCtx, longTermMemory);
 
     const historyMessages: Message[] = history
         .filter(m => m.role === 'user' || m.role === 'assistant')
