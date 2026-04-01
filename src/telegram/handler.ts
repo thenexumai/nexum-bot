@@ -68,30 +68,6 @@ function buildModeKeyboard(currentMode: ChatMode): InlineKeyboard {
 export const setupBot = (bot: Bot) => {
   setupCommands(bot);
 
-  bot.command('start', async (ctx) => {
-    const uid = ctx.from?.id;
-    if (uid) ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
-    const firstName = ctx.from?.first_name || 'там';
-    const keyboard = new InlineKeyboard()
-      .text('💬 Новый чат', 'start_newchat')
-      .text('🎯 Режимы', 'start_modes')
-      .row()
-      .text('💰 Финансы', 'start_finance')
-      .text('✅ Задачи', 'start_tasks')
-      .row()
-      .url('🌐 Открыть NEXUM Web', CONFIG.WEBAPP_URL || 'https://thenexum.ai')
-      .row()
-      .text('💎 Тарифы', 'start_tariffs')
-      .text('❓ Помощь', 'start_help');
-
-    await ctx.reply(
-      `Привет, ${firstName}!\n\n` +
-      `Я NEXUM — твой персональный AI-помощник.\n\n` +
-      `Могу помочь с любыми вопросами, кодом, анализом, финансами, задачами. Работаю с голосом и изображениями.\n\n` +
-      `Просто напиши что нужно.`,
-      { parse_mode: 'Markdown', reply_markup: keyboard }
-    );
-  });
 
   bot.command('mode', async (ctx) => {
     const uid = ctx.from?.id;
@@ -105,48 +81,8 @@ export const setupBot = (bot: Bot) => {
     );
   });
 
-  bot.command('clear', async (ctx) => {
-    const uid = ctx.from?.id;
-    if (!uid) return;
-    try { db.prepare('DELETE FROM messages WHERE uid = ?').run(uid); } catch { }
-    await ctx.reply('История диалога очищена.');
-  });
 
-  bot.command('help', async (ctx) => {
-    await ctx.reply(
-      `**Команды NEXUM**\n\n` +
-      `/start — главное меню\n` +
-      `/mode — режим ответов\n` +
-      `/clear — очистить историю\n` +
-      `/search [запрос] — поиск в интернете\n` +
-      `/status — твой план и лимиты\n` +
-      `/tariffs — тарифные планы\n\n` +
-      `Для администратора:\n` +
-      `/improve <файл> <описание> — предложить правку кода\n` +
-      `/fix <описание ошибки> — исправить баг в боте\n` +
-      `/patches — список ожидающих патчей`,
-      { parse_mode: 'Markdown' }
-    );
-  });
 
-  bot.command('status', async (ctx) => {
-    const uid = ctx.from?.id;
-    if (!uid) return;
-    ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
-    const user = db.prepare('SELECT subscription_plan, msg_count_today FROM users WHERE uid = ?').get(uid) as any;
-    const plan = user?.subscription_plan || 'free';
-    const count = user?.msg_count_today || 0;
-    const limit = plan === 'pro' ? 9999 : plan === 'middle' ? 200 : 50;
-    const mode = getUserMode(uid);
-    await ctx.reply(
-      `**Твой статус**\n\n` +
-      `План: ${plan.toUpperCase()}\n` +
-      `Сообщений сегодня: ${count}/${limit === 9999 ? '∞' : limit}\n` +
-      `Режим: ${MODE_LABELS[mode]}\n\n` +
-      (count >= limit ? 'Лимит исчерпан. /tariffs' : `Осталось: ${limit - count}`),
-      { parse_mode: 'Markdown' }
-    );
-  });
 
   // ── ADMIN: /fix — исправить баг в боте через обычный текст ──
   bot.command('fix', async (ctx) => {
@@ -244,177 +180,22 @@ export const setupBot = (bot: Bot) => {
   });
 
   // /remind — установить напоминание
-  bot.command('remind', async (ctx) => {
-    const uid = ctx.from?.id;
-    if (!uid) return;
-    const args = ctx.message?.text?.replace('/remind', '').trim() || '';
-    if (!args) {
-      await ctx.reply(
-        '⏰ *Напоминание*\n\nИспользование:\n`/remind <текст> <время>`\n\n' +
-        'Примеры:\n' +
-        '`/remind купить молоко через 30 минут`\n' +
-        '`/remind позвонить клиенту через 2 часа`\n\n' +
-        'Или просто напиши мне: "напомни купить хлеб через 10 минут"',
-        { parse_mode: 'Markdown' }
-      );
-      return;
-    }
-
-    const patterns = [
-      { re: /через\s+(\d+)\s*(минут|мин|м)/i, mult: 60000 },
-      { re: /через\s+(\d+)\s*(час|ч)/i, mult: 3600000 },
-      { re: /in\s+(\d+)\s*(min|minute)/i, mult: 60000 },
-      { re: /in\s+(\d+)\s*(hour|h)/i, mult: 3600000 },
-    ];
-
-    let ms = 0;
-    for (const p of patterns) {
-      const m = args.match(p.re);
-      if (m) { ms = parseInt(m[1]) * p.mult; break; }
-    }
-
-    if (!ms) {
-      await ctx.reply('❓ Не понял время. Напиши: `/remind текст через N минут`', { parse_mode: 'Markdown' });
-      return;
-    }
-
-    const reminderText = args.replace(/через\s+\d+\s*(минут|мин|час|часов|ч|min|hour|h)/i, '').trim() || args;
-    const fireAt = new Date(Date.now() + ms).toISOString();
-    db.prepare('INSERT INTO reminders (chat_id, uid, text, fire_at) VALUES (?, ?, ?, ?)').run(uid, uid, reminderText, fireAt);
-
-    const minutes = Math.round(ms / 60000);
-    await ctx.reply(`✅ Напомню через *${minutes < 60 ? minutes + ' мин' : Math.round(minutes/60) + ' ч'}*:\n_${reminderText}_`, { parse_mode: 'Markdown' });
-  });
 
   // /reminders — список напоминаний
-  bot.command('reminders', async (ctx) => {
-    const uid = ctx.from?.id;
-    if (!uid) return;
-    const rows = db.prepare(
-      `SELECT id, text, fire_at FROM reminders WHERE uid=? AND done=0 AND fire_at > datetime('now') ORDER BY fire_at LIMIT 10`
-    ).all(uid) as any[];
-
-    if (!rows.length) {
-      await ctx.reply('📋 Активных напоминаний нет.');
-      return;
-    }
-
-    const text = rows.map((r, i) => {
-      const t = new Date(r.fire_at);
-      const timeStr = t.toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
-      return `${i+1}. ⏰ ${timeStr}\n   _${r.text.slice(0, 80)}_`;
-    }).join('\n\n');
-
-    await ctx.reply(`📋 *Твои напоминания:*\n\n${text}`, { parse_mode: 'Markdown' });
-  });
 
   // /search — поиск в интернете
-  bot.command('search', async (ctx) => {
-    const uid = ctx.from?.id;
-    if (!uid) return;
-    const query = ctx.message?.text?.replace('/search', '').trim() || '';
-    if (!query) {
-      await ctx.reply('🔍 Использование: `/search ваш запрос`', { parse_mode: 'Markdown' });
-      return;
-    }
-    const msg = await ctx.reply('🔍 Ищу...');
-    try {
-      const { webSearchFormatted } = await import('../tools/search');
-      const result = await webSearchFormatted(query);
-      await ctx.api.editMessageText(ctx.chat!.id, msg.message_id, result, { parse_mode: 'Markdown' }).catch(async () => {
-        await ctx.reply(result, { parse_mode: 'Markdown' });
-      });
-    } catch {
-      await ctx.api.editMessageText(ctx.chat!.id, msg.message_id, '❌ Ошибка поиска. Попробуй позже.').catch(() => {});
-    }
-  });
 
   // /tariffs
-  bot.command('tariffs', async (ctx) => {
-    await ctx.reply(
-      `💎 *Тарифы NEXUM*\n\n` +
-      `🆓 *Free* — 50 сообщений/день\nБазовый AI, память, задачи\n\n` +
-      `⚡ *Middle* — 200 сообщений/день\n+ Напоминания, голос, Mini Apps, навыки\n\n` +
-      `💎 *Pro* — без ограничений\n+ PC Агент, свои API ключи, приоритетные модели, профиль\n\n` +
-      `📩 Подключить: @nexum_support`,
-      { parse_mode: 'Markdown' }
-    );
-  });
 
   // /lang
-  bot.command('lang', async (ctx) => {
-    const uid = ctx.from?.id;
-    if (!uid) return;
-    const lang = ctx.message?.text?.replace('/lang', '').trim() || '';
-    if (!lang || !['ru', 'en'].includes(lang)) {
-      await ctx.reply('🌍 Использование: `/lang ru` или `/lang en`', { parse_mode: 'Markdown' });
-      return;
-    }
-    db.prepare('UPDATE users SET lang=? WHERE uid=?').run(lang, uid);
-    await ctx.reply(lang === 'ru' ? '✅ Язык: **Русский**' : '✅ Language: **English**', { parse_mode: 'Markdown' });
-  });
 
   // /memory — долгосрочная память
-  bot.command('memory', async (ctx) => {
-    const uid = ctx.from?.id;
-    if (!uid) return;
-    const { KnowledgeGraph } = await import('../core/memory/knowledge_graph');
-    const { LongTermMemory } = await import('../core/evolution_memory/long_term_memory');
-    const facts = KnowledgeGraph.listFacts(uid);
-    const ltm = db.prepare('SELECT compressed_summary, total_messages FROM long_term_memory WHERE uid=?').get(uid) as any;
-
-    let text = `🧠 *Память NEXUM о тебе*\n\n`;
-    if (ltm?.total_messages) text += `📊 Всего взаимодействий: *${ltm.total_messages}*\n\n`;
-    if (ltm?.compressed_summary) {
-      text += `📖 *История (сводка):*\n${ltm.compressed_summary.slice(0, 400)}...\n\n`;
-    }
-    if (facts.length) {
-      text += `🔹 *Известные факты:*\n` + facts.slice(0, 10).map((f: any) => `• *${f.key}*: ${f.value}`).join('\n');
-    } else {
-      text += 'Фактов пока нет. Расскажи мне о себе!';
-    }
-    await ctx.reply(text, { parse_mode: 'Markdown' });
-  });
 
   // /forget — очистить память
-  bot.command('forget', async (ctx) => {
-    const uid = ctx.from?.id;
-    if (!uid) return;
-    db.prepare('DELETE FROM memory WHERE uid=?').run(uid);
-    db.prepare('DELETE FROM persistent_facts WHERE uid=?').run(uid);
-    db.prepare('DELETE FROM long_term_memory WHERE uid=?').run(uid);
-    db.prepare('DELETE FROM user_insights WHERE uid=?').run(uid);
-    await ctx.reply('🗑 *Вся память очищена.*', { parse_mode: 'Markdown' });
-  });
 
   // /new — сброс сессии
-  bot.command('new', async (ctx) => {
-    const uid = ctx.from?.id;
-    if (!uid) return;
-    db.prepare('DELETE FROM sessions WHERE uid=?').run(uid);
-    await ctx.reply('🔄 *Сессия сброшена.* Начинаем с чистого листа!', { parse_mode: 'Markdown' });
-  });
 
   // /apps — Mini Apps
-  bot.command('apps', async (ctx) => {
-    const uid = ctx.from?.id;
-    if (!uid) return;
-    const { CONFIG } = await import('../core/config');
-    const { InlineKeyboard } = await import('grammy');
-    const base = CONFIG.WEBAPP_URL || 'https://nexum.railway.app';
-    const keyboard = new InlineKeyboard()
-      .webApp('✅ Задачи',    `${base}/tasks.html?uid=${uid}`)
-      .webApp('💰 Финансы',   `${base}/finance.html?uid=${uid}`)
-      .row()
-      .webApp('📝 Заметки',   `${base}/notes.html?uid=${uid}`)
-      .webApp('📅 Календарь', `${base}/calendar.html?uid=${uid}`)
-      .row()
-      .webApp('💪 Привычки',  `${base}/habits.html?uid=${uid}`)
-      .webApp('📇 Контакты',  `${base}/contacts.html?uid=${uid}`)
-      .row()
-      .webApp('⚙️ Настройки', `${base}/settings.html?uid=${uid}`);
-    await ctx.reply('📱 *NEXUM Mini Apps*\n\nВыбери приложение:', { parse_mode: 'Markdown', reply_markup: keyboard });
-  });
 
   bot.on('callback_query:data', async (ctx) => {
     const data = ctx.callbackQuery.data;

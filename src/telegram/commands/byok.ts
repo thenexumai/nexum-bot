@@ -88,3 +88,33 @@ export function setupByokCommands(bot: Bot) {
     await ctx.reply(`🗑 Ключ для *${provider}* удалён.`, { parse_mode: 'Markdown' });
   });
 }
+
+// /byok — алиас для удобства (показывает список и подсказку)
+// Регистрируется отдельно чтобы команда была видна в меню
+export function setupByokAlias(bot: Bot) {
+  bot.command('byok', async (ctx) => {
+    const uid = ctx.from!.id;
+    const keys = (db.prepare('SELECT provider FROM byok_keys WHERE uid=?').all(uid) as any[]).map(r => r.provider);
+    if (keys.length) {
+      await ctx.reply(
+        `🔑 *Твои API ключи:* ${keys.join(', ')}\n\n` +
+        `Добавить: /setkey <provider> <key>\n` +
+        `Удалить: /rmkey <provider>\n` +
+        `Посмотреть: /mykeys\n\n` +
+        `Провайдеры: claude, groq, gemini, deepseek, grok, openrouter`,
+        { parse_mode: 'Markdown' }
+      );
+    } else {
+      await ctx.reply(
+        `🔑 *BYOK — Bring Your Own Key*\n\n` +
+        `Добавь свои API ключи для использования любого провайдера.\n\n` +
+        `Использование:\n` +
+        `/setkey claude sk-ant-...\n` +
+        `/setkey groq gsk_...\n` +
+        `/setkey gemini AIza...\n\n` +
+        `Провайдеры: claude, groq, gemini, deepseek, grok, openrouter`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+  });
+}
