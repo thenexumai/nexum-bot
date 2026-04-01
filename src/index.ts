@@ -11,6 +11,9 @@ import { setupBot } from './telegram/handler';
 import { migrateEvolutionTables } from './core/migrations';
 import { startMonitor } from './infra/monitor';
 import { startReminderCron } from './tools/reminders';
+import { SkillManager } from './core/skills/skill_manager';
+import { UserModel } from './core/user_model/user_model';
+import { LongTermMemory } from './core/evolution_memory/long_term_memory';
 
 // ============================================================
 //  BOT INSTANCE
@@ -396,6 +399,123 @@ function setupApiRoutes() {
 // ============================================================
 //  WEBSOCKET: PC Agent Bridge
 // ============================================================
+
+    // ════════════════════════════════════════════════════════
+    //  NEXUM ECOSYSTEM API — единый uid для бота, браузера, агента
+    // ════════════════════════════════════════════════════════
+
+    // Генерация токена экосистемы при /start (браузер/агент используют его для привязки)
+    const ecosystemTokens = new Map<string, { uid: number; expires: number }>();
+
+    app.post('/api/ecosystem/token', (req, res) => {
+        const uid = Number(req.body.uid);
+        if (!uid) return res.status(400).json({ error: 'uid required' });
+        const token = require('crypto').randomBytes(24).toString('hex');
+        ecosystemTokens.set(token, { uid, expires: Date.now() + 30 * 24 * 60 * 60 * 1000 }); // 30 дней
+        db.prepare(`
+            INSERT INTO users (uid) VALUES (?) ON CONFLICT(uid) DO NOTHING
+        `).run(uid);
+        // Сохраняем токен в БД для персистентности
+        db.prepare(`
+            CREATE TABLE IF NOT EXISTS ecosystem_tokens (
+                token TEXT PRIMARY KEY, uid INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `).run();
+        db.prepare(`INSERT OR REPLACE INTO ecosystem_tokens (token, uid) VALUES (?, ?)`).run(token, uid);
+        res.json({ token, uid });
+    });
+
+    // Резолв токена → uid (используется браузером и агентом)
+    app.get('/api/ecosystem/resolve', (req, res) => {
+        const token = String(req.query.token || '');
+        if (!token) return res.status(400).json({ error: 'token required' });
+        try {
+            const row = db.prepare(`SELECT uid FROM ecosystem_tokens WHERE token=?`).get(token) as any;
+            if (!row) return res.status(404).json({ error: 'token not found' });
+            return res.json({ uid: row.uid });
+        } catch {
+            const cached = ecosystemTokens.get(token);
+            if (!cached || Date.now() > cached.expires) return res.status(404).json({ error: 'expired' });
+            return res.json({ uid: cached.uid });
+        }
+    });
+
+    // ── Skills API (браузер + агент) ──────────────────────────
+    app.get('/api/skills', (req, res) => {
+        const uid = Number(req.query.uid);
+        if (!uid) return res.status(400).json({ error: 'uid required' });
+        const skills = SkillManager.listSkills(uid);
+        res.json(skills);
+    });
+
+    app.delete('/api/skills/:id', (req, res) => {
+        db.prepare('DELETE FROM skills WHERE id=?').run(req.params.id);
+        res.json({ ok: true });
+    });
+
+    // ── User Profile / Model API ──────────────────────────────
+    app.get('/api/profile', (req, res) => {
+        const uid = Number(req.query.uid);
+        if (!uid) return res.status(400).json({ error: 'uid required' });
+        const profile = UserModel.getProfile(uid);
+        if (!profile) return res.json({ uid, profile_completeness: 0, message: 'No profile yet' });
+        res.json(profile);
+    });
+
+    // ── Long-Term Memory API ──────────────────────────────────
+    app.get('/api/ltm', (req, res) => {
+        const uid = Number(req.query.uid);
+        if (!uid) return res.status(400).json({ error: 'uid required' });
+        const ltm = db.prepare('SELECT * FROM long_term_memory WHERE uid=?').get(uid) as any;
+        const facts = db.prepare('SELECT * FROM persistent_facts WHERE uid=? ORDER BY importance DESC LIMIT 30').all(uid);
+        const insights = db.prepare('SELECT * FROM user_insights WHERE uid=? ORDER BY created_at DESC LIMIT 10').all(uid);
+        res.json({ ltm: ltm || {}, facts, insights });
+    });
+
+    app.delete('/api/ltm', (req, res) => {
+        const uid = Number(req.query.uid);
+        if (!uid) return res.status(400).json({ error: 'uid required' });
+        db.prepare('DELETE FROM long_term_memory WHERE uid=?').run(uid);
+        db.prepare('DELETE FROM persistent_facts WHERE uid=?').run(uid);
+        db.prepare('DELETE FROM user_insights WHERE uid=?').run(uid);
+        res.json({ ok: true });
+    });
+
+    // ── Reminders API (браузер + агент) ──────────────────────
+    app.get('/api/reminders', (req, res) => {
+        const uid = Number(req.query.uid);
+        if (!uid) return res.status(400).json({ error: 'uid required' });
+        const rows = db.prepare(
+            `SELECT * FROM reminders WHERE uid=? AND done=0 AND fire_at > datetime('now') ORDER BY fire_at`
+        ).all(uid);
+        res.json(rows);
+    });
+
+    app.post('/api/reminders', (req, res) => {
+        const { uid, text, fire_at } = req.body;
+        if (!uid || !text || !fire_at) return res.status(400).json({ error: 'uid, text, fire_at required' });
+        const r = db.prepare('INSERT INTO reminders (chat_id, uid, text, fire_at) VALUES (?,?,?,?)').run(uid, uid, text, fire_at);
+        res.json({ id: r.lastInsertRowid });
+    });
+
+    app.delete('/api/reminders/:id', (req, res) => {
+        db.prepare('UPDATE reminders SET done=1 WHERE id=?').run(req.params.id);
+        res.json({ ok: true });
+    });
+
+    // ── Web Search API (браузер) ──────────────────────────────
+    app.get('/api/search', async (req, res) => {
+        const q = String(req.query.q || '');
+        if (!q) return res.status(400).json({ error: 'q required' });
+        try {
+            const { webSearch } = await import('./tools/search');
+            const results = await webSearch(q);
+            res.json(results);
+        } catch (e: any) {
+            res.status(500).json({ error: e?.message });
+        }
+    });
+
 function setupWebSocket() {
     wss.on('connection', (ws) => {
         let connectedUid: number | null = null;
@@ -473,6 +593,10 @@ async function bootstrap() {
     initDB();
     migrateEvolutionTables(db);
     initByokDb(db);
+    SkillManager.init();
+    UserModel.init();
+    LongTermMemory.init();
+    Logger.success('system', 'Skill + UserModel + LongTermMemory initialized ✅');
     Logger.success('system', 'Database ready ✅');
 
     setupApiRoutes();
@@ -481,6 +605,13 @@ async function bootstrap() {
 
     startMonitor();
     startReminderCron(bot);
+    // Self-reminder cron — агент напоминает о важных задачах каждые 2 часа
+    setInterval(async () => {
+        try {
+            const users = db.prepare("SELECT uid FROM users WHERE subscription_plan IN ('middle','pro')").all() as any[];
+            for (const u of users) { await LongTermMemory.selfReminder(u.uid, bot).catch(() => {}); }
+        } catch {}
+    }, 2 * 60 * 60 * 1000);
     Logger.success('system', 'Background systems started ✅');
 
     await new Promise<void>((resolve) => {

@@ -5,6 +5,9 @@ import { TOOLS, handleToolUse } from './tools';
 import { chatUnified, chatStream, Message } from './router';
 import { KnowledgeGraph } from '../core/memory/knowledge_graph';
 import { Perplexer } from './perplexer';
+import { SkillManager } from '../core/skills/skill_manager';
+import { UserModel } from '../core/user_model/user_model';
+import { LongTermMemory } from '../core/evolution_memory/long_term_memory';
 import db from '../core/db';
 import type { WebSearchResult } from '../tools/web/provider';
 
@@ -14,11 +17,11 @@ export interface AIResult {
     tool_used?: string | null;
 }
 
-function buildSystemPrompt(user: any, userCtx: any, longTermMemory: string): string {
+function buildSystemPrompt(user: any, userCtx: any, longTermMemory: string, userProfile: string, skillContext: string): string {
     const lang = user?.lang || 'ru';
     const plan = user?.subscription_plan || 'free';
 
-    return `You are NEXUM — a highly capable personal AI assistant, similar in style to Claude by Anthropic.
+    return `You are NEXUM — a highly capable personal AI assistant with evolving intelligence.
 
 ## Your communication style
 - Write naturally, like a thoughtful person — not a robot or a corporate assistant
@@ -35,14 +38,80 @@ function buildSystemPrompt(user: any, userCtx: any, longTermMemory: string): str
 - Keep responses appropriately sized — don't over-explain simple things
 - When unsure about something, say so honestly instead of making things up
 
+## Internet access
+- You have access to real-time web search. Use it automatically when:
+  - User asks about current events, news, prices, weather
+  - User asks "что сейчас", "последние новости", "актуально ли"
+  - Any question where fresh data matters
+- To search, include in your response: [SEARCH: your query here]
+- Search results will be injected automatically
+
+## Reminders
+- When user asks to remind about something, extract time and set reminder automatically
+- Patterns: "напомни через X минут", "remind me in X minutes", "напомни завтра"
+
+## Self-improvement
+- After solving complex tasks, you automatically learn new skills
+- You remember everything about this user across all sessions
+
 ## User context
 - Language: ${lang} — always respond in this language
 - Plan: ${plan}
 - PC Agent: ${userCtx?.pcAgentConnected ? 'connected' : 'not connected'}
 
-${longTermMemory ? `## What you know about this user\n${longTermMemory}` : ''}
-
+${longTermMemory}
+${userProfile}
+${skillContext}
 ${getSoulContextSync()}`.trim();
+}
+
+// Авто-поиск в интернете если нужен
+async function autoWebSearch(content: string, uid: number): Promise<string> {
+    const match = content.match(/\[SEARCH:\s*(.+?)\]/i);
+    if (!match) return content;
+
+    const query = match[1].trim();
+    try {
+        const { webSearch } = await import('../tools/search');
+        const results = await webSearch(query);
+        const formatted = results.slice(0, 3).map((r: any) =>
+            `**${r.title}**\n${r.snippet}\n${r.link}`
+        ).join('\n\n');
+
+        return content.replace(match[0], '') + `\n\n🔍 *Из интернета:*\n${formatted}`;
+    } catch {
+        return content.replace(match[0], '');
+    }
+}
+
+// Авто-напоминание из естественной речи
+function trySetReminder(uid: number, text: string): boolean {
+    const patterns = [
+        /напомни(?:\s+мне)?\s+через\s+(\d+)\s*(минут|мин|час|часов|ч)/i,
+        /remind\s+me\s+in\s+(\d+)\s*(minute|min|hour|h)/i,
+        /напомни\s+(.+?)\s+через\s+(\d+)\s*(минут|мин|час|часов)/i,
+    ];
+
+    for (const pattern of patterns) {
+        const m = text.match(pattern);
+        if (m) {
+            const amount = parseInt(m[1] || m[2]);
+            const unit = (m[2] || m[3] || '').toLowerCase();
+            const isHour = unit.startsWith('ч') || unit.startsWith('h');
+            const ms = isHour ? amount * 3600000 : amount * 60000;
+            const fireAt = new Date(Date.now() + ms).toISOString();
+            const reminderText = text.replace(pattern, '').trim().slice(0, 200) || text.slice(0, 200);
+
+            db.prepare(`
+                INSERT INTO reminders (chat_id, uid, text, fire_at)
+                VALUES (?, ?, ?, ?)
+            `).run(uid, uid, reminderText, fireAt);
+
+            Logger.info('executor', `Auto-reminder set for uid=${uid} in ${amount} ${unit}`);
+            return true;
+        }
+    }
+    return false;
 }
 
 export async function* executeAI(
@@ -52,6 +121,14 @@ export async function* executeAI(
 ): AsyncGenerator<string, void, unknown> {
 
     Logger.info('agent', `NEXUM Engine: UID ${uid ?? 'anon'}`);
+
+    // Авто-напоминание
+    if (uid) trySetReminder(uid, prompt);
+
+    // Записываем в долгосрочную память
+    if (uid) {
+        LongTermMemory.processMessage(uid, 'user', prompt).catch(() => {});
+    }
 
     if (prompt.startsWith('[deep_search] ')) {
         const query = prompt.slice('[deep_search] '.length).trim();
@@ -73,11 +150,20 @@ export async function* executeAI(
         : null;
 
     const userCtx = uid ? getContext(uid) : null;
-    const longTermMemory = uid
-        ? await KnowledgeGraph.getContext(uid, prompt).catch(() => '')
-        : '';
 
-    const systemPrompt = buildSystemPrompt(user, userCtx, longTermMemory);
+    // Долгосрочная память — всё что помним о пользователе
+    const longTermMemory = uid ? LongTermMemory.getFullMemoryContext(uid, prompt) : '';
+    // KnowledgeGraph — краткосрочные факты
+    const kgMemory = uid ? await KnowledgeGraph.getContext(uid, prompt).catch(() => '') : '';
+    const combinedMemory = [longTermMemory, kgMemory ? `\n## Recent facts\n${kgMemory}` : ''].filter(Boolean).join('\n');
+
+    // Профиль пользователя
+    const userProfile = uid ? UserModel.getProfileContext(uid) : '';
+
+    // Навыки (skill system)
+    const skillContext = uid ? SkillManager.getSkillContext(uid, prompt) : '';
+
+    const systemPrompt = buildSystemPrompt(user, userCtx, combinedMemory, userProfile, skillContext);
 
     const historyMessages: Message[] = history
         .filter(m => m.role === 'user' || m.role === 'assistant')
@@ -98,84 +184,39 @@ export async function* executeAI(
     } catch (err) {
         Logger.error('agent', 'Streaming failed, falling back to chatUnified', err);
         try {
-            const fallback = await chatUnified(messages, uid ?? 0, TOOLS);
-            fullResponse = fallback.content || '';
-            if (fullResponse) yield fullResponse;
-        } catch (err2) {
-            Logger.error('agent', 'Fallback also failed', err2);
-            yield '❌ Не удалось получить ответ. Попробуй позже.';
+            const result = await chatUnified(messages, uid ?? 0);
+            fullResponse = result.content || '';
+            yield fullResponse;
+        } catch (fallbackErr) {
+            Logger.error('agent', 'chatUnified fallback also failed', fallbackErr);
+            yield '⚠️ Все AI провайдеры временно недоступны. Попробуй позже или добавь свой ключ через /byok';
             return;
         }
     }
 
-    if (uid && fullResponse) {
-        updateContext(uid, { lastActivity: Date.now() });
+    // Post-processing: авто-поиск если агент решил искать
+    if (fullResponse.includes('[SEARCH:')) {
+        const withSearch = await autoWebSearch(fullResponse, uid ?? 0);
+        if (withSearch !== fullResponse) {
+            // Отправляем доп контент как отдельный стрим
+            const extra = withSearch.replace(fullResponse.replace(/\[SEARCH:[^\]]+\]/g, ''), '');
+            if (extra.trim()) yield extra;
+        }
+    }
+
+    // Post-processing: обучение и память
+    if (uid && fullResponse.length > 100) {
+        // Knowledge graph
         KnowledgeGraph.addFact(uid, prompt + '\n' + fullResponse).catch(() => {});
+        // Long-term memory
+        LongTermMemory.processMessage(uid, 'assistant', fullResponse).catch(() => {});
+        // Skill learning (для сложных задач)
+        if (prompt.length > 80 && fullResponse.length > 200) {
+            SkillManager.learnFromConversation(uid, prompt, fullResponse).catch(() => {});
+        }
+        // User model update
+        UserModel.updateFromInteraction(uid, prompt, fullResponse).catch(() => {});
+        // Update context
+        updateContext(uid, { lastActivity: Date.now() });
     }
 }
-
-export const executeAIOnce = async (
-    prompt: string,
-    uid?: number,
-    history: { role: string; content: string }[] = [],
-): Promise<AIResult> => {
-    Logger.info('agent', `NEXUM REST: UID ${uid ?? 'anon'}`);
-
-    if (prompt.startsWith('[deep_search] ')) {
-        const query = prompt.slice('[deep_search] '.length).trim();
-        try {
-            const result = await Perplexer.deepSearch(query, uid);
-            return { content: result.answer, sources: result.sources, tool_used: 'deep_search' };
-        } catch (e) {
-            Logger.error('agent', 'Perplexer failed', e);
-        }
-    }
-
-    const user = uid
-        ? db.prepare('SELECT subscription_plan, lang FROM users WHERE uid = ?').get(uid) as any
-        : null;
-
-    const userCtx = uid ? getContext(uid) : null;
-    const longTermMemory = uid
-        ? await KnowledgeGraph.getContext(uid, prompt).catch(() => '')
-        : '';
-
-    const systemPrompt = buildSystemPrompt(user, userCtx, longTermMemory);
-
-    const historyMessages: Message[] = history
-        .filter(m => m.role === 'user' || m.role === 'assistant')
-        .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
-
-    let iterMessages: Message[] = [
-        { role: 'system', content: systemPrompt },
-        ...historyMessages,
-        { role: 'user', content: prompt },
-    ];
-
-    let lastToolUsed: string | null = null;
-
-    for (let i = 0; i < 5; i++) {
-        const assistantMessage = await chatUnified(iterMessages, uid ?? 0, TOOLS);
-        iterMessages.push(assistantMessage);
-
-        if (!assistantMessage.tool_calls?.length) {
-            if (uid) {
-                updateContext(uid, { lastActivity: Date.now() });
-                KnowledgeGraph.addFact(uid, prompt + '\n' + (assistantMessage.content || '')).catch(() => {});
-            }
-            return { content: assistantMessage.content || '', tool_used: lastToolUsed };
-        }
-
-        for (const toolCall of assistantMessage.tool_calls) {
-            const name = toolCall.function?.name;
-            lastToolUsed = name;
-            let args: any = {};
-            try { args = JSON.parse(toolCall.function?.arguments || '{}'); } catch (_e) { }
-            Logger.info('agent', `Tool call: ${name}`);
-            const result = await handleToolUse(name, args, uid ?? 0);
-            iterMessages.push({ role: 'tool', tool_call_id: toolCall.id, name, content: String(result) });
-        }
-    }
-
-    return { content: '✅ Задача выполнена.', tool_used: lastToolUsed };
-};

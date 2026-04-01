@@ -106,3 +106,73 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (mainWindow === null) createWindow();
 });
+
+// ── IPC: Skills ───────────────────────────────────────────────
+ipcMain.handle('get-skills', async (_event, { uid }) => {
+  return fetchNexum(`/api/skills?uid=${uid}`);
+});
+
+// ── IPC: User Profile ─────────────────────────────────────────
+ipcMain.handle('get-profile', async (_event, { uid }) => {
+  return fetchNexum(`/api/profile?uid=${uid}`);
+});
+
+// ── IPC: Long-Term Memory ─────────────────────────────────────
+ipcMain.handle('get-ltm', async (_event, { uid }) => {
+  return fetchNexum(`/api/ltm?uid=${uid}`);
+});
+
+// ── IPC: Reminders ────────────────────────────────────────────
+ipcMain.handle('get-reminders', async (_event, { uid }) => {
+  return fetchNexum(`/api/reminders?uid=${uid}`);
+});
+ipcMain.handle('add-reminder', async (_event, { uid, text, fire_at }) => {
+  return fetchNexumPost('/api/reminders', { uid, text, fire_at });
+});
+
+// ── IPC: Web Search ───────────────────────────────────────────
+ipcMain.handle('nexum-search', async (_event, { query }) => {
+  return fetchNexum(`/api/search?q=${encodeURIComponent(query)}`);
+});
+
+// ── IPC: Ecosystem token resolve ──────────────────────────────
+ipcMain.handle('resolve-token', async (_event, { token }) => {
+  return fetchNexum(`/api/ecosystem/resolve?token=${token}`);
+});
+
+// ── Helpers ───────────────────────────────────────────────────
+function fetchNexum(path) {
+  return new Promise((resolve) => {
+    const req = http.request(`${NEXUM_API}${path}`, { method: 'GET' }, (res) => {
+      let data = '';
+      res.on('data', c => { data += c; });
+      res.on('end', () => {
+        try { resolve({ ok: true, data: JSON.parse(data) }); }
+        catch { resolve({ ok: false, data }); }
+      });
+    });
+    req.on('error', (e) => resolve({ ok: false, error: e.message }));
+    req.end();
+  });
+}
+
+function fetchNexumPost(path, body) {
+  return new Promise((resolve) => {
+    const payload = JSON.stringify(body);
+    const req = http.request(
+      `${NEXUM_API}${path}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } },
+      (res) => {
+        let data = '';
+        res.on('data', c => { data += c; });
+        res.on('end', () => {
+          try { resolve({ ok: true, data: JSON.parse(data) }); }
+          catch { resolve({ ok: false, data }); }
+        });
+      }
+    );
+    req.on('error', (e) => resolve({ ok: false, error: e.message }));
+    req.write(payload);
+    req.end();
+  });
+}
