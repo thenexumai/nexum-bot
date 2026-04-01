@@ -92,7 +92,7 @@ export const setupBot = (bot: Bot) => {
       .text('💰 Финансы', 'start_finance')
       .text('✅ Задачи', 'start_tasks')
       .row()
-      .url('🌐 Открыть NEXUM Web', CONFIG.WEB_APP_URL || 'https://thenexum.ai')
+      .url('🌐 Открыть NEXUM Web', CONFIG.WEBAPP_URL || 'https://thenexum.ai')
       .row()
       .text('💎 Тарифы', 'start_tariffs')
       .text('❓ Помощь', 'start_help');
