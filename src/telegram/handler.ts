@@ -4,6 +4,7 @@ import { Logger } from '../infra/logger';
 import { transcribeVoice } from '../tools/stt';
 import { handleApprovalResult } from '../agent/policies/exec-approvals';
 import { setupCommands } from './commands';
+import { handleMainMenuCallback } from './commands/general';
 import { CONFIG, isAdmin } from '../core/config';
 import db, { incrementMsgCount, ensureUserDb } from '../core/db';
 import { getSessionHistory, appendToSession } from '../state/session';
@@ -136,6 +137,26 @@ export const setupBot = (bot: Bot) => {
     const list = await listPending();
     await ctx.reply(`**Ожидающие патчи:**\n\n${list}`, { parse_mode: 'Markdown' }).catch(() => ctx.reply(list));
   });
+                  // /diag — диагностика (admin only)
+                  bot.command('diag', async (ctx) => {
+                    const uid = ctx.from?.id;
+                    if (!uid || !isAdmin(uid)) { await ctx.reply('Нет прав.'); return; }
+                    const { CONFIG, getModelChain } = await import('../core/config');
+                    const user = db.prepare('SELECT subscription_plan, lang FROM users WHERE uid = ?').get(uid) as any;
+                    const plan = user?.subscription_plan || 'free';
+                    const chain = getModelChain(uid, plan === 'pro');
+                    const prov = CONFIG.PROVIDERS;
+                    const provInfo = Object.keys(prov).map(p => `${p}: ${prov[p as any].length} ключей`).join("
+");
+                    const chainInfo = chain.map(c => `${c.provider}/${c.model}`).join("
+") || 'нет моделей';
+                    const text = `🛠 *NEXUM DIAG*\n\n` +
+                                 `👤 UID: ${uid}\n` +
+                                 `📦 План: ${plan}\n` +
+                                 `🔑 Провайдеры:\n${provInfo}\n\n` +
+                                 `🤖 Модели (getModelChain):\n${chainInfo}`;
+                    await ctx.reply(text, { parse_mode: 'Markdown' });
+                  });
 
   // ── Callback кнопки ──
 
@@ -197,12 +218,23 @@ export const setupBot = (bot: Bot) => {
 
   // /apps — Mini Apps
 
+
+
+  // ── Единый обработчик всех callback кнопок ──────────────────
   bot.on('callback_query:data', async (ctx) => {
     const data = ctx.callbackQuery.data;
     const uid = ctx.from?.id;
+    if (!uid) { await ctx.answerCallbackQuery(); return; }
 
+    // Кнопки главного меню (cmd:*)
+    if (data.startsWith('cmd:')) {
+      await ctx.answerCallbackQuery();
+      await handleMainMenuCallback(data, uid, ctx);
+      return;
+    }
+
+    // Режим ответов (mode_set:*)
     if (data.startsWith('mode_set:')) {
-      if (!uid) { await ctx.answerCallbackQuery(); return; }
       const newMode = data.replace('mode_set:', '') as ChatMode;
       setUserMode(uid, newMode);
       await ctx.answerCallbackQuery(`${MODE_LABELS[newMode]}`);
@@ -214,45 +246,34 @@ export const setupBot = (bot: Bot) => {
       return;
     }
 
-    if (data === 'start_newchat') { await ctx.answerCallbackQuery(); await ctx.reply('Пиши!'); return; }
-    if (data === 'start_modes') {
-      if (!uid) { await ctx.answerCallbackQuery(); return; }
-      await ctx.answerCallbackQuery();
-      await ctx.reply(
-        `**Режим ответов:**\n\n` +
-        Object.entries(MODE_LABELS).map(([k, v]) => `${v} — ${MODE_DESCRIPTIONS[k as ChatMode]}`).join('\n'),
-        { parse_mode: 'Markdown', reply_markup: buildModeKeyboard(getUserMode(uid)) }
-      );
-      return;
-    }
-    if (data === 'start_tariffs') { await ctx.answerCallbackQuery(); await ctx.reply('Тарифы: /tariffs'); return; }
-    if (data === 'start_help') { await ctx.answerCallbackQuery(); await ctx.reply('Напиши вопрос или используй /help'); return; }
-    if (data === 'start_finance') { await ctx.answerCallbackQuery(); await ctx.reply('Финансы: /finance\n\nИли напиши: "потратил 500 на кофе"'); return; }
-    if (data === 'start_tasks') { await ctx.answerCallbackQuery(); await ctx.reply('Задачи: /tasks\n\nИли напиши: "напомни купить молоко завтра"'); return; }
-
+    // Апруввалы PC агента (appr_*)
     if (data.startsWith('appr_')) {
       const [actionId, status] = data.replace('appr_', '').split(':');
       handleApprovalResult(actionId, status === 'allow');
       await ctx.answerCallbackQuery(status === 'allow' ? 'Разрешено' : 'Отклонено');
-      await ctx.editMessageText(status === 'allow' ? 'Действие выполнено.' : 'Действие отклонено.', { reply_markup: undefined }).catch(() => {});
+      await ctx.editMessageText(
+        status === 'allow' ? 'Действие выполнено.' : 'Действие отклонено.',
+        { reply_markup: undefined }
+      ).catch(() => {});
       return;
     }
 
+    // Self-improve патчи (selfimprove_approve_* / selfimprove_reject_*)
     if (data.startsWith('selfimprove_approve_')) {
-      if (!uid || !isAdmin(uid)) { await ctx.answerCallbackQuery('Нет прав'); return; }
+      if (!isAdmin(uid)) { await ctx.answerCallbackQuery('Нет прав'); return; }
       const patchId = data.replace('selfimprove_approve_', '');
       await ctx.answerCallbackQuery('Пушу...');
       const result = await approvePatch(patchId, bot);
-      await ctx.editMessageText(result, { reply_markup: undefined }).catch(async () => { await ctx.reply(result); });
+      await ctx.editMessageText(result, { reply_markup: undefined }).catch(async () => ctx.reply(result));
       return;
     }
 
     if (data.startsWith('selfimprove_reject_')) {
-      if (!uid || !isAdmin(uid)) { await ctx.answerCallbackQuery('Нет прав'); return; }
+      if (!isAdmin(uid)) { await ctx.answerCallbackQuery('Нет прав'); return; }
       const patchId = data.replace('selfimprove_reject_', '');
       const result = rejectPatch(patchId);
       await ctx.answerCallbackQuery('Отклонено');
-      await ctx.editMessageText(result, { reply_markup: undefined }).catch(async () => { await ctx.reply(result); });
+      await ctx.editMessageText(result, { reply_markup: undefined }).catch(async () => ctx.reply(result));
       return;
     }
 
@@ -408,6 +429,8 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
     if (!sentMsgId && fullText) {
       try { await ctx.reply(fullText, { parse_mode: 'Markdown' }); }
       catch { await ctx.reply(fullText); }
+    } else if (!sentMsgId && !fullText) {
+      await ctx.reply('⚠️ AI не вернул ответ. Проверь /diag или попробуй позже.');
     } else if (sentMsgId && fullText !== lastEditText) {
       try { await ctx.api.editMessageText(ctx.chat!.id, sentMsgId, fullText, { parse_mode: 'Markdown' }); }
       catch {
