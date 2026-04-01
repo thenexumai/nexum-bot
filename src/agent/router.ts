@@ -12,7 +12,6 @@ export interface Message {
 
 // ============================================================
 //  UNIFIED AI ROUTER with automatic fallback chain
-//  Tries providers in order until one succeeds
 // ============================================================
 
 export async function chatUnified(
@@ -20,10 +19,8 @@ export async function chatUnified(
     uid: number,
     tools?: any[]
 ): Promise<Message> {
-    // Get user plan for BYOK support
     const userRow = db.prepare('SELECT subscription_plan FROM users WHERE uid = ?').get(uid) as any;
     const isPro = userRow?.subscription_plan === 'pro';
-
     const chain = getModelChain(uid, isPro);
 
     if (chain.length === 0) {
@@ -58,10 +55,7 @@ export async function chatUnified(
             const msg = err?.message || String(err);
             Logger.warn('router', `${cfg.provider} failed: ${msg}`);
             errors.push(`${cfg.provider}: ${msg}`);
-
-            // Don't retry on auth errors
             if (msg.includes('401') || msg.includes('invalid_api_key')) continue;
-            // Rate limit — try next
             if (msg.includes('429') || msg.includes('rate_limit')) continue;
         }
     }
@@ -74,7 +68,172 @@ export async function chatUnified(
 }
 
 // ============================================================
-//  PROVIDER IMPLEMENTATIONS
+//  STREAMING ROUTER — token-by-token via SSE
+// ============================================================
+
+export async function* chatStream(
+    messages: Message[],
+    uid: number
+): AsyncGenerator<string> {
+    const userRow = db.prepare('SELECT subscription_plan FROM users WHERE uid = ?').get(uid) as any;
+    const isPro = userRow?.subscription_plan === 'pro';
+    const chain = getModelChain(uid, isPro);
+
+    for (const cfg of chain) {
+        const key = getProviderKey(cfg.provider, uid);
+        if (!key) continue;
+
+        try {
+            Logger.debug('router', `Stream attempt: ${cfg.provider} (${cfg.model})`);
+            if (cfg.format === 'openai') {
+                yield* streamOpenAI(cfg, key, messages);
+                return;
+            } else if (cfg.format === 'anthropic') {
+                yield* streamAnthropic(cfg, key, messages);
+                return;
+            } else if (cfg.format === 'google') {
+                yield* streamGemini(cfg, key, messages);
+                return;
+            }
+        } catch (err: any) {
+            Logger.warn('router', `Stream ${cfg.provider} failed: ${err?.message}`);
+            continue;
+        }
+    }
+    yield '⚠️ Все AI провайдеры недоступны.';
+}
+
+// ============================================================
+//  STREAMING IMPLEMENTATIONS
+// ============================================================
+
+async function* streamOpenAI(cfg: ModelConfig, key: string, messages: Message[]): AsyncGenerator<string> {
+    const headers: Record<string, string> = {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+    };
+    if (cfg.provider === 'openrouter') {
+        headers['HTTP-Referer'] = 'https://nexum.ai';
+        headers['X-Title'] = 'NEXUM';
+    }
+
+    const body: any = {
+        model: cfg.model,
+        messages: messages.map(normalizeMessage),
+        max_tokens: cfg.maxTokens,
+        temperature: 0.6,
+        stream: true,
+    };
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+
+    try {
+        const resp = await fetch(`${cfg.baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+            signal: controller.signal,
+        });
+
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
+        if (!resp.body) throw new Error('No response body');
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || !trimmed.startsWith('data:')) continue;
+                const data = trimmed.slice(5).trim();
+                if (data === '[DONE]') return;
+                try {
+                    const json = JSON.parse(data);
+                    const delta = json.choices?.[0]?.delta?.content;
+                    if (delta) yield delta;
+                } catch { }
+            }
+        }
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function* streamAnthropic(cfg: ModelConfig, key: string, messages: Message[]): AsyncGenerator<string> {
+    const systemMsg = messages.find(m => m.role === 'system');
+    const chatMsgs = messages.filter(m => m.role !== 'system');
+
+    const body: any = {
+        model: cfg.model,
+        max_tokens: cfg.maxTokens,
+        stream: true,
+        messages: chatMsgs.map(m => ({
+            role: m.role === 'assistant' ? 'assistant' : 'user',
+            content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+        })),
+        system: systemMsg?.content,
+    };
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+
+    try {
+        const resp = await fetch(`${cfg.baseUrl}/messages`, {
+            method: 'POST',
+            headers: {
+                'x-api-key': key,
+                'anthropic-version': '2023-06-01',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+        });
+
+        if (!resp.ok) throw new Error(`Anthropic HTTP ${resp.status}`);
+        if (!resp.body) throw new Error('No body');
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            for (const line of lines) {
+                if (!line.startsWith('data:')) continue;
+                try {
+                    const json = JSON.parse(line.slice(5).trim());
+                    if (json.type === 'content_block_delta') {
+                        yield json.delta?.text || '';
+                    }
+                } catch { }
+            }
+        }
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function* streamGemini(cfg: ModelConfig, key: string, messages: Message[]): AsyncGenerator<string> {
+    // Gemini streaming — fall back to non-streaming and yield full response
+    const result = await callGemini(cfg, key, messages);
+    if (result.content) yield result.content;
+}
+
+// ============================================================
+//  NON-STREAMING IMPLEMENTATIONS
 // ============================================================
 
 async function callOpenAI(cfg: ModelConfig, key: string, messages: Message[], tools?: any[]): Promise<Message> {
@@ -87,7 +246,6 @@ async function callOpenAI(cfg: ModelConfig, key: string, messages: Message[], to
         headers['X-Title'] = 'NEXUM';
     }
     if (cfg.provider === 'sambanova') {
-        // SambaNova uses same format but different header
         headers['Authorization'] = `Basic ${Buffer.from(key).toString('base64')}`;
     }
 
@@ -216,7 +374,6 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 3000
     }
 }
 
-/** Quick test — returns which providers are currently available */
 export async function testProviders(uid: number): Promise<Record<string, boolean>> {
     const results: Record<string, boolean> = {};
     for (const cfg of FREE_MODEL_CHAIN) {

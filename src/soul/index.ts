@@ -1,12 +1,12 @@
 /**
  * NEXUM Soul System
  * The identity, personality and self-awareness core of NEXUM.
- * Inspired by OpenClaw's soul architecture.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import db from '../core/db';
 
 export interface NexumSoul {
   name: string;
@@ -85,10 +85,61 @@ export function loadSoulFromYaml(filePath: string): void {
   }
 }
 
-export function getSoulContext(): string {
+// FIX: getSoulContextSync — used by executor.ts
+export function getSoulContextSync(uid?: number): string {
+  const mode = uid ? getUserMode(uid) : 'default';
   const s = _soul;
-  return `You are ${s.name} v${s.version}.
-Tone: ${s.personality.tone.join(', ')}.
-Purpose: ${s.identity.purpose}
-Values: ${s.identity.values.join(', ')}.`;
+  const modeHint = MODE_DESCRIPTIONS[mode] || '';
+  return `You are ${s.name} v${s.version} — ${s.identity.purpose}\n` +
+    `Tone: ${s.personality.tone.join(', ')}. Style: ${s.personality.style}.\n` +
+    `Response mode: ${MODE_LABELS[mode]} — ${modeHint}\n` +
+    `Values: ${s.identity.values.join(', ')}.`;
+}
+
+// FIX: async version for index.ts /api/chat/stream
+export async function getSoulContext(uid?: number): Promise<string> {
+  return getSoulContextSync(uid);
+}
+
+// ============================================================
+//  CHAT MODES — used by handler.ts
+// ============================================================
+
+export type ChatMode = 'default' | 'deep' | 'brief' | 'creative' | 'code';
+
+export const MODE_LABELS: Record<ChatMode, string> = {
+  default:  '💬 Стандарт',
+  deep:     '🔬 Глубокий',
+  brief:    '⚡ Кратко',
+  creative: '🎨 Творческий',
+  code:     '💻 Код',
+};
+
+export const MODE_DESCRIPTIONS: Record<ChatMode, string> = {
+  default:  'Сбалансированные ответы на любые темы',
+  deep:     'Детальный анализ с источниками и примерами',
+  brief:    'Максимально короткие и точные ответы',
+  creative: 'Креативное мышление, нестандартные идеи',
+  code:     'Фокус на коде, технических решениях',
+};
+
+export function getUserMode(uid: number): ChatMode {
+  try {
+    const row = db.prepare('SELECT chat_mode FROM users WHERE uid = ?').get(uid) as any;
+    return (row?.chat_mode as ChatMode) || 'default';
+  } catch {
+    return 'default';
+  }
+}
+
+export function setUserMode(uid: number, mode: ChatMode): void {
+  try {
+    // Add column if not exists (safe migration)
+    try {
+      db.prepare('ALTER TABLE users ADD COLUMN chat_mode TEXT DEFAULT "default"').run();
+    } catch { /* column already exists */ }
+    db.prepare('UPDATE users SET chat_mode = ? WHERE uid = ?').run(mode, uid);
+  } catch {
+    // ignore
+  }
 }
