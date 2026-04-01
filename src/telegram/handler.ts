@@ -5,7 +5,7 @@ import { transcribeVoice } from '../tools/stt';
 import { handleApprovalResult } from '../agent/policies/exec-approvals';
 import { setupCommands } from './commands';
 import { CONFIG, isAdmin } from '../core/config';
-import db from '../core/db';
+import db, { incrementMsgCount, ensureUserDb } from '../core/db';
 import { getSessionHistory, appendToSession } from '../state/session';
 import { approvePatch, rejectPatch } from '../evolution/self_improve';
 import { analyzeAndPropose, listPending } from '../evolution/improve_tool';
@@ -49,13 +49,7 @@ function releaseKey(key: string | null): void {
 }
 
 function ensureUser(uid: number, username?: string, firstName?: string): void {
-  const existing = db.prepare('SELECT uid FROM users WHERE uid = ?').get(uid);
-  if (!existing) {
-    db.prepare(
-      `INSERT OR IGNORE INTO users (uid, username, first_name, subscription_plan, msg_count_today, created_at)
-       VALUES (?, ?, ?, 'free', 0, datetime('now'))`
-    ).run(uid, username || null, firstName || null);
-  }
+  ensureUserDb(uid, username, firstName);
 }
 
 const MODES: ChatMode[] = ['default', 'deep', 'brief', 'creative', 'code'];
@@ -355,17 +349,15 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
 
   ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
 
-  const user = db.prepare('SELECT subscription_plan, msg_count_today FROM users WHERE uid = ?').get(uid) as any;
+  const user = db.prepare('SELECT subscription_plan FROM users WHERE uid = ?').get(uid) as any;
   const plan = user?.subscription_plan || 'free';
   const limit = plan === 'pro' ? 9999 : plan === 'middle' ? 200 : 50;
-  const count = user?.msg_count_today || 0;
+  const count = incrementMsgCount(uid);
 
-  if (count >= limit) {
+  if (count > limit) {
     await ctx.reply(`Лимит сообщений исчерпан (${limit}/день). Обнови план: /tariffs`);
     return;
   }
-
-  db.prepare('UPDATE users SET msg_count_today = msg_count_today + 1 WHERE uid = ?').run(uid);
 
   let fullText = '';
   let sentMsgId: number | null = null;

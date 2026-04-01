@@ -224,6 +224,11 @@ export const getOrCreateUser = (
     return user;
 };
 
+// Alias used by handler.ts
+export const ensureUserDb = (uid: number, username?: string, firstName?: string): void => {
+    getOrCreateUser(uid, username, firstName);
+};
+
 export const incrementMsgCount = (uid: number): number => {
     const today = new Date().toISOString().slice(0, 10);
     const user = db.prepare('SELECT msg_count_today, msg_date FROM users WHERE uid = ?').get(uid) as any;
