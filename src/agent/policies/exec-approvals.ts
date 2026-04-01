@@ -1,7 +1,11 @@
 import { ActionRisk } from './safety';
 import { Logger } from '../../infra/logger';
 import { bot } from '../../index';
-import { sendApprovalButtons } from '../../telegram/handler';
+import { InlineKeyboard } from 'grammy';
+
+// FIX: circular import removed — was importing sendApprovalButtons from handler.ts
+// which itself imports from executor → tools → index (circular chain).
+// Solution: inline the button-sending logic here directly.
 
 interface PendingAction {
     uid: number;
@@ -19,7 +23,15 @@ export const requestApproval = async (uid: number, action: string, args: any, ri
     Logger.info('safety', `Requesting approval for ${action} (ID: ${actionId}) from user ${uid}`);
 
     try {
-        await sendApprovalButtons(bot, uid, actionId, action, args);
+        const keyboard = new InlineKeyboard()
+            .text('✅ Разрешить', `appr_${actionId}:allow`)
+            .text('❌ Отклонить', `appr_${actionId}:deny`);
+
+        await bot.api.sendMessage(
+            uid,
+            `🔐 *Запрос на действие*\n\nДействие: \`${action}\`\nАргументы: \`${JSON.stringify(args).slice(0, 200)}\`\n\nРазрешить?`,
+            { parse_mode: 'Markdown', reply_markup: keyboard }
+        );
     } catch (err) {
         Logger.error('safety', 'Failed to send approval buttons', err);
         return false;
@@ -27,7 +39,7 @@ export const requestApproval = async (uid: number, action: string, args: any, ri
 
     return new Promise((resolve) => {
         pendingActions.set(actionId, { uid, action, args, resolve });
-        
+
         setTimeout(() => {
             if (pendingActions.has(actionId)) {
                 Logger.warn('safety', `Action ${actionId} timed out`);

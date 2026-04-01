@@ -12,9 +12,8 @@ import { analyzeAndPropose, listPending } from '../evolution/improve_tool';
 import { ChatMode, getUserMode, setUserMode, MODE_LABELS, MODE_DESCRIPTIONS } from '../soul';
 import fetch from 'node-fetch';
 
-// Стриминг: быстрый как Perplexity
 const STREAM_FIRST_SEND_CHARS = 20;
-const STREAM_EDIT_INTERVAL_MS = 350; // было 900ms — теперь быстро
+const STREAM_EDIT_INTERVAL_MS = 350;
 
 // Защита от дублей
 const activeRequests = new Set<string>();
@@ -49,10 +48,6 @@ function releaseKey(key: string | null): void {
   processedMessages.set(key, Date.now());
 }
 
-function safeMarkdown(text: string): string {
-  return text.replace(/([_*[\]()~`>#+\-=|{}.!])/g, '\\$1');
-}
-
 function ensureUser(uid: number, username?: string, firstName?: string): void {
   const existing = db.prepare('SELECT uid FROM users WHERE uid = ?').get(uid);
   if (!existing) {
@@ -79,11 +74,9 @@ function buildModeKeyboard(currentMode: ChatMode): InlineKeyboard {
 export const setupBot = (bot: Bot) => {
   setupCommands(bot);
 
-  // /start
   bot.command('start', async (ctx) => {
     const uid = ctx.from?.id;
     if (uid) ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
-
     const firstName = ctx.from?.first_name || 'там';
     const keyboard = new InlineKeyboard()
       .text('💬 Новый чат', 'start_newchat')
@@ -110,7 +103,6 @@ export const setupBot = (bot: Bot) => {
     );
   });
 
-  // /mode command
   bot.command('mode', async (ctx) => {
     const uid = ctx.from?.id;
     if (!uid) return;
@@ -123,17 +115,13 @@ export const setupBot = (bot: Bot) => {
     );
   });
 
-  // /clear command
   bot.command('clear', async (ctx) => {
     const uid = ctx.from?.id;
     if (!uid) return;
-    try {
-      db.prepare('DELETE FROM messages WHERE uid = ?').run(uid);
-    } catch { }
+    try { db.prepare('DELETE FROM messages WHERE uid = ?').run(uid); } catch { }
     await ctx.reply('🧹 История диалога очищена. Начинаем с чистого листа!');
   });
 
-  // /help command
   bot.command('help', async (ctx) => {
     await ctx.reply(
       `📚 **Команды NEXUM**\n\n` +
@@ -143,24 +131,15 @@ export const setupBot = (bot: Bot) => {
       `/clear — очистить историю чата\n` +
       `/memory — моя память о тебе\n` +
       `/search [запрос] — поиск в интернете\n\n` +
-      `**Финансы:**\n` +
-      `/finance — обзор финансов\n` +
-      `/budget — бюджет\n\n` +
-      `**Задачи:**\n` +
-      `/tasks — мои задачи\n` +
-      `/todo [задача] — добавить задачу\n\n` +
-      `**Подписка:**\n` +
-      `/tariffs — тарифные планы\n` +
-      `/status — мой статус и лимиты\n\n` +
-      `**Продвинутые:**\n` +
-      `/improve — улучшить файл (admin)\n` +
-      `/patches — список патчей (admin)\n\n` +
+      `**Финансы:**\n/finance — обзор финансов\n\n` +
+      `**Задачи:**\n/tasks — мои задачи\n\n` +
+      `**Подписка:**\n/tariffs — тарифные планы\n/status — мой статус\n\n` +
+      `**Продвинутые:**\n/improve — улучшить файл (admin)\n/patches — список патчей (admin)\n\n` +
       `💡 Или просто напиши что нужно — я пойму!`,
       { parse_mode: 'Markdown' }
     );
   });
 
-  // /status command
   bot.command('status', async (ctx) => {
     const uid = ctx.from?.id;
     if (!uid) return;
@@ -181,12 +160,10 @@ export const setupBot = (bot: Bot) => {
     );
   });
 
-  // Callback обработчики
   bot.on('callback_query:data', async (ctx) => {
     const data = ctx.callbackQuery.data;
     const uid = ctx.from?.id;
 
-    // Режимы
     if (data.startsWith('mode_set:')) {
       if (!uid) { await ctx.answerCallbackQuery(); return; }
       const newMode = data.replace('mode_set:', '') as ChatMode;
@@ -201,58 +178,28 @@ export const setupBot = (bot: Bot) => {
       return;
     }
 
-    // Start menu callbacks
-    if (data === 'start_newchat') {
-      await ctx.answerCallbackQuery('✍️ Пиши!');
-      await ctx.reply('Готов! Напиши что тебя интересует 😊');
-      return;
-    }
+    if (data === 'start_newchat') { await ctx.answerCallbackQuery('✍️ Пиши!'); await ctx.reply('Готов! Напиши что тебя интересует 😊'); return; }
     if (data === 'start_modes') {
       if (!uid) { await ctx.answerCallbackQuery(); return; }
       const currentMode = getUserMode(uid);
-      const keyboard = buildModeKeyboard(currentMode);
       await ctx.answerCallbackQuery();
       await ctx.reply(
         `🎯 **Режим ответов** — выбери стиль:\n\n` +
         Object.entries(MODE_LABELS).map(([k, v]) => `${v} — ${MODE_DESCRIPTIONS[k as ChatMode]}`).join('\n'),
-        { parse_mode: 'Markdown', reply_markup: keyboard }
+        { parse_mode: 'Markdown', reply_markup: buildModeKeyboard(currentMode) }
       );
       return;
     }
-    if (data === 'start_tariffs') {
-      await ctx.answerCallbackQuery();
-      await ctx.reply('💎 Тарифы: /tariffs');
-      return;
-    }
-    if (data === 'start_help') {
-      await ctx.answerCallbackQuery();
-      const helpCtx = { ...ctx, reply: ctx.reply };
-      // trigger help
-      await ctx.reply(
-        `📚 Напиши любой вопрос или используй команды:\n/mode /clear /memory /search /tariffs /help`
-      );
-      return;
-    }
-    if (data === 'start_finance') {
-      await ctx.answerCallbackQuery();
-      await ctx.reply('💰 Финансовый трекер: /finance\n\nИли просто напиши: "потратил 500 на кофе"');
-      return;
-    }
-    if (data === 'start_tasks') {
-      await ctx.answerCallbackQuery();
-      await ctx.reply('✅ Задачи: /tasks\n\nИли просто напиши: "напомни купить молоко завтра"');
-      return;
-    }
+    if (data === 'start_tariffs') { await ctx.answerCallbackQuery(); await ctx.reply('💎 Тарифы: /tariffs'); return; }
+    if (data === 'start_help') { await ctx.answerCallbackQuery(); await ctx.reply('📚 Напиши любой вопрос или используй команды:\n/mode /clear /memory /search /tariffs /help'); return; }
+    if (data === 'start_finance') { await ctx.answerCallbackQuery(); await ctx.reply('💰 Финансовый трекер: /finance\n\nИли просто напиши: "потратил 500 на кофе"'); return; }
+    if (data === 'start_tasks') { await ctx.answerCallbackQuery(); await ctx.reply('✅ Задачи: /tasks\n\nИли просто напиши: "напомни купить молоко завтра"'); return; }
 
-    // Approvals
     if (data.startsWith('appr_')) {
       const [actionId, status] = data.replace('appr_', '').split(':');
-      const approved = status === 'allow';
-      handleApprovalResult(actionId, approved);
-      await ctx.answerCallbackQuery(approved ? '✅ Разрешено' : '❌ Отклонено');
-      await ctx.editMessageText(approved ? '✅ Действие выполнено.' : '❌ Действие отклонено.', {
-        reply_markup: undefined,
-      }).catch(() => {});
+      handleApprovalResult(actionId, status === 'allow');
+      await ctx.answerCallbackQuery(status === 'allow' ? '✅ Разрешено' : '❌ Отклонено');
+      await ctx.editMessageText(status === 'allow' ? '✅ Действие выполнено.' : '❌ Действие отклонено.', { reply_markup: undefined }).catch(() => {});
       return;
     }
 
@@ -277,20 +224,13 @@ export const setupBot = (bot: Bot) => {
     await ctx.answerCallbackQuery();
   });
 
-  // Admin commands
   bot.command('improve', async (ctx) => {
     const uid = ctx.from?.id;
     if (!uid || !isAdmin(uid)) { await ctx.reply('❌ Только для администраторов.'); return; }
     const args = ctx.message?.text?.replace('/improve', '').trim() || '';
-    if (!args) {
-      await ctx.reply(
-        '📝 *Использование:*\n`/improve <путь_к_файлу> <описание изменения>`\n\n*Примеры:*\n`/improve src/agent/tools.ts добавь инструмент`',
-        { parse_mode: 'Markdown' }
-      );
-      return;
-    }
+    if (!args) { await ctx.reply('📝 Использование:\n`/improve <путь> <описание>`', { parse_mode: 'Markdown' }); return; }
     const spaceIdx = args.indexOf(' ');
-    if (spaceIdx === -1) { await ctx.reply('❌ Укажи описание изменения после пути к файлу.'); return; }
+    if (spaceIdx === -1) { await ctx.reply('❌ Укажи описание после пути к файлу.'); return; }
     const filePath = args.slice(0, spaceIdx).trim();
     const description = args.slice(spaceIdx + 1).trim();
     const thinking = await ctx.reply(`🤔 Анализирую \`${filePath}\`...`, { parse_mode: 'Markdown' });
@@ -306,7 +246,6 @@ export const setupBot = (bot: Bot) => {
     await ctx.reply(`📋 *Ожидающие патчи:*\n\n${list}`, { parse_mode: 'Markdown' }).catch(() => ctx.reply(list));
   });
 
-  // Voice
   bot.on('message:voice', async (ctx) => {
     const uid = ctx.from?.id;
     if (!uid) return;
@@ -319,21 +258,15 @@ export const setupBot = (bot: Bot) => {
       const res = await fetch(url);
       const buffer = Buffer.from(await res.arrayBuffer());
       const text = await transcribeVoice(buffer);
-      if (!text) {
-        await ctx.reply('🎤 Не удалось распознать голос. Попробуй ещё раз или напиши текстом.');
-        return;
-      }
-      await ctx.reply(`🎤 *Распознано:*\n_${safeMarkdown(text)}_`, { parse_mode: 'Markdown' });
+      if (!text) { await ctx.reply('🎤 Не удалось распознать голос. Попробуй ещё раз или напиши текстом.'); return; }
+      await ctx.reply(`🎤 *Распознано:* _${text}_`, { parse_mode: 'Markdown' });
       await processAIRequest(ctx, text, uid);
     } catch (err) {
       Logger.error('telegram', 'Voice error', err);
       await ctx.reply('❌ Ошибка при обработке голоса.');
-    } finally {
-      releaseKey(key);
-    }
+    } finally { releaseKey(key); }
   });
 
-  // Photo
   bot.on('message:photo', async (ctx) => {
     const uid = ctx.from?.id;
     if (!uid) return;
@@ -341,19 +274,16 @@ export const setupBot = (bot: Bot) => {
     if (!acquireKey(key)) return;
     try {
       const caption = ctx.message.caption || 'Что на этом изображении? Опиши подробно.';
-      const photo = ctx.message.photo[ctx.message.photo.length - 1]; // highest resolution
+      const photo = ctx.message.photo[ctx.message.photo.length - 1];
       const file = await ctx.api.getFile(photo.file_id);
       const imageUrl = `https://api.telegram.org/file/bot${bot.token}/${file.file_path}`;
       await processAIRequest(ctx, `[vision:${imageUrl}] ${caption}`, uid);
     } catch (err) {
       Logger.error('telegram', 'Photo error', err);
       await ctx.reply('❌ Ошибка при анализе фото.');
-    } finally {
-      releaseKey(key);
-    }
+    } finally { releaseKey(key); }
   });
 
-  // Document
   bot.on('message:document', async (ctx) => {
     const uid = ctx.from?.id;
     if (!uid) return;
@@ -363,12 +293,9 @@ export const setupBot = (bot: Bot) => {
       const doc = ctx.message.document;
       const caption = ctx.message.caption || '';
       await processAIRequest(ctx, `[Файл: ${doc.file_name}] ${caption}`, uid);
-    } finally {
-      releaseKey(key);
-    }
+    } finally { releaseKey(key); }
   });
 
-  // Text
   bot.on('message:text', async (ctx: Context) => {
     const uid = ctx.from?.id;
     if (!uid) return;
@@ -378,14 +305,32 @@ export const setupBot = (bot: Bot) => {
     if (!acquireKey(key)) return;
     try {
       await processAIRequest(ctx, text, uid);
-    } finally {
-      releaseKey(key);
-    }
+    } finally { releaseKey(key); }
   });
 };
 
 // ============================================================
-//  CORE: streaming AI response — быстрый стриминг
+//  EXPORT для exec-approvals (убрали circular import)
+// ============================================================
+export const sendApprovalButtons = async (
+  bot: Bot,
+  uid: number,
+  actionId: string,
+  action: string,
+  args: any
+) => {
+  const keyboard = new InlineKeyboard()
+    .text('✅ Разрешить', `appr_${actionId}:allow`)
+    .text('❌ Отклонить', `appr_${actionId}:deny`);
+  await bot.api.sendMessage(
+    uid,
+    `🔐 *Запрос на действие*\n\nДействие: \`${action}\`\nАргументы: \`${JSON.stringify(args).slice(0, 200)}\`\n\nРазрешить?`,
+    { parse_mode: 'Markdown', reply_markup: keyboard }
+  );
+};
+
+// ============================================================
+//  CORE: стриминг ответа — первый чанк отправляется сразу
 // ============================================================
 async function processAIRequest(ctx: Context, text: string, uid: number) {
   Logger.info('telegram', `Request from UID ${uid}: ${text.slice(0, 80)}`);
@@ -400,63 +345,57 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
   const count = user?.msg_count_today || 0;
 
   if (count >= limit) {
-    await ctx.reply(
-      `⚠️ *Лимит сообщений исчерпан* (${limit}/день)\n\nОбнови план: /tariffs`,
-      { parse_mode: 'Markdown' }
-    );
+    await ctx.reply(`⚠️ *Лимит сообщений исчерпан* (${limit}/день)\n\nОбнови план: /tariffs`, { parse_mode: 'Markdown' });
     return;
   }
 
   db.prepare('UPDATE users SET msg_count_today = msg_count_today + 1 WHERE uid = ?').run(uid);
-  await ctx.replyWithChatAction('typing').catch(() => {});
 
   let fullText = '';
   let sentMsgId: number | null = null;
   let lastEditText = '';
   let lastEditTime = 0;
-  let typingInterval: ReturnType<typeof setInterval> | null = null;
 
-  // Keep sending typing action while streaming
-  typingInterval = setInterval(async () => {
-    await ctx.replyWithChatAction('typing').catch(() => {});
+  // Typing interval только пока ещё не отправили первое сообщение
+  let typingInterval: ReturnType<typeof setInterval> | null = setInterval(async () => {
+    if (!sentMsgId) await ctx.replyWithChatAction('typing').catch(() => {});
   }, 4000);
+
+  // Сразу показываем typing пока AI думает
+  await ctx.replyWithChatAction('typing').catch(() => {});
 
   try {
     const history = getSessionHistory(uid);
-    const stream = await executeAI(text, uid, history);
 
-    for await (const chunk of stream) {
+    for await (const chunk of executeAI(text, uid, history)) {
       fullText += chunk;
 
-      // First message — send as soon as we have enough text
-      if (!sentMsgId && fullText.length >= STREAM_FIRST_SEND_CHARS) {
+      // Первый чанк — отправляем СРАЗУ без ожидания порога символов
+      if (!sentMsgId) {
         try {
-          const sent = await ctx.reply(fullText + ' ✍️', {
-            parse_mode: 'Markdown',
-          });
+          const sent = await ctx.reply(fullText + ' ✍️', { parse_mode: 'Markdown' });
           sentMsgId = sent.message_id;
           lastEditText = fullText;
           lastEditTime = Date.now();
         } catch {
-          // If Markdown fails, try plain
+          // Markdown ошибка — plain text
           const sent = await ctx.reply(fullText + ' ✍️');
           sentMsgId = sent.message_id;
           lastEditText = fullText;
           lastEditTime = Date.now();
         }
+        // Останавливаем typing interval — сообщение уже видно
+        if (typingInterval) { clearInterval(typingInterval); typingInterval = null; }
         continue;
       }
 
-      // Edit existing message at interval
-      if (sentMsgId && fullText !== lastEditText && Date.now() - lastEditTime >= STREAM_EDIT_INTERVAL_MS) {
+      // Редактируем по интервалу — не чаще чем STREAM_EDIT_INTERVAL_MS
+      if (fullText !== lastEditText && Date.now() - lastEditTime >= STREAM_EDIT_INTERVAL_MS) {
         try {
-          await ctx.api.editMessageText(ctx.chat!.id, sentMsgId, fullText + ' ✍️', {
-            parse_mode: 'Markdown',
-          });
+          await ctx.api.editMessageText(ctx.chat!.id, sentMsgId, fullText + ' ✍️', { parse_mode: 'Markdown' });
           lastEditText = fullText;
           lastEditTime = Date.now();
         } catch {
-          // Markdown parse error — try plain
           try {
             await ctx.api.editMessageText(ctx.chat!.id, sentMsgId, fullText + ' ✍️');
             lastEditText = fullText;
@@ -466,42 +405,27 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
       }
     }
 
-    // Final message — remove typing indicator
+    // Финальный edit — убираем ✍️
     if (!sentMsgId && fullText) {
-      try {
-        await ctx.reply(fullText, { parse_mode: 'Markdown' });
-      } catch {
-        await ctx.reply(fullText);
-      }
-    } else if (sentMsgId && fullText !== lastEditText) {
-      try {
-        await ctx.api.editMessageText(ctx.chat!.id, sentMsgId, fullText, {
-          parse_mode: 'Markdown',
-        });
-      } catch {
-        try {
-          await ctx.api.editMessageText(ctx.chat!.id, sentMsgId, fullText);
-        } catch { }
-      }
+      // Ответ пришёл одним куском без чанков (fallback путь)
+      try { await ctx.reply(fullText, { parse_mode: 'Markdown' }); }
+      catch { await ctx.reply(fullText); }
     } else if (sentMsgId) {
-      // Just remove the ✍️ indicator
-      try {
-        await ctx.api.editMessageText(ctx.chat!.id, sentMsgId, fullText, {
-          parse_mode: 'Markdown',
-        });
-      } catch {
-        try {
-          await ctx.api.editMessageText(ctx.chat!.id, sentMsgId, fullText);
-        } catch { }
+      try { await ctx.api.editMessageText(ctx.chat!.id, sentMsgId, fullText, { parse_mode: 'Markdown' }); }
+      catch {
+        try { await ctx.api.editMessageText(ctx.chat!.id, sentMsgId, fullText); }
+        catch { }
       }
     }
 
     if (fullText) {
-      appendToSession(uid, text, fullText);
+      appendToSession(uid, 'user', text);
+      appendToSession(uid, 'assistant', fullText);
     }
+
   } catch (err) {
     Logger.error('telegram', 'AI request error', err);
-    const errMsg = '❌ Что-то пошло не так. Попробуй ещё раз — иногда такое бывает 🙏';
+    const errMsg = '❌ Что-то пошло не так. Попробуй ещё раз 🙏';
     if (sentMsgId) {
       await ctx.api.editMessageText(ctx.chat!.id, sentMsgId, errMsg).catch(() => {});
     } else {

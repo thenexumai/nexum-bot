@@ -241,7 +241,7 @@ function setupApiRoutes() {
 
             if (!messages?.length) return res.status(400).json({ error: 'messages required' });
 
-            const { executeAI } = await import('./agent/executor');
+            const { executeAIOnce } = await import('./agent/executor');
             const lastMsg = messages.filter((m: any) => m.role === 'user').pop();
             if (!lastMsg) return res.status(400).json({ error: 'no user message' });
 
@@ -253,7 +253,7 @@ function setupApiRoutes() {
                 ? `[deep_search] ${lastMsg.content}`
                 : lastMsg.content;
 
-            const result = await executeAI(query, uid ? Number(uid) : undefined, history);
+            const result = await executeAIOnce(query, uid ? Number(uid) : undefined, history);
             res.json({ content: result.content, sources: result.sources || [], tool_used: result.tool_used || null });
         } catch (e: any) {
             Logger.error('api/chat', e?.message || e);
@@ -306,9 +306,9 @@ function setupApiRoutes() {
             if (useSearch) {
                 sendEvent({ delta: '🔍 Выполняю поиск...\n\n' });
                 try {
-                    const { executeAI } = await import('./agent/executor');
+                    const { executeAIOnce } = await import('./agent/executor');
                     const query = `[deep_search] ${lastMsg.content}`;
-                    const result = await executeAI(query, uid ? Number(uid) : undefined, history);
+                    const result = await executeAIOnce(query, uid ? Number(uid) : undefined, history);
 
                     // Stream the full result in chunks
                     const chunks = (result.content as string).match(/.{1,50}/gs) || [];

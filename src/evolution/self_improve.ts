@@ -1,12 +1,6 @@
 import { Logger } from '../infra/logger';
 import { CONFIG } from '../core/config';
 
-// ============================================================
-//  SELF-IMPROVE ENGINE
-//  Nexum proposes code changes → sends to admin via Telegram
-//  Admin approves/rejects → changes pushed to GitHub
-// ============================================================
-
 const GITHUB_OWNER = 'thenexumai';
 const GITHUB_REPO  = 'nexum-bot';
 const GITHUB_BRANCH = 'main';
@@ -18,16 +12,12 @@ export interface SelfImprovePatch {
   reason: string;
   oldContent: string;
   newContent: string;
-  requestedBy: number; // uid
+  requestedBy: number;
   createdAt: number;
 }
 
-// In-memory pending patches (survives between handler calls)
 const pendingPatches = new Map<string, SelfImprovePatch>();
 
-// ============================================================
-//  PROPOSE: Nexum suggests a code change
-// ============================================================
 export async function proposePatch(
   filePath: string,
   newContent: string,
@@ -41,9 +31,7 @@ export async function proposePatch(
     return '❌ GITHUB_TOKEN не задан в Railway env. Добавь его чтобы использовать self-improve.';
   }
 
-  // Fetch current file content + SHA from GitHub
   let oldContent = '';
-  let fileSha = '';
   try {
     const resp = await fetch(
       `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${filePath}`,
@@ -52,7 +40,6 @@ export async function proposePatch(
     if (resp.ok) {
       const data = await resp.json() as any;
       oldContent = Buffer.from(data.content, 'base64').toString('utf8');
-      fileSha = data.sha;
     }
   } catch (e) {
     Logger.warn('self_improve', `Could not fetch current file: ${e}`);
@@ -66,13 +53,11 @@ export async function proposePatch(
   };
   pendingPatches.set(id, patch);
 
-  // Build diff preview (first 60 lines of new content)
   const previewLines = newContent.split('\n').slice(0, 60).join('\n');
   const preview = previewLines.length < newContent.length
     ? previewLines + '\n... (обрезано)'
     : previewLines;
 
-  // Send approval request to all admins
   const adminIds = CONFIG.ADMIN_IDS;
   const msgText =
     `🧬 *NEXUM Self-Improve*\n\n` +
@@ -83,7 +68,8 @@ export async function proposePatch(
 
   for (const adminId of adminIds) {
     try {
-      await bot.telegram.sendMessage(adminId, msgText, {
+      // FIX: Grammy uses bot.api.sendMessage, not bot.telegram.sendMessage (that's Telegraf)
+      await bot.api.sendMessage(adminId, msgText, {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [[
@@ -101,9 +87,6 @@ export async function proposePatch(
   return `📬 Предложение отправлено админу на одобрение. ID: \`${id}\``;
 }
 
-// ============================================================
-//  APPROVE: Push the patch to GitHub
-// ============================================================
 export async function approvePatch(patchId: string, bot: any): Promise<string> {
   const patch = pendingPatches.get(patchId);
   if (!patch) return '❌ Патч не найден или уже обработан.';
@@ -111,7 +94,6 @@ export async function approvePatch(patchId: string, bot: any): Promise<string> {
   const githubToken = process.env.GITHUB_TOKEN;
   if (!githubToken) return '❌ GITHUB_TOKEN не задан.';
 
-  // Get current SHA
   let fileSha = '';
   try {
     const resp = await fetch(
@@ -153,10 +135,10 @@ export async function approvePatch(patchId: string, bot: any): Promise<string> {
     pendingPatches.delete(patchId);
     Logger.info('self_improve', `Patch ${patchId} approved and pushed: ${patch.filePath}`);
 
-    // Notify requester if not admin
     if (!CONFIG.ADMIN_IDS.includes(patch.requestedBy)) {
       try {
-        await bot.telegram.sendMessage(
+        // FIX: Grammy uses bot.api.sendMessage
+        await bot.api.sendMessage(
           patch.requestedBy,
           `✅ Твоё предложение по улучшению Нексума одобрено!\n📁 \`${patch.filePath}\` обновлён.`
         );
@@ -170,9 +152,6 @@ export async function approvePatch(patchId: string, bot: any): Promise<string> {
   }
 }
 
-// ============================================================
-//  REJECT: Discard the patch
-// ============================================================
 export function rejectPatch(patchId: string): string {
   const patch = pendingPatches.get(patchId);
   if (!patch) return '❌ Патч не найден или уже обработан.';
@@ -181,16 +160,10 @@ export function rejectPatch(patchId: string): string {
   return `🗑 Патч отклонён: \`${patch.filePath}\``;
 }
 
-// ============================================================
-//  LIST: Show pending patches for admin
-// ============================================================
 export function listPendingPatches(): SelfImprovePatch[] {
   return Array.from(pendingPatches.values());
 }
 
-// ============================================================
-//  FETCH FILE: Read current file content from GitHub
-// ============================================================
 export async function fetchFileFromGitHub(filePath: string): Promise<string> {
   const githubToken = process.env.GITHUB_TOKEN;
   if (!githubToken) throw new Error('GITHUB_TOKEN not set');
