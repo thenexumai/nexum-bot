@@ -42,6 +42,11 @@ export function setupGeneralCommands(bot: Bot) {
         const uid = ctx.from!.id;
         const name = ctx.from?.first_name || 'друг';
         ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
+        
+        // Устанавливаем персонализированное меню команд
+        const { setPersonalizedCommands } = await import('./index');
+        await setPersonalizedCommands(bot, uid);
+        
         const user = getUser(uid);
         const plan = PLANS[user?.subscription_plan || 'free'];
         await ctx.reply(
