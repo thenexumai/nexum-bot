@@ -244,7 +244,7 @@ function setupApiRoutes() {
 
             if (!messages?.length) return res.status(400).json({ error: 'messages required' });
 
-            const { executeAIOnce } = await import('./agent/executor');
+            const { executeAIOnce } = await import('./agent/executor') as typeof import('./agent/executor');
             const lastMsg = messages.filter((m: any) => m.role === 'user').pop();
             if (!lastMsg) return res.status(400).json({ error: 'no user message' });
 
@@ -309,7 +309,7 @@ function setupApiRoutes() {
             if (useSearch) {
                 sendEvent({ delta: '🔍 Выполняю поиск...\n\n' });
                 try {
-                    const { executeAIOnce } = await import('./agent/executor');
+                    const { executeAIOnce } = await import('./agent/executor') as typeof import('./agent/executor');
                     const query = `[deep_search] ${lastMsg.content}`;
                     const result = await executeAIOnce(query, uid ? Number(uid) : undefined, history);
 

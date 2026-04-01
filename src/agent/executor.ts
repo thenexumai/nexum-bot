@@ -220,3 +220,21 @@ export async function* executeAI(
         updateContext(uid, { lastActivity: Date.now() });
     }
 }
+
+// ── executeAIOnce — REST-совместимая обёртка ──────────────────────────────
+export const executeAIOnce = async (
+    prompt: string,
+    uid?: number,
+    history: { role: string; content: string }[] = [],
+): Promise<{ content: string; sources?: any[]; tool_used?: string | null }> => {
+    let fullResponse = '';
+    try {
+        for await (const chunk of executeAI(prompt, uid, history)) {
+            fullResponse += chunk;
+        }
+    } catch (err) {
+        Logger.error('agent', 'executeAIOnce error', err);
+        return { content: '❌ Ошибка. Попробуй позже.', tool_used: null };
+    }
+    return { content: fullResponse, sources: [], tool_used: null };
+};

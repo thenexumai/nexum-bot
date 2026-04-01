@@ -381,9 +381,9 @@ export const setupBot = (bot: Bot) => {
     const uid = ctx.from?.id;
     if (!uid) return;
     db.prepare('DELETE FROM memory WHERE uid=?').run(uid);
-    db.prepare('DELETE FROM persistent_facts WHERE uid=?').run(uid).catch?.(() => {});
-    db.prepare('DELETE FROM long_term_memory WHERE uid=?').run(uid).catch?.(() => {});
-    db.prepare('DELETE FROM user_insights WHERE uid=?').run(uid).catch?.(() => {});
+    db.prepare('DELETE FROM persistent_facts WHERE uid=?').run(uid);
+    db.prepare('DELETE FROM long_term_memory WHERE uid=?').run(uid);
+    db.prepare('DELETE FROM user_insights WHERE uid=?').run(uid);
     await ctx.reply('🗑 *Вся память очищена.*', { parse_mode: 'Markdown' });
   });
 
