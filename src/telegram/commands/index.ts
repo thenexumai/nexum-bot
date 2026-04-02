@@ -1,4 +1,5 @@
-import { Bot, BotCommand } from 'grammy';
+import { Bot } from 'grammy';
+import type { BotCommand } from 'grammy/types';
 import { setupGeneralCommands } from './general';
 import { setupPcAgentCommands } from './pc_agent';
 import { setupByokCommands, setupByokAlias } from './byok';

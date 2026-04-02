@@ -146,7 +146,7 @@ export const setupBot = (bot: Bot) => {
                     const plan = user?.subscription_plan || 'free';
                     const chain = getModelChain(uid, plan === 'pro');
                     const prov = CONFIG.PROVIDERS;
-                    const provInfo = Object.keys(prov).map(p => `${p}: ${prov[p as any].length} ключей`).join("\n");
+                    const provInfo = Object.keys(prov).map(p => `${p}: ${prov[p as keyof typeof prov].length} ключей`).join("\n");
                     const chainInfo = chain.map(c => `${c.provider}/${c.model}`).join("\n") || 'нет моделей';
                     const text = `🛠 *NEXUM DIAG*\n\n` +
                                  `👤 UID: ${uid}\n` +
