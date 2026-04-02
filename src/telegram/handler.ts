@@ -338,9 +338,15 @@ export const setupBot = (bot: Bot) => {
     const text = ctx.message?.text || '';
     if (text.startsWith('/')) return;
     const key = makeMsgKey(ctx);
-    if (!acquireKey(key)) return;
+    if (!acquireKey(key)) {
+      Logger.warn('telegram', `Duplicate message blocked: ${key}`);
+      return;
+    }
     try {
+      Logger.info('telegram', `Processing text from UID ${uid}: "${text.slice(0, 50)}..."`);
       await processAIRequest(ctx, text, uid);
+    } catch (err) {
+      Logger.error('telegram', 'Text message handler error', err);
     } finally { releaseKey(key); }
   });
 };
@@ -359,7 +365,7 @@ export const sendApprovalButtons = async (bot: Bot, uid: number, actionId: strin
 //  CORE: стриминг — первый токен сразу, без заглушек
 // ============================================================
 async function processAIRequest(ctx: Context, text: string, uid: number) {
-  Logger.info('telegram', `UID ${uid}: ${text.slice(0, 80)}`);
+  Logger.info('telegram', `[processAIRequest] UID ${uid}: ${text.slice(0, 80)}`);
 
   ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
 
@@ -367,6 +373,8 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
   const plan = user?.subscription_plan || 'free';
   const limit = plan === 'pro' ? 9999 : plan === 'middle' ? 200 : 50;
   const count = incrementMsgCount(uid);
+  
+  Logger.info('telegram', `[processAIRequest] UID ${uid} plan: ${plan}, count: ${count}/${limit}`);
 
   if (count > limit) {
     await ctx.reply(`Лимит сообщений исчерпан (${limit}/день). Обнови план: /tariffs`);
@@ -386,12 +394,14 @@ async function processAIRequest(ctx: Context, text: string, uid: number) {
 
   try {
     const history = getSessionHistory(uid);
+    Logger.info('telegram', `[processAIRequest] Starting executeAI for UID ${uid}, history length: ${history.length}`);
 
     for await (const chunk of executeAI(text, uid, history)) {
       fullText += chunk;
 
       // ПЕРВЫЙ ЧАНк — отправляем сразу, без ожидания и без эмодзи-заглушки
       if (!sentMsgId) {
+        Logger.info('telegram', `[processAIRequest] First chunk received for UID ${uid}, sending message`);
         clearInterval(typingInterval as any); // прекращаем typing — текст уже виден
         try {
           const sent = await ctx.reply(fullText, { parse_mode: 'Markdown' });

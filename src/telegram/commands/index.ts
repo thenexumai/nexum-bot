@@ -53,7 +53,10 @@ export function setupCommands(bot: Bot) {
     registerEvolutionCommands(bot);
 
     // Устанавливаем дефолтные команды для обычных пользователей
-    bot.api.setMyCommands(USER_COMMANDS).catch((e: any) => console.error('setMyCommands error:', e));
+    // Сначала удаляем все старые команды, затем устанавливаем новые
+    bot.api.deleteMyCommands().then(() => {
+        return bot.api.setMyCommands(USER_COMMANDS);
+    }).catch((e: any) => console.error('setMyCommands error:', e));
 }
 
 /**
