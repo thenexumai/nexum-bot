@@ -534,20 +534,39 @@ function setupWebSocket() {
                 const msg = JSON.parse(raw.toString());
 
                 if (msg.type === 'auth') {
-                    const uid = linkTokens.get(msg.token);
+                    // Новая система: проверяем персонализированный токен
+                    const { validatePcAgentToken, updatePcAgentInfo } = await import('./core/pc_agent_auth');
+                    const uid = validatePcAgentToken(msg.token);
+                    
                     if (!uid) {
-                        ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid or expired token. Use /link_pc in Telegram.' }));
+                        ws.send(JSON.stringify({ 
+                            type: 'auth_error', 
+                            message: 'Invalid or expired token. Use /link_pc in Telegram to get your personal token.' 
+                        }));
                         ws.terminate();
                         return;
                     }
-                    linkTokens.delete(msg.token);
+                    
                     connectedUid = uid;
                     agentConnections.set(uid, ws);
+                    
+                    // Сохраняем информацию о PC
+                    if (msg.info) {
+                        const pcName = msg.info.hostname || 'Unknown PC';
+                        const pcOs = msg.info.os || 'Unknown OS';
+                        updatePcAgentInfo(msg.token, pcName, pcOs);
+                    }
+                    
                     ws.send(JSON.stringify({ type: 'auth_ok', uid }));
-                    Logger.success('wss', `PC Agent connected: UID ${uid}`);
+                    Logger.success('wss', `PC Agent connected: UID ${uid} (${msg.info?.hostname || 'unknown'})`);
+                    
                     try {
                         await bot.api.sendMessage(uid,
-                            `🖥 *PC Агент подключён!*\n\nОС: ${msg.info?.os || 'unknown'}\nХост: ${msg.info?.hostname || 'unknown'}`,
+                            `🖥 **Твой PC Агент подключён!**\n\n` +
+                            `💻 Компьютер: ${msg.info?.hostname || 'unknown'}\n` +
+                            `🖥 ОС: ${msg.info?.os || 'unknown'}\n` +
+                            `🔒 Соединение защищено персональным токеном\n\n` +
+                            `Попробуй /screenshot или просто попроси меня что-нибудь сделать на твоём компьютере!`,
                             { parse_mode: 'Markdown' }
                         );
                     } catch { }
@@ -593,10 +612,15 @@ async function bootstrap() {
     initDB();
     migrateEvolutionTables(db);
     initByokDb(db);
+    
+    // Инициализация PC Agent персонализированных токенов
+    const { initPcAgentTokensTable } = await import('./core/pc_agent_auth');
+    initPcAgentTokensTable();
+    
     SkillManager.init();
     UserModel.init();
     LongTermMemory.init();
-    Logger.success('system', 'Skill + UserModel + LongTermMemory initialized ✅');
+    Logger.success('system', 'Skill + UserModel + LongTermMemory + PcAgent initialized ✅');
     Logger.success('system', 'Database ready ✅');
 
     setupApiRoutes();

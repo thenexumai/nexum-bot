@@ -4,9 +4,10 @@ import { setupPcAgentCommands } from './pc_agent';
 import { setupByokCommands, setupByokAlias } from './byok';
 import { setupAdminCommands } from './admin';
 import { registerEvolutionCommands } from './evolution';
-import { isAdmin } from '../../core/config';
+import { isOwner } from '../../core/config';
+import db from '../../core/db';
 
-// Команды для обычных пользователей
+// Команды для всех пользователей (Free, Middle, Pro)
 const USER_COMMANDS: BotCommand[] = [
     { command: 'start',       description: '🚀 Главное меню' },
     { command: 'help',        description: '📚 Справка по командам' },
@@ -25,17 +26,21 @@ const USER_COMMANDS: BotCommand[] = [
     { command: 'lang',        description: '🌍 Язык (ru/en)' },
 ];
 
-// Админские команды (добавляются к USER_COMMANDS)
-const ADMIN_COMMANDS: BotCommand[] = [
-    { command: 'fix',         description: '🔧 [ADMIN] Исправить баг' },
-    { command: 'improve',     description: '⚡ [ADMIN] Улучшить код' },
-    { command: 'patches',     description: '📋 [ADMIN] Список патчей' },
-    { command: 'diag',        description: '🛠 [ADMIN] Диагностика' },
-    { command: 'byok',        description: '🔑 [ADMIN] Управление API ключами' },
-    { command: 'link_pc',     description: '🖥 [ADMIN] Подключить PC Агент' },
-    { command: 'pc_status',   description: '🖥 [ADMIN] Статус PC Агента' },
-    { command: 'screenshot',  description: '📸 [ADMIN] Снимок экрана PC' },
-    { command: 'forget',      description: '🗑 [ADMIN] Очистить память' },
+// Команды для Pro пользователей (дополнительно к USER_COMMANDS)
+const PRO_COMMANDS: BotCommand[] = [
+    { command: 'byok',        description: '🔑 [PRO] Свои API ключи' },
+    { command: 'link_pc',     description: '🖥 [PRO] Подключить PC Агент' },
+    { command: 'pc_status',   description: '🖥 [PRO] Статус PC Агента' },
+    { command: 'screenshot',  description: '📸 [PRO] Снимок экрана PC' },
+];
+
+// Команды ТОЛЬКО для владельца проекта NEXUM (дополнительно ко всем)
+const OWNER_COMMANDS: BotCommand[] = [
+    { command: 'fix',         description: '🔧 [OWNER] Исправить баг' },
+    { command: 'improve',     description: '⚡ [OWNER] Улучшить код' },
+    { command: 'patches',     description: '📋 [OWNER] Список патчей' },
+    { command: 'diag',        description: '🛠 [OWNER] Диагностика' },
+    { command: 'forget',      description: '🗑 [OWNER] Очистить память любого пользователя' },
 ];
 
 export function setupCommands(bot: Bot) {
@@ -50,12 +55,37 @@ export function setupCommands(bot: Bot) {
     bot.api.setMyCommands(USER_COMMANDS).catch((e: any) => console.error('setMyCommands error:', e));
 }
 
-// Функция для установки персонализированного меню при /start
+/**
+ * Проверяет план подписки пользователя
+ */
+function getUserPlan(uid: number): string {
+    try {
+        const user = db.prepare('SELECT subscription_plan FROM users WHERE uid = ?').get(uid) as any;
+        return user?.subscription_plan || 'free';
+    } catch {
+        return 'free';
+    }
+}
+
+/**
+ * Устанавливает персонализированное меню команд для пользователя
+ * - Free/Middle: базовые команды
+ * - Pro: базовые + PC Agent + BYOK
+ * - Owner: все команды + управление системой
+ */
 export async function setPersonalizedCommands(bot: Bot, userId: number) {
     try {
-        const commands = isAdmin(userId) 
-            ? [...USER_COMMANDS, ...ADMIN_COMMANDS]
-            : USER_COMMANDS;
+        let commands = [...USER_COMMANDS];
+        
+        // Владелец проекта NEXUM видит ВСЁ
+        if (isOwner(userId)) {
+            commands = [...USER_COMMANDS, ...PRO_COMMANDS, ...OWNER_COMMANDS];
+        }
+        // Pro пользователи видят свои дополнительные команды
+        else if (getUserPlan(userId) === 'pro') {
+            commands = [...USER_COMMANDS, ...PRO_COMMANDS];
+        }
+        // Free/Middle - только базовые команды
         
         await bot.api.setMyCommands(commands, { scope: { type: 'chat', chat_id: userId } });
     } catch (e) {

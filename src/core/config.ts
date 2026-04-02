@@ -43,7 +43,11 @@ function keysFrom(prefix: string, count: number): string[] {
     return keys;
 }
 
-export const isAdmin = (uid: number) => CONFIG.ADMIN_IDS.includes(uid);
+// ВЛАДЕЛЕЦ проекта NEXUM (может исправлять код, видит /fix, /improve, /patches)
+export const isOwner = (uid: number) => CONFIG.ADMIN_IDS.includes(uid);
+
+// Для обратной совместимости (алиас)
+export const isAdmin = isOwner;
 
 /** Round-robin key selection */
 export const getProviderKey = (provider: AiProvider, uid?: number): string => {
