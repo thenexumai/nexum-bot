@@ -5,6 +5,7 @@ import { setupPcAgentCommands } from './pc_agent';
 import { setupByokCommands, setupByokAlias } from './byok';
 import { setupAdminCommands } from './admin';
 import { registerEvolutionCommands } from './evolution';
+import { setupCodeCommands } from './code';
 import { isOwner } from '../../core/config';
 import db from '../../core/db';
 
@@ -51,6 +52,7 @@ export function setupCommands(bot: Bot) {
     setupByokAlias(bot);
     setupAdminCommands(bot);
     registerEvolutionCommands(bot);
+    setupCodeCommands(bot);
 
     // Устанавливаем дефолтные команды для обычных пользователей
     // Сначала удаляем все старые команды, затем устанавливаем новые

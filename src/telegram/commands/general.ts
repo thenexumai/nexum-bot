@@ -1,5 +1,5 @@
 import { Bot, InlineKeyboard } from 'grammy';
-import { CONFIG } from '../../core/config';
+import { CONFIG, isOwner } from '../../core/config';
 import { KnowledgeGraph } from '../../core/memory/knowledge_graph';
 import { webSearchFormatted } from '../../tools/search';
 import db from '../../core/db';
@@ -64,27 +64,74 @@ export function setupGeneralCommands(bot: Bot) {
     });
 
     bot.command('help', async (ctx) => {
-        await ctx.reply(
-            `📚 *NEXUM — Помощь*\n\n` +
-            `/start — главное меню\n` +
-            `/status — мой план и статистика\n` +
-            `/mode — режим ответов AI\n` +
-            `/apps — Mini Apps\n` +
-            `/memory — долгосрочная память\n` +
-            `/skills — мои навыки\n` +
-            `/profile — профиль личности\n` +
-            `/search <запрос> — поиск в интернете\n` +
-            `/remind <текст> через N минут — напоминание\n` +
-            `/reminders — список напоминаний\n` +
-            `/new — сбросить сессию\n` +
-            `/clear — очистить историю\n` +
-            `/forget — очистить память\n` +
-            `/byok — свои API ключи\n` +
-            `/link_pc — подключить PC Агент\n` +
-            `/tariffs — тарифы\n` +
-            `/lang ru|en — язык интерфейса`,
-            { parse_mode: 'Markdown' }
-        );
+        const uid = ctx.from?.id;
+        const user = db.prepare('SELECT subscription_plan FROM users WHERE uid = ?').get(uid!) as any;
+        const plan = user?.subscription_plan || 'free';
+        const owner = isOwner(uid!);
+        
+        let helpText = '📚 **NEXUM — Справка по командам**\n\n';
+        
+        // Базовые команды (для всех)
+        helpText += '**🚀 Основные:**\n';
+        helpText += '/start — главное меню и обновление команд\n';
+        helpText += '/help — эта справка\n';
+        helpText += '/status — мой план и статистика\n';
+        helpText += '/mode — режим ответов AI (deep/brief/code/creative)\n';
+        helpText += '/apps — Mini Apps (задачи, финансы, заметки)\n\n';
+        
+        helpText += '**🧠 Память и навыки:**\n';
+        helpText += '/memory — долгосрочная память обо мне\n';
+        helpText += '/skills — мои изученные навыки\n';
+        helpText += '/profile — профиль моей личности\n';
+        helpText += '/forget — очистить память\n\n';
+        
+        helpText += '**🔍 Поиск и напоминания:**\n';
+        helpText += '/search <запрос> — поиск в интернете\n';
+        helpText += '/remind <текст> через N минут — напоминание\n';
+        helpText += '/reminders — список моих напоминаний\n\n';
+        
+        helpText += '**⚙️ Управление:**\n';
+        helpText += '/new — сбросить сессию диалога\n';
+        helpText += '/clear — очистить историю\n';
+        helpText += '/tariffs — тарифы и подписки\n';
+        helpText += '/lang ru|en — язык интерфейса\n\n';
+        
+        // Pro команды
+        if (plan === 'pro' || owner) {
+            helpText += '**💎 PRO:**\n';
+            helpText += '/byok — свои API ключи для AI\n';
+            helpText += '/link_pc — подключить PC Агент\n';
+            helpText += '/pc_status — статус PC Агента\n';
+            helpText += '/screenshot — снимок экрана с ПК\n\n';
+        }
+        
+        // Owner команды
+        if (owner) {
+            helpText += '**👑 OWNER (управление ботом):**\n';
+            helpText += '/fix <описание> — автоисправление бага\n';
+            helpText += '/improve <файл> <что> — улучшить код\n';
+            helpText += '/patches — список патчей на аппрув\n';
+            helpText += '/diag — диагностика системы\n\n';
+            
+            helpText += '**💻 CODE (работа с кодом):**\n';
+            helpText += '/code_read <файл> — прочитать файл\n';
+            helpText += '/code_edit <файл> — редактировать файл\n';
+            helpText += '/code_create <файл> — создать файл\n';
+            helpText += '/code_analyze <файл> — анализ кода\n';
+            helpText += '/bash <команда> — выполнить команду\n';
+            helpText += '/find <паттерн> — найти файлы\n';
+            helpText += '/tree — структура проекта\n';
+            helpText += '/grep <текст> — поиск в проекте\n';
+            helpText += '/git_status — git статус\n';
+            helpText += '/git_diff — показать изменения\n';
+            helpText += '/git_commit <msg> — коммит\n';
+            helpText += '/test — запустить тесты\n';
+            helpText += '/format <файл> — форматировать код\n\n';
+        }
+        
+        helpText += '💬 **Просто напиши мне что-нибудь для AI диалога!**';
+        
+        await ctx.reply(helpText, { parse_mode: 'Markdown' });
     });
 
     bot.command('status', async (ctx) => {
