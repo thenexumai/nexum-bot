@@ -43,24 +43,23 @@ export function setupGeneralCommands(bot: Bot) {
         const name = ctx.from?.first_name || 'друг';
         ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
 
-        // Устанавливаем персонализированные команды (owner видит своё меню, другие — своё)
         const { setPersonalizedCommands } = await import('./index');
         await setPersonalizedCommands(bot, uid);
 
         const user = getUser(uid);
         const plan = PLANS[user?.subscription_plan || 'free'];
         await ctx.reply(
-            `👋 Привет, *${name}*\! Я *NEXUM* — твой личный AI\-агент\.\n\n` +
-            `${plan.emoji} Твой план: *${plan.name}* \(${plan.limit} сообщений/день\)\n\n` +
+            `👋 Привет, ${name}! Я NEXUM — твой личный AI-агент.\n\n` +
+            `${plan.emoji} Твой план: ${plan.name} (${plan.limit} сообщений/день)\n\n` +
             `Что умею:\n` +
             `🤖 Отвечать на вопросы и помогать с задачами\n` +
             `🧠 Запоминать важное о тебе\n` +
             `🔍 Искать актуальную информацию в сети\n` +
-            `👁 Анализировать изображения \(отправь фото\)\n` +
-            `🖥 Управлять твоим компьютером \(PC Агент\)\n` +
+            `👁 Анализировать изображения (otprav' fото)\n` +
+            `🖥 Управлять твоим компьютером (PC Агент)\n` +
             `📱 Mini Apps: задачи, финансы, заметки\n\n` +
-            `Просто напиши мне что\-нибудь\!`,
-            { parse_mode: 'MarkdownV2', reply_markup: getMainKeyboard(uid) }
+            `Просто напиши мне что-нибудь!`,
+            { reply_markup: getMainKeyboard(uid) }
         );
     });
 
@@ -88,7 +87,7 @@ export function setupGeneralCommands(bot: Bot) {
 
         helpText += '🔍 Поиск и напоминания:\n';
         helpText += '/search <запрос> — поиск в интернете\n';
-        helpText += '/remind <текст> через N минут\n';
+        helpText += '/remind <текст> через N мин\n';
         helpText += '/reminders — список напоминаний\n\n';
 
         helpText += '⚙️ Управление:\n';
@@ -114,12 +113,9 @@ export function setupGeneralCommands(bot: Bot) {
             helpText += '/user_info <uid> — инфо о юзере\n';
             helpText += '/broadcast <текст> — рассылка всем\n';
             helpText += '/stats — статистика бота\n';
-            helpText += '/ban <uid> — заблокировать юзера\n';
-            helpText += '/unban <uid> — разблокировать\n';
+            helpText += '/ban <uid> / /unban <uid>\n';
             helpText += '/diag — диагностика системы\n';
-            helpText += '/fix <описание> — исправить баг\n';
-            helpText += '/improve <файл> <что> — улучшить код\n';
-            helpText += '/patches — список патчей\n\n';
+            helpText += '/fix <описание> — автоисправить баг\n\n';
 
             helpText += '💻 CODE:\n';
             helpText += '/code_read, /code_edit, /code_create\n';
@@ -127,7 +123,7 @@ export function setupGeneralCommands(bot: Bot) {
             helpText += '/git_status, /git_diff, /git_commit\n';
         }
 
-        helpText += '💬 Просто напиши мне что-нибудь для AI диалога!';
+        helpText += '\n💬 Просто напиши мне что-нибудь для AI диалога!';
 
         await ctx.reply(helpText);
     });
@@ -162,10 +158,7 @@ export function setupGeneralCommands(bot: Bot) {
             .webApp('📇 Контакты',  `${base}/contacts.html?uid=${uid}`)
             .row()
             .webApp('⚙️ Настройки', `${base}/settings.html?uid=${uid}`);
-        await ctx.reply(
-            `📱 NEXUM Mini Apps\n\nВыбери приложение:`,
-            { reply_markup: keyboard }
-        );
+        await ctx.reply(`📱 NEXUM Mini Apps\n\nВыбери приложение:`, { reply_markup: keyboard });
     });
 
     bot.command('new', async (ctx) => {
@@ -276,8 +269,7 @@ export function setupGeneralCommands(bot: Bot) {
             `💎 Тарифы NEXUM\n\n` +
             `🆓 Free — 50 сообщений/день\nБазовый AI, память, задачи\n\n` +
             `⚡ Middle — 200 сообщений/день\n+ Напоминания, голос, Mini Apps, навыки\n\n` +
-            `💎 Pro — без ограничений\n+ PC Агент, свои API ключи, приоритетные модели\n\n` +
-            `📩 Подключить: @nexum_support`
+            `💎 Pro — без ограничений\n+ PC Агент, свои API ключи, приоритетные модели`
         );
     });
 
@@ -293,7 +285,6 @@ export function setupGeneralCommands(bot: Bot) {
     });
 }
 
-// Обработчик callback кнопок главного меню (cmd:*)
 export async function handleMainMenuCallback(data: string, uid: number, ctx: any) {
     const cmd = data.replace('cmd:', '');
 
@@ -338,8 +329,7 @@ export async function handleMainMenuCallback(data: string, uid: number, ctx: any
             `💎 Тарифы NEXUM\n\n` +
             `🆓 Free — 50 сообщений/день\n` +
             `⚡ Middle — 200 сообщений/день\n` +
-            `💎 Pro — без ограничений\n\n` +
-            `📩 Подключить: @nexum_support`
+            `💎 Pro — без ограничений`
         );
     } else if (cmd === 'help') {
         await ctx.reply(

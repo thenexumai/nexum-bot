@@ -3,22 +3,22 @@ import { CONFIG } from '../core/config';
 import fetch from 'node-fetch';
 
 /**
- * Vision через OpenRouter — meta-llama/llama-4-scout-17b-16e-instruct
- * Принимает URL изображения (Telegram file URL) и текстовый вопрос.
+ * Vision через Groq API — meta-llama/llama-4-scout-17b-16e-instruct
+ * Принимает URL изображения и текстовый вопрос.
  */
 export async function analyzeImageWithGroq(imageUrl: string, question: string): Promise<string> {
-    const keys = CONFIG.PROVIDERS.openrouter;
+    const keys = CONFIG.PROVIDERS.groq;
     if (!keys || !keys.length) {
-        throw new Error('OpenRouter API ключи не настроены (OR1–OR7 в env)');
+        throw new Error('Groq API ключи не настроены (GR1–GR7 в env)');
     }
 
     // Round-robin по ключам
     const key = keys[Math.floor(Date.now() / 1000) % keys.length];
 
-    Logger.info('vision', `Analyzing image via llama-4-scout: ${imageUrl.slice(0, 80)}`);
+    Logger.info('vision', `Analyzing image via Groq llama-4-scout: ${imageUrl.slice(0, 80)}`);
 
     // Скачиваем фото и конвертируем в base64
-    // (Telegram URLs требуют BOT_TOKEN — внешние сервисы не могут обратиться напрямую)
+    // Telegram URLs содержат BOT_TOKEN — Groq не может обратиться напрямую
     let imageData: string;
     let mimeType = 'image/jpeg';
 
@@ -28,6 +28,7 @@ export async function analyzeImageWithGroq(imageUrl: string, question: string): 
         mimeType = imgRes.headers.get('content-type') || 'image/jpeg';
         const buffer = await imgRes.buffer();
         imageData = `data:${mimeType};base64,${buffer.toString('base64')}`;
+        Logger.info('vision', `Image fetched as base64, size: ${buffer.length} bytes`);
     } catch (fetchErr) {
         Logger.warn('vision', `base64 fetch failed, using direct URL: ${fetchErr}`);
         imageData = imageUrl;
@@ -58,13 +59,11 @@ export async function analyzeImageWithGroq(imageUrl: string, question: string): 
     const timer = setTimeout(() => controller.abort(), 35000);
 
     try {
-        const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${key}`,
                 'Content-Type': 'application/json',
-                'HTTP-Referer': 'https://nexum-bot-production-ae70.up.railway.app',
-                'X-Title': 'NEXUM AI Bot',
             },
             body: JSON.stringify(body),
             signal: controller.signal as any,
@@ -72,7 +71,7 @@ export async function analyzeImageWithGroq(imageUrl: string, question: string): 
 
         if (!res.ok) {
             const errText = await res.text();
-            throw new Error(`OpenRouter vision HTTP ${res.status}: ${errText.slice(0, 300)}`);
+            throw new Error(`Groq vision HTTP ${res.status}: ${errText.slice(0, 300)}`);
         }
 
         const data = await res.json() as any;
@@ -89,5 +88,5 @@ export async function analyzeImageWithGroq(imageUrl: string, question: string): 
 }
 
 export function isVisionAvailable(): boolean {
-    return !!(CONFIG.PROVIDERS.openrouter?.length);
+    return !!(CONFIG.PROVIDERS.groq?.length);
 }
