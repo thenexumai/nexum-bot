@@ -67,6 +67,14 @@ function buildModeKeyboard(currentMode: ChatMode): InlineKeyboard {
 }
 
 export const setupBot = (bot: Bot) => {
+  // ── ГЛОБАЛЬНЫЙ ОБРАБОТЧИК ОШИБОК — предотвращает зависание бота ──
+  bot.catch((err) => {
+    const ctx = err.ctx;
+    Logger.error('telegram', `Unhandled error for update ${ctx.update.update_id}: ${err.error}`);
+    // Пытаемся ответить пользователю если возможно
+    ctx.reply('⚠️ Что-то пошло не так. Попробуй ещё раз.').catch(() => {});
+  });
+
   setupCommands(bot);
 
 
@@ -198,26 +206,6 @@ export const setupBot = (bot: Bot) => {
     );
   });
 
-  // /remind — установить напоминание
-
-  // /reminders — список напоминаний
-
-  // /search — поиск в интернете
-
-  // /tariffs
-
-  // /lang
-
-  // /memory — долгосрочная память
-
-  // /forget — очистить память
-
-  // /new — сброс сессии
-
-  // /apps — Mini Apps
-
-
-
   // ── Единый обработчик всех callback кнопок ──────────────────
   bot.on('callback_query:data', async (ctx) => {
     const data = ctx.callbackQuery.data;
@@ -300,7 +288,7 @@ export const setupBot = (bot: Bot) => {
     } finally { releaseKey(key); }
   });
 
-  // ── Фото ──
+  // ── Фото (Vision) ──
   bot.on('message:photo', async (ctx) => {
     const uid = ctx.from?.id;
     if (!uid) return;
@@ -311,7 +299,7 @@ export const setupBot = (bot: Bot) => {
       const photo = ctx.message.photo[ctx.message.photo.length - 1];
       const file = await ctx.api.getFile(photo.file_id);
       const imageUrl = `https://api.telegram.org/file/bot${bot.token}/${file.file_path}`;
-      await processAIRequest(ctx, `[vision:${imageUrl}] ${caption}`, uid);
+      await processVisionRequest(ctx, caption, imageUrl, uid);
     } catch (err) {
       Logger.error('telegram', 'Photo error', err);
       await ctx.reply('Ошибка при анализе фото.');
@@ -360,6 +348,42 @@ export const sendApprovalButtons = async (bot: Bot, uid: number, actionId: strin
     { parse_mode: 'Markdown', reply_markup: keyboard }
   );
 };
+
+// ============================================================
+//  VISION: анализ изображений через Groq (llama-3.2-11b-vision)
+// ============================================================
+async function processVisionRequest(ctx: Context, caption: string, imageUrl: string, uid: number) {
+  Logger.info('telegram', `[vision] UID ${uid}: ${caption.slice(0, 60)}`);
+
+  ensureUser(uid, ctx.from?.username, ctx.from?.first_name);
+
+  const user = db.prepare('SELECT subscription_plan FROM users WHERE uid = ?').get(uid) as any;
+  const plan = user?.subscription_plan || 'free';
+  const limit = plan === 'pro' ? 9999 : plan === 'middle' ? 200 : 50;
+  const count = incrementMsgCount(uid);
+  if (count > limit) {
+    await ctx.reply(`Лимит сообщений исчерпан (${limit}/день). Обнови план: /tariffs`);
+    return;
+  }
+
+  const msg = await ctx.reply('👁 Анализирую изображение...');
+
+  try {
+    const { analyzeImageWithGroq } = await import('../tools/vision');
+    const result = await analyzeImageWithGroq(imageUrl, caption);
+    await ctx.api.editMessageText(ctx.chat!.id, msg.message_id, result, { parse_mode: 'Markdown' })
+      .catch(async () => ctx.reply(result, { parse_mode: 'Markdown' }));
+
+    // Сохраняем в сессию
+    appendToSession(uid, 'user', `[Изображение] ${caption}`);
+    appendToSession(uid, 'assistant', result);
+  } catch (err: any) {
+    Logger.error('telegram', 'Vision error', err);
+    // Fallback: передаём в обычный AI с описанием
+    await ctx.api.editMessageText(ctx.chat!.id, msg.message_id, '🔄 Переключаюсь на резервный анализ...').catch(() => {});
+    await processAIRequest(ctx, `[vision:${imageUrl}] ${caption}`, uid);
+  }
+}
 
 // ============================================================
 //  CORE: стриминг — первый токен сразу, без заглушек
