@@ -1,4 +1,6 @@
-import { Bot } from 'grammy';
+import { Bot, InputFile } from 'grammy';
+import { createReadStream } from 'fs';
+import { resolve } from 'path';
 import {
     readFileWithLines,
     replaceInFile,
@@ -38,8 +40,9 @@ export function setupCodeCommands(bot: Bot) {
             
             // Telegram имеет лимит 4096 символов
             if (content.length > 3500) {
-                // Отправляем файлом
-                await ctx.replyWithDocument({ url: `file://${process.cwd()}/${args}` }, {
+                // Отправляем файлом через InputFile с ReadStream
+                const filePath = resolve(process.cwd(), args);
+                await ctx.replyWithDocument(new InputFile(createReadStream(filePath), args), {
                     caption: `📄 ${args} (${lines.length} строк)`
                 });
             } else {
@@ -289,7 +292,6 @@ export function setupCodeCommands(bot: Bot) {
         const diff = await gitDiff(process.cwd());
         
         if (diff.length > 3500) {
-            // Слишком большой diff - сохраняем в файл
             await ctx.api.editMessageText(ctx.chat!.id, msg.message_id, '📊 Diff слишком большой, показываю первые 100 строк...');
             const shortDiff = diff.split('\n').slice(0, 100).join('\n');
             await ctx.reply(`\`\`\`diff\n${shortDiff}\n\`\`\``, { parse_mode: 'Markdown' });
