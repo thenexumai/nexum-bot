@@ -20,9 +20,9 @@ export class WorkspaceAI {
                     content: `Ты система памяти NEXUM. Анализируй диалог и извлекай важные факты о пользователе.
 Ответь строго в JSON формате:
 {
-  "user_facts": ["факт1", "факт2"],  // новые факты о пользователе (пустой массив если нет)
-  "memory_entry": "текст или null",  // важное для долгосрочной памяти (null если нет)
-  "daily_note": "текст или null"      // краткая заметка в дневник (null если нет)
+  "user_facts": ["факт1", "факт2"],
+  "memory_entry": "текст или null",
+  "daily_note": "текст или null"
 }
 Существующие данные USER.md:
 ${currentUser.slice(0, 500)}
@@ -30,15 +30,15 @@ ${currentUser.slice(0, 500)}
                 },
                 {
                     role: 'user' as const,
-                    content: `Пользователь написал: "${userMessage.slice(0, 300)}"
-NEXUM ответил: "${assistantReply.slice(0, 300)}"`
+                    content: `Пользователь написал: "${userMessage.slice(0, 300)}"\nNEXUM ответил: "${assistantReply.slice(0, 300)}"`
                 }
             ];
 
-            const raw = await smartChat(prompt, { max_tokens: 300, temperature: 0.2 });
+            // smartChat возвращает { text, provider } — деструктурируем
+            const { text: rawText } = await smartChat(prompt, { max_tokens: 300, temperature: 0.2 });
 
             // Извлечь JSON из ответа
-            const jsonMatch = raw.match(/\{[\s\S]*\}/);
+            const jsonMatch = rawText.match(/\{[\s\S]*\}/);
             if (!jsonMatch) return;
 
             const parsed = JSON.parse(jsonMatch[0]);
@@ -69,6 +69,7 @@ NEXUM ответил: "${assistantReply.slice(0, 300)}"`
             const memoryMd = WorkspaceManager.read(uid, 'MEMORY.md');
             if (!userMd || userMd.length < 100) return;
 
+            // smartChat возвращает { text, provider } — деструктурируем
             const { text } = await smartChat([
                 {
                     role: 'system',
